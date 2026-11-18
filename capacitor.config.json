@@ -1,0 +1,6 @@
+{
+  "appId": "com.rajniti.risetopower",
+  "appName": "RAJNITI: Rise to Power",
+  "webDir": "dist",
+  "bundledWebRuntime": false
+}
