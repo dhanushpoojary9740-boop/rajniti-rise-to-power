@@ -24,7 +24,6 @@ const defaults = {
   partyPosition: 'Independent Politician',
   partyMembers: 1,
   partyFunds: 0,
-  partyTreasury: { incomeTotal: 0, expenseTotal: 0, ledger: [] },
   partyPopularity: 0,
   partyCreated: false,
   partyHistory: [],
@@ -125,9 +124,6 @@ function loadState() {
 }
 
 let state = loadState();
-if (!state.partyTreasury || typeof state.partyTreasury !== 'object') state.partyTreasury = { incomeTotal: 0, expenseTotal: 0, ledger: [] };
-if (!Array.isArray(state.partyTreasury.ledger)) state.partyTreasury.ledger = [];
-for (const key of ['incomeTotal','expenseTotal']) if (!Number.isFinite(Number(state.partyTreasury[key]))) state.partyTreasury[key] = 0;
 if (!state.elections || typeof state.elections !== 'object') state.elections = JSON.parse(JSON.stringify(defaults.elections));
 if (!state.elections.calendar) state.elections.calendar = JSON.parse(JSON.stringify(defaults.elections.calendar));
 if (!Array.isArray(state.elections.nominationQueue)) state.elections.nominationQueue = [];
@@ -577,6 +573,35 @@ function dashboard() {
 
 let selectedIntelRegion = 'National';
 
+function runIntelligenceStrategy(action) {
+  if (!state.strategyIntel || typeof state.strategyIntel !== 'object') {
+    state.strategyIntel = { actions: 0, history: [], lastAction: '' };
+  }
+  const intel = state.strategyIntel;
+  const actions = {
+    ground: { title: 'Ground network assessment', cost: 12000, reputation: 2, support: 2, party: 2, detail: 'Mapped volunteer coverage and identified under-served localities.' },
+    alliance: { title: 'Alliance channel assessment', cost: 18000, reputation: 1, support: 1, party: 3, detail: 'Reviewed potential cooperation and coalition compatibility.' },
+    media: { title: 'Narrative and media review', cost: 9000, reputation: 2, support: 2, party: 1, detail: 'Prepared a response brief around public concerns and communication risks.' }
+  };
+  const item = actions[action];
+  if (!item) return;
+  if (Number(state.money || 0) < item.cost) {
+    toast('Insufficient personal funds for this intelligence exercise.');
+    return;
+  }
+  state.money = Number(state.money || 0) - item.cost;
+  state.reputation = Math.max(0, Number(state.reputation || 0) + item.reputation);
+  state.publicSupport = Math.min(100, Number(state.publicSupport || 0) + item.support);
+  state.partyPopularity = Math.min(100, Number(state.partyPopularity || 0) + item.party);
+  intel.actions += 1;
+  intel.lastAction = item.title;
+  intel.history.unshift({ title: item.title, detail: item.detail, date: dateText() });
+  intel.history = intel.history.slice(0, 8);
+  saveState();
+  render();
+  toast('Intelligence assessment completed. Strategic indicators updated.');
+}
+
 function intelligencePage() {
   const regions = ['National', 'Karnataka', 'Kerala', 'Tamil Nadu', 'Maharashtra', 'Telangana', 'Delhi', 'Uttar Pradesh'];
   const regionIndex = Math.max(0, regions.indexOf(selectedIntelRegion));
@@ -618,6 +643,30 @@ function intelligencePage() {
         <article class="panel intel-locality-card"><span class="eyebrow">${escapeHtml(item.type || 'Locality')}</span><h3>${escapeHtml(item.name)}</h3><div class="intel-locality-stats"><div><b>${Number(item.support || 0)}%</b><small>Support index</small></div><div><b>${Number(item.influence || 0)}/100</b><small>Influence</small></div><div><b>${Number(item.voters || 0).toLocaleString('en-IN')}</b><small>Voters</small></div></div><p class="panel-description">Priority issue: ${escapeHtml(item.issue || 'Community development')}</p></article>
       `).join('')}
     </div>
+    <div class="command-section-head"><div><span class="eyebrow">ELECTION STRATEGY ROOM</span><h2>Seat outlook & political risks</h2></div><span class="gold-tag">SIMULATED ESTIMATE</span></div>
+    <section class="intel-strategy-grid">
+      <article class="panel">
+        <span class="eyebrow">CURRENT REGIONAL OUTLOOK</span>
+        <h3>${playerSupport >= 40 ? 'Competitive position' : playerSupport >= 22 ? 'Emerging challenger' : 'Organisation-building phase'}</h3>
+        <div class="intel-outlook-number">${Math.max(0, Math.min(100, Math.round(playerSupport * 1.35 + Number(state.reputation || 0) * .12)))}<small>/100</small></div>
+        <p class="panel-description">Strategic readiness index for ${escapeHtml(selectedIntelRegion)}. This is a gameplay indicator, not a real seat forecast.</p>
+      </article>
+      <article class="panel">
+        <span class="eyebrow">RISK REGISTER</span>
+        <h3>${playerSupport < 15 ? 'Weak booth-level presence' : Number(state.reputation || 0) < 25 ? 'Leadership credibility gap' : 'Maintain local momentum'}</h3>
+        <p class="panel-description">${playerSupport < 15 ? 'Expand volunteer coverage and listen to local issues before committing campaign resources.' : Number(state.reputation || 0) < 25 ? 'Prioritise transparent delivery and follow-through on public commitments.' : 'Protect constituency relationships and monitor emerging local concerns.'}</p>
+      </article>
+    </section>
+    <div class="command-section-head"><div><span class="eyebrow">AI POLITICAL ADVISER</span><h2>Commission a strategy assessment</h2></div></div>
+    <section class="intel-adviser-grid">
+      <article class="panel"><span class="eyebrow">FIELD INTELLIGENCE · ₹12,000</span><h3>Ground network assessment</h3><p class="panel-description">Review volunteer coverage, locality priorities and organisation gaps.</p><button class="primary-btn" data-intel-strategy="ground">RUN ASSESSMENT</button></article>
+      <article class="panel"><span class="eyebrow">POLITICAL NEGOTIATIONS · ₹18,000</span><h3>Alliance channel assessment</h3><p class="panel-description">Evaluate possible cooperation, partner compatibility and coalition risks.</p><button class="primary-btn" data-intel-strategy="alliance">RUN ASSESSMENT</button></article>
+      <article class="panel"><span class="eyebrow">COMMUNICATIONS · ₹9,000</span><h3>Narrative and media review</h3><p class="panel-description">Identify public concerns and prepare a communication response brief.</p><button class="primary-btn" data-intel-strategy="media">RUN ASSESSMENT</button></article>
+    </section>
+    <section class="panel">
+      <div class="command-section-head"><div><span class="eyebrow">CONFIDENTIAL BRIEFING LOG</span><h2>Recent intelligence reports</h2></div></div>
+      ${(state.strategyIntel?.history || []).length ? state.strategyIntel.history.map(report => `<div class="intel-report-row"><b>${escapeHtml(report.title)}</b><small>${escapeHtml(report.date || '')}</small><p class="panel-description">${escapeHtml(report.detail)}</p></div>`).join('') : '<p class="panel-description">No commissioned reports yet. Select an assessment above to generate your first briefing.</p>'}
+    </section>
     <section class="panel intelligence-method"><span class="eyebrow">STRATEGIC NOTE</span><h3>Build your organisation before chasing headline numbers</h3><p class="panel-description">Use constituency outreach, issue surveys, volunteer mobilisation and party-building activities to improve your standing over time.</p><button class="primary-btn" data-tab="Activities">PLAN POLITICAL ACTIVITIES →</button></section>
   `;
 }
@@ -943,6 +992,17 @@ function joinedPartyPage() {
     </section>
 
     <section class="panel" style="margin-top:15px">
+      <span class="eyebrow">POLITICAL FINANCES</span>
+      <h3>Contribute to party funds</h3>
+      <p class="panel-description">
+        Make a voluntary contribution from your personal wealth.
+      </p>
+      <button class="secondary-btn" data-action="party-donate">
+        CONTRIBUTE ₹1,000 →
+      </button>
+    </section>
+
+    <section class="panel" style="margin-top:15px">
       <span class="eyebrow">MEMBERSHIP OPTIONS</span>
       <button class="secondary-btn full" data-action="leave-party">
         LEAVE POLITICAL PARTY
@@ -962,7 +1022,7 @@ function getPartyMember(id) {
 }
 
 function partySectionTabs() {
-  return ['Overview', 'Treasury', 'Leadership', 'Members', 'Organisation', 'Elections'].map(section => `
+  return ['Overview', 'Leadership', 'Members', 'Organisation', 'Elections'].map(section => `
     <button class="secondary-btn ${partySection === section ? 'active' : ''}" data-party-section="${section}">${section}</button>
   `).join('');
 }
@@ -1037,7 +1097,6 @@ function partyElectionsSection() {
 
 function createdPartyPage() {
   let sectionContent = partyOverviewSection();
-  if (partySection === 'Treasury') sectionContent = partyTreasurySection();
   if (partySection === 'Leadership') sectionContent = partyLeadershipSection();
   if (partySection === 'Members') sectionContent = partyMembersSection();
   if (partySection === 'Organisation') sectionContent = partyOrganisationSection();
@@ -1051,7 +1110,7 @@ function createdPartyPage() {
     <div class="section-heading" style="margin-top:22px"><div><span class="eyebrow">PARTY ADMINISTRATION</span><h2>Management centre</h2></div></div>
     <div class="content-grid">${partySectionTabs()}</div>
     <div style="margin-top:15px">${sectionContent}</div>
-    `;
+    <section class="panel" style="margin-top:15px"><span class="eyebrow">PARTY TREASURY</span><p class="panel-description">Contribute personal funds to support party operations.</p><button class="secondary-btn" data-action="party-donate">CONTRIBUTE ₹1,000 →</button></section>`;
 }
 
 function createPartyPage() {
@@ -1449,14 +1508,6 @@ function investFixedDeposit(form) {
 }
 
 function processMonthlyFinances() {
-  if (state.partyId && state.partyId !== 'independent') {
-    const members = Math.max(1, Number(state.partyMembers) || 1);
-    const membershipIncome = Math.min(50000, members * 25);
-    const publicContributions = Math.floor(Math.max(0, Number(state.partyPopularity) || 0) * 20);
-    if (membershipIncome > 0) addPartyLedgerEntry('Income', membershipIncome, 'Monthly party membership contributions');
-    if (publicContributions > 0) addPartyLedgerEntry('Income', publicContributions, 'Monthly voluntary public contributions');
-  }
-
   const salary = monthlySalary();
   const businessIncome = monthlyBusinessIncome();
   const investmentIncome = Math.floor(state.finance.fixedDeposits * 0.005);
@@ -1610,7 +1661,6 @@ function joinParty(id) {
   state.partyMembers = party.members;
   state.partyPopularity = party.popularity;
   state.partyFunds = 0;
-  state.partyTreasury = { incomeTotal: 0, expenseTotal: 0, ledger: [] };
   state.partyCreated = false;
 
   state.partyHistory.unshift({
@@ -1651,7 +1701,6 @@ function establishParty(form) {
   state.partyPosition = 'Founder & President';
   state.partyMembers = 1;
   state.partyFunds = 0;
-  state.partyTreasury = { incomeTotal: 0, expenseTotal: 0, ledger: [] };
   state.partyPopularity = 5;
   state.partyCreated = true;
   state.partyMemberRecords = [{ id: 'founder', name: state.playerName, role: 'Founder & National President', loyalty: 95, experience: 100, joined: dateText(), isFounder: true }];
@@ -1690,50 +1739,16 @@ function partyMeeting() {
 }
 
 function donatePartyFunds() {
-  return toast('Personal-to-party transfers are disabled. Use the Party Treasury to manage independent party income.');
-}
+  if (state.partyId === 'independent') return;
+  if (state.money < 1000) return toast('You need ₹1,000.');
 
-function addPartyLedgerEntry(type, amount, note) {
-  if (!state.partyTreasury || typeof state.partyTreasury !== 'object') state.partyTreasury = { incomeTotal: 0, expenseTotal: 0, ledger: [] };
-  if (!Array.isArray(state.partyTreasury.ledger)) state.partyTreasury.ledger = [];
-  const value = Math.max(0, Math.floor(Number(amount) || 0));
-  if (!value) return;
-  state.partyFunds = Math.max(0, Number(state.partyFunds) || 0) + (type === 'Income' ? value : -value);
-  if (type === 'Income') state.partyTreasury.incomeTotal = (Number(state.partyTreasury.incomeTotal) || 0) + value;
-  else state.partyTreasury.expenseTotal = (Number(state.partyTreasury.expenseTotal) || 0) + value;
-  state.partyTreasury.ledger.unshift({ type, amount: value, note, date: dateText() });
-  state.partyTreasury.ledger = state.partyTreasury.ledger.slice(0, 60);
-}
+  state.money -= 1000;
+  state.partyFunds += 1000;
+  state.totalExpenses += 1000;
 
-function partyTreasurySection() {
-  const treasury = state.partyTreasury || { incomeTotal: 0, expenseTotal: 0, ledger: [] };
-  const ledger = Array.isArray(treasury.ledger) ? treasury.ledger : [];
-  return `
-    <section class="panel">
-      <span class="eyebrow">INDEPENDENT PARTY FINANCES</span><h3>Party treasury</h3>
-      <div class="party-stat-row"><span>Available party funds</span><b>${money(state.partyFunds)}</b></div>
-      <div class="party-stat-row"><span>Total party income</span><b>${money(treasury.incomeTotal || 0)}</b></div>
-      <div class="party-stat-row"><span>Total party expenses</span><b>${money(treasury.expenseTotal || 0)}</b></div>
-      <p class="panel-description">This account is separate from your personal wealth. No personal money is transferred automatically.</p>
-    </section>
-    <section class="panel" style="margin-top:15px">
-      <span class="eyebrow">FUNDRAISING</span><h3>Organise a party fundraising event</h3>
-      <p class="panel-description">Use ₹2,000 from the party treasury for event administration. The simulation records ₹5,000 in public contributions. This does not use your personal wealth.</p>
-      <button class="primary-btn" data-action="party-fundraiser">ORGANISE FUNDRAISER · ₹2,000 PARTY FUNDS →</button>
-    </section>
-    <section class="panel" style="margin-top:15px">
-      <span class="eyebrow">TRANSACTION HISTORY</span><h3>Party ledger</h3>
-      ${ledger.length ? ledger.slice(0,12).map(item => `<div class="party-stat-row"><span>${escapeHtml(item.note)}<small style="display:block;color:var(--muted)">${escapeHtml(item.date || '')}</small></span><b class="${item.type === 'Income' ? 'finance-positive' : ''}">${item.type === 'Income' ? '+' : '-'}${money(item.amount)}</b></div>`).join('') : '<p class="panel-description">No party transactions recorded yet. Membership income will appear after monthly turns.</p>'}
-    </section>`;
-}
-
-function organisePartyFundraiser() {
-  if (state.partyId === 'independent') return toast('Join or establish a party first.');
-  if (Number(state.partyFunds) < 2000) return toast('The party treasury needs ₹2,000 for this event. Your personal wealth cannot be used.');
-  addPartyLedgerEntry('Expense', 2000, 'Fundraising event operating cost');
-  addPartyLedgerEntry('Income', 5000, 'Public contributions from fundraising event');
-  saveState(); render();
-  toast('Fundraiser completed. Net party treasury increase: ₹3,000.');
+  saveState();
+  render();
+  toast('₹1,000 added to party treasury.');
 }
 
 function recruitMembers() {
@@ -1770,7 +1785,6 @@ function leaveParty() {
   state.partyPosition = 'Independent Politician';
   state.partyMembers = 1;
   state.partyFunds = 0;
-  state.partyTreasury = { incomeTotal: 0, expenseTotal: 0, ledger: [] };
   state.partyPopularity = 0;
   state.partyCreated = false;
   state.partyMemberRecords = [];
@@ -3832,6 +3846,12 @@ document.addEventListener('click', event => {
     return;
   }
 
+  const strategyAction = event.target.closest('[data-intel-strategy]');
+  if (strategyAction) {
+    runIntelligenceStrategy(strategyAction.dataset.intelStrategy);
+    return;
+  }
+
   const reviewButton = event.target.closest('[data-review-news]');
   if (reviewButton) {
     const index = Number(reviewButton.dataset.reviewNews);
@@ -3953,9 +3973,6 @@ if (!Array.isArray(state.media.history)) state.media.history = [];
       break;
     case 'party-donate':
       donatePartyFunds();
-      break;
-    case 'party-fundraiser':
-      organisePartyFundraiser();
       break;
     case 'recruit-members':
       recruitMembers();
