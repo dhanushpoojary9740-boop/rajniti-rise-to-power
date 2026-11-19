@@ -307,6 +307,18 @@ function icon(name) {
   return icons[name] || '•';
 }
 
+function dailyActionLimit() {
+  const role = String(state.role || 'Ordinary Citizen').toLowerCase();
+  if (role.includes('prime minister')) return 12;
+  if (role.includes('chief minister')) return 10;
+  if (role.includes('minister')) return 8;
+  if (role === 'mla' || role.includes('member of parliament')) return 7;
+  if (role.includes('councillor') || role.includes('panchayat')) return 7;
+  if (role.includes('local party leader')) return 6;
+  if (role.includes('party volunteer') || role.includes('booth-level') || role.includes('political volunteer')) return 5;
+  return 4;
+}
+
 function dateText() {
   const months = [
     'January', 'February', 'March', 'April',
@@ -434,7 +446,7 @@ function dashboard() {
       <div class="date-card">
         <span>SIMULATION CLOCK</span>
         <b>DAY ${state.day}</b>
-        <small>${Math.max(0, 2 - state.actionsUsed)} daily actions remaining</small>
+        <small>${Math.max(0, dailyActionLimit() - state.actionsUsed)} daily actions remaining</small>
       </div>
     </div>
 
@@ -664,7 +676,7 @@ function recordMediaEvent(event) {
 
 function mediaAction(type) {
   if (!state.characterCreated) return toast('Create your politician first.');
-  if (state.actionsUsed >= 2) return toast('No daily actions remaining.');
+  if (state.actionsUsed >= dailyActionLimit()) return toast('No daily actions remaining.');
   const actions = {
     press: { cost: 1000, trust: 7, reach: 9, approval: 3, label: 'Press conference held' },
     listen: { cost: 500, trust: 9, reach: 2, approval: 2, label: 'Community listening session completed' },
@@ -690,7 +702,7 @@ function mediaAction(type) {
 function resolveMediaControversy(id) {
   const item = state.media.controversies.find(entry => entry.id === id && !entry.resolved);
   if (!item) return;
-  if (state.actionsUsed >= 2) return toast('No daily actions remaining.');
+  if (state.actionsUsed >= dailyActionLimit()) return toast('No daily actions remaining.');
   if (state.money < 1200) return toast('You need ₹1,200 for a response team.');
   state.money -= 1200;
   state.totalExpenses = Number(state.totalExpenses || 0) + 1200;
@@ -1270,7 +1282,7 @@ function activitiesPage() {
 
     <section class="panel">
       <span class="eyebrow">DAILY ACTIONS</span>
-      <h3>${Math.max(0, 2 - state.actionsUsed)} / 2 remaining</h3>
+      <h3>${Math.max(0, dailyActionLimit() - state.actionsUsed)} / 2 remaining</h3>
       <p class="panel-description">${dateText()}</p>
       <button class="secondary-btn" data-action="end-day">END DAY →</button>
     </section>
@@ -1292,9 +1304,9 @@ function activitiesPage() {
           </div>
           <button class="secondary-btn full"
             data-activity="${a.id}"
-            ${state.actionsUsed >= 2 || !state.characterCreated || state.money < a.cost ? 'disabled' : ''}>
+            ${state.actionsUsed >= dailyActionLimit() || !state.characterCreated || state.money < a.cost ? 'disabled' : ''}>
             ${!state.characterCreated ? 'CREATE CHARACTER FIRST'
-              : state.actionsUsed >= 2 ? 'DAILY LIMIT REACHED'
+              : state.actionsUsed >= dailyActionLimit() ? 'DAILY LIMIT REACHED'
               : state.money < a.cost ? 'INSUFFICIENT FUNDS'
               : 'PERFORM ACTIVITY →'}
           </button>
@@ -1318,7 +1330,7 @@ function activitiesPage() {
 
 function performActivity(id) {
   if (!state.characterCreated) return toast('Create your character first.');
-  if (state.actionsUsed >= 2) return toast('Daily action limit reached.');
+  if (state.actionsUsed >= dailyActionLimit()) return toast('Daily action limit reached.');
 
   const a = activities.find(item => item.id === id);
   if (!a) return;
@@ -1617,7 +1629,7 @@ function establishParty(form) {
 
 function partyMeeting() {
   if (state.partyId === 'independent') return;
-  if (state.actionsUsed >= 2) return toast('No daily actions remaining.');
+  if (state.actionsUsed >= dailyActionLimit()) return toast('No daily actions remaining.');
   if (state.money < 300) return toast('You need ₹300.');
 
   state.money -= 300;
@@ -1649,7 +1661,7 @@ function donatePartyFunds() {
 
 function recruitMembers() {
   if (!state.partyCreated) return;
-  if (state.actionsUsed >= 2) return toast('No daily actions remaining.');
+  if (state.actionsUsed >= dailyActionLimit()) return toast('No daily actions remaining.');
   if (state.money < 1000) return toast('You need ₹1,000.');
 
   state.money -= 1000;
@@ -1963,7 +1975,7 @@ function constituencyPage() {
   const locality = c.localities.find(x => x.name === c.selectedLocality) || c.localities[0];
   const support = Math.round(c.localities.reduce((sum, x) => sum + Number(x.support || 0), 0) / Math.max(1, c.localities.length));
   const influence = Math.round(c.localities.reduce((sum, x) => sum + Number(x.influence || 0), 0) / Math.max(1, c.localities.length));
-  const remaining = Math.max(0, 2 - state.actionsUsed);
+  const remaining = Math.max(0, dailyActionLimit() - state.actionsUsed);
 
   return `
     <div class="page-heading">
@@ -1974,7 +1986,7 @@ function constituencyPage() {
       </div>
       <div class="date-card">
         <span>DAILY GROUND ACTIONS</span>
-        <b>${remaining} / 2</b>
+        <b>${remaining} / ${dailyActionLimit()}</b>
         <small>${dateText()}</small>
       </div>
     </div>
@@ -2152,7 +2164,7 @@ function saveConstituencySetup(form) {
 
 function performGroundAction(id) {
   if (!state.characterCreated) return toast('Create your politician first.');
-  if (state.actionsUsed >= 2) return toast('Daily action limit reached.');
+  if (state.actionsUsed >= dailyActionLimit()) return toast('Daily action limit reached.');
   const action = groundActions.find(x => x.id === id);
   if (!action) return;
   if (state.money < action.cost) return toast('Insufficient personal funds.');
@@ -2177,7 +2189,7 @@ function performGroundAction(id) {
 
 function resolveLocalIssue() {
   if (!state.characterCreated) return toast('Create your politician first.');
-  if (state.actionsUsed >= 2) return toast('Daily action limit reached.');
+  if (state.actionsUsed >= dailyActionLimit()) return toast('Daily action limit reached.');
   if (state.money < 1500) return toast('You need ₹1,500.');
   const c = state.constituency;
   const locality = c.localities.find(x => x.name === c.selectedLocality) || c.localities[0];
@@ -2205,7 +2217,7 @@ function startDevelopmentProject(form) {
   const category = String(data.get('projectType') || '');
   const cost = Number(data.get('projectCost'));
   if (name.length < 4) return toast('Enter a project title with at least 4 characters.');
-  if (state.actionsUsed >= 2) return toast('Daily action limit reached.');
+  if (state.actionsUsed >= dailyActionLimit()) return toast('Daily action limit reached.');
   if (state.money < cost) return toast('Insufficient personal funds.');
   const locality = state.constituency.localities.find(x => x.name === state.constituency.selectedLocality) || state.constituency.localities[0];
   state.money -= cost;
@@ -2291,7 +2303,7 @@ function electionPage() {
               <p class="panel-description">${action.description}</p>
               <div class="party-stat-row"><span>Campaign cost</span><b>${money(action.cost)}</b></div>
               <div class="activity-rewards"><span>+${action.score} campaign score</span><span>+${action.support}% support potential</span></div>
-              <button class="secondary-btn full" data-campaign-action="${action.id}" ${active.budget < action.cost || state.actionsUsed >= 2 ? 'disabled' : ''}>${state.actionsUsed >= 2 ? 'DAILY LIMIT REACHED' : active.budget < action.cost ? 'INSUFFICIENT CAMPAIGN FUNDS' : 'RUN CAMPAIGN ACTIVITY →'}</button>
+              <button class="secondary-btn full" data-campaign-action="${action.id}" ${active.budget < action.cost || state.actionsUsed >= dailyActionLimit() ? 'disabled' : ''}>${state.actionsUsed >= dailyActionLimit() ? 'DAILY LIMIT REACHED' : active.budget < action.cost ? 'INSUFFICIENT CAMPAIGN FUNDS' : 'RUN CAMPAIGN ACTIVITY →'}</button>
             </article>
           `).join('')}
         </div>
@@ -2391,7 +2403,7 @@ function runCampaignAction(id) {
   const active = state.elections.active;
   const action = campaignActions.find(item => item.id === id);
   if (!active || !action) return;
-  if (state.actionsUsed >= 2) return toast('Daily action limit reached. End the day to continue.');
+  if (state.actionsUsed >= dailyActionLimit()) return toast('Daily action limit reached. End the day to continue.');
   if (active.budget < action.cost) return toast('Not enough campaign funds.');
   active.budget -= action.cost;
   active.campaignScore = Math.min(100, active.campaignScore + action.score);
