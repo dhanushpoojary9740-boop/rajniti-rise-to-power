@@ -2042,3 +2042,82 @@ button {
 .rival-dossier-grid p{margin:7px 0}
 @media(max-width:900px){.rival-layout{grid-template-columns:1fr}}
 @media(max-width:560px){.rival-dossier-grid{grid-template-columns:1fr}.rival-party-card .stats-grid{grid-template-columns:repeat(3,minmax(0,1fr))}}
+
+
+/* RAJNITI 2.3.0 — cleaner, calmer command-centre interface */
+:root {
+  --bg: #080d17;
+  --panel: #111b2b;
+  --line: #29384d;
+  --muted: #a1aec0;
+  --gold: #d7b66f;
+  --gold2: #f1dba4;
+}
+.page { padding: 28px 28px 44px; }
+.page-heading { margin-bottom: 20px; gap: 16px; }
+.page-heading h1 { line-height: 1.18; font-size: clamp(23px, 3vw, 30px); }
+.page-heading p, .panel-description { line-height: 1.65; }
+.panel, .date-card, .stat-card, .government-portfolio, .candidate-register-card {
+  border-color: #29384d;
+  border-radius: 13px;
+  box-shadow: 0 8px 24px #00000012;
+}
+.panel { padding: 20px; }
+.panel h2, .panel h3 { line-height: 1.25; letter-spacing: -.25px; }
+.panel h2 { font-size: 21px; }
+.panel h3 { font-size: 17px; }
+.stats-grid { gap: 12px; }
+.stat-card { padding: 17px; }
+.stat-card b { font-size: 22px; }
+.primary-btn, .secondary-btn {
+  min-height: 42px;
+  border-radius: 9px;
+  letter-spacing: .8px;
+  font-size: 10px;
+}
+.secondary-btn { border-color: #34465f; background: #172438; }
+.secondary-btn:hover, .primary-btn:hover { filter: brightness(1.1); }
+.creator-field input, .creator-field select, .creator-field textarea,
+input, select, textarea {
+  border-radius: 9px;
+}
+.career-step, .finance-history, .gov-scheme-row {
+  gap: 12px;
+  padding: 13px 0;
+}
+.party-key-people .career-step { align-items: center; }
+.government-unlock-grid {
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 10px;
+}
+.government-unlock-grid > div {
+  border: 1px solid #29384d;
+  background: #0c1625;
+  border-radius: 10px;
+  padding: 13px;
+  min-width: 0;
+}
+.government-unlock-grid b { font-size: clamp(16px, 2vw, 21px); }
+.government-majority-note { margin-top: 12px; }
+.candidate-register-card {
+  background: #101b2b;
+  border: 1px solid #2b3b51;
+  border-radius: 12px;
+}
+.candidate-register-card small { line-height: 1.55; color: #aab7c8; }
+.candidate-register-card .nomination-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.candidate-register-card .nomination-actions button { flex: 1 1 120px; }
+@media (max-width: 700px) {
+  .page { padding: 20px 14px 34px; }
+  .page-heading { align-items: flex-start; flex-direction: column; margin-bottom: 17px; }
+  .date-card { width: 100%; }
+  .panel { padding: 16px; }
+  .stats-grid { gap: 9px; }
+  .stat-card { padding: 13px; }
+  .stat-card b { font-size: 19px; }
+  .government-unlock-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .government-cabinet-grid { gap: 10px; }
+  .government-portfolio { padding: 14px; }
+  .candidate-register-list { max-height: 70vh !important; }
+  .candidate-register-card { padding: 12px !important; }
+}

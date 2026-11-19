@@ -1,4 +1,5 @@
 import './styles.css';
+import districtDirectory from './data/india-districts.json';
 
 const STORE_KEY = 'rajniti-save-v1';
 
@@ -244,13 +245,16 @@ function migratePartyManagementSave() {
 
   if (state.partyCreated && state.partyMemberRecords.length === 0) {
     const total = Math.max(1, Number(state.partyMembers) || 1);
-    state.partyMemberRecords.push({ id: 'founder', name: state.playerName || 'Party Founder', role: 'Founder & National President', loyalty: 95, experience: 100, joined: 'Founding day', isFounder: true });
+    state.partyMemberRecords.push({ id: 'founder', name: state.playerName || 'Party Founder', role: 'Founder & National President', loyalty: 95, experience: 100, joined: 'Founding day', isFounder: true, campaignFunds: 0 });
     for (let i = 2; i <= total; i++) {
-      state.partyMemberRecords.push({ id: 'member-' + i, name: 'Party Member ' + String(i).padStart(3, '0'), role: 'General Member', loyalty: 55 + (i % 35), experience: i % 60, joined: 'Existing membership', isFounder: false });
+      state.partyMemberRecords.push({ id: 'member-' + i, name: 'Party Member ' + String(i).padStart(3, '0'), role: 'General Member', loyalty: 55 + (i % 35), experience: i % 60, joined: 'Existing membership', isFounder: false, campaignFunds: 50000000 });
     }
     state.partyLeadership['Founder & National President'] = 'founder';
     saveState();
   }
+  state.partyMemberRecords.forEach(member => {
+    if (!Number.isFinite(Number(member.campaignFunds))) member.campaignFunds = member.isFounder ? 0 : 50000000;
+  });
 }
 
 migratePartyManagementSave();
@@ -1067,6 +1071,12 @@ function partyOverviewSection() {
       <p class="panel-description">Run a recruitment campaign to expand membership and improve the party's public standing.</p>
       <button class="primary-btn" data-action="recruit-members">ORGANISE MEMBERSHIP DRIVE · ₹1,000 →</button>
     </section>
+    <section class="panel party-key-people" style="margin-top:15px">
+      <span class="eyebrow">IMPORTANT PARTY MEMBERS</span><h3>Your leadership team</h3>
+      <p class="panel-description">Key office-bearers and their responsibilities.</p>
+      ${Object.entries(state.partyLeadership).slice(0,8).map(([position,memberId])=>{const member=getPartyMember(memberId);return `<div class="career-step"><div><b>${escapeHtml(member?.name||'Vacant')}</b><small>${escapeHtml(position)}</small></div><span class="current-label">OFFICE-BEARER</span></div>`;}).join('') || '<p class="panel-description">Appoint party office-bearers in Leadership.</p>'}
+      <button class="secondary-btn full" data-party-section="Leadership">MANAGE PARTY ROLES →</button>
+    </section>
     <div class="content-grid" style="margin-top:15px">
       <section class="panel"><span class="eyebrow">LEADERSHIP</span><h3>${Object.keys(state.partyLeadership).length} appointments</h3><p class="panel-description">Build a leadership team from national to booth level.</p><button class="secondary-btn full" data-party-section="Leadership">MANAGE LEADERSHIP →</button></section>
       <section class="panel"><span class="eyebrow">ORGANISATION</span><h3>${state.partyUnits.length} units</h3><p class="panel-description">Create state, district, constituency, block and booth units.</p><button class="secondary-btn full" data-party-section="Organisation">MANAGE UNITS →</button></section>
@@ -1104,7 +1114,7 @@ function partyMembersSection() {
     </section>
     <section class="panel" style="margin-top:15px"><span class="eyebrow">MEMBER DIRECTORY</span><h3>Party members (${members.length})</h3>
       <div class="creator-field"><label for="memberSearch">Search members</label><input id="memberSearch" placeholder="Search by name or position"></div>
-      <div id="member-directory">${members.slice(0,100).map(member => `<div class="career-step" data-member-row="${escapeHtml((member.name+' '+member.role).toLowerCase())}"><div><b>${escapeHtml(member.name)}</b><small>${escapeHtml(member.role)} · Loyalty ${member.loyalty}/100 · ${member.experience} XP</small></div>${member.isFounder ? '<span class="current-label">FOUNDER</span>' : `<button class="secondary-btn" data-remove-member="${escapeHtml(member.id)}">REMOVE</button>`}</div>`).join('')}</div>
+      <div id="member-directory">${members.slice(0,100).map(member => {const office=Object.entries(state.partyLeadership).find(([,memberId])=>memberId===member.id)?.[0];return `<div class="career-step" data-member-row="${escapeHtml((member.name+' '+member.role+' '+(office||'')).toLowerCase())}"><div><b>${escapeHtml(member.name)}</b><small>${escapeHtml(office||member.role||'General Member')} · Loyalty ${member.loyalty}/100 · ${member.experience} XP</small></div>${office ? '<span class="current-label">LEADER</span>' : member.isFounder ? '<span class="current-label">FOUNDER</span>' : `<button class="secondary-btn" data-remove-member="${escapeHtml(member.id)}">REMOVE</button>`}</div>`;}).join('')}</div>
       ${members.length > 100 ? `<p class="panel-description">Showing first 100 of ${members.length} members. Search is available within the displayed directory.</p>` : ''}
     </section>`;
 }
@@ -1888,7 +1898,31 @@ function completeElectionCounting(active) {
     result.totalSeats=totalSeats; result.majorityMark=Math.floor(totalSeats/2)+1;
     result.seatsWon=Math.max(0,Math.round(totalSeats*result.candidateShare/100));
     result.hungHouse=result.seatsWon<result.majorityMark;
-    state.elections.lastMandate={typeId:active.typeId,totalSeats,majorityMark:result.majorityMark,seatsWon:result.seatsWon,hungHouse:result.hungHouse,party:state.party||'Independent',date:dateText()};
+    state.elections.lastMandate={typeId:active.typeId,totalSeats,majorityMark:result.majorityMark,seatsWon:result.seatsWon,hungHouse:result.hungHouse,party:state.party||'Independent',date:dateText(),projectionOnly:true};
+  }
+  if (active.typeId === 'assembly') {
+    if (!Array.isArray(state.elections.partyAssemblyResults)) state.elections.partyAssemblyResults = [];
+    const cycle = Number(active.scheduledAt || currentMonthIndex());
+    const cycleResults = state.elections.partyAssemblyResults.filter(item => Number(item.scheduledAt) === cycle);
+    if (!cycleResults.some(item => String(item.constituency).toLowerCase() === String(active.constituency || 'Player constituency').toLowerCase())) {
+      cycleResults.push({ scheduledAt:cycle, constituency:active.constituency || 'Player constituency', candidateName:active.candidateName, result:won?'Won':'Lost', source:'Player contest' });
+    }
+    if (state.partyId !== 'independent') {
+      const partyCandidates = ensurePartySlate().filter(item => item.typeId === 'assembly' && Number(item.scheduledAt) === cycle && ['Funded','Party Approved'].includes(item.status) && Number(item.approvedBudget || 0) > 0);
+      partyCandidates.forEach((item,index) => {
+        if (cycleResults.some(record => String(record.constituency).toLowerCase() === String(item.constituency || '').toLowerCase())) return;
+        const member = (state.partyMemberRecords || []).find(person => String(person.id) === String(item.memberId));
+        const strength = Number(member?.loyalty || 50) * 0.35 + Number(member?.experience || 0) * 0.25 + Number(state.partyPopularity || 0) * 0.4 + Math.min(12, Number(item.approvedBudget || 0) / 1000000);
+        const candidateWon = strength >= 50 + ((index % 5) - 2);
+        item.electionResult = candidateWon ? 'Won' : 'Lost';
+        item.status = candidateWon ? 'Elected' : 'Not Elected';
+        item.resultDate = dateText();
+        cycleResults.push({ scheduledAt:cycle, constituency:item.constituency, candidateName:item.candidateName, result:item.electionResult, source:'Party candidate simulation' });
+      });
+    }
+    state.elections.partyAssemblyResults = state.elections.partyAssemblyResults.filter(item => Number(item.scheduledAt) !== cycle).concat(cycleResults).slice(-1000);
+    const seatWins = cycleResults.filter(item => item.result === 'Won').length;
+    state.elections.lastAssemblySeatTally = { scheduledAt:cycle, totalSeats:224, majorityMark:113, seatsWon:seatWins, seatsContested:cycleResults.length, party:state.party || 'Independent', date:dateText() };
   }
   const type=electionTypes.find(item=>item.id===active.typeId);
   state.elections.history.unshift(result); state.elections.history=state.elections.history.slice(0,30);
@@ -2127,7 +2161,7 @@ function recruitMembers() {
 
   for (let i = 1; i <= 25; i++) {
     const number = state.partyMemberRecords.length + 1;
-    state.partyMemberRecords.push({ id: 'member-' + Date.now() + '-' + i, name: 'New Party Member ' + String(number).padStart(3, '0'), role: 'General Member', loyalty: 50 + (i % 30), experience: i % 10, joined: dateText(), isFounder: false });
+    state.partyMemberRecords.push({ id: 'member-' + Date.now() + '-' + i, name: 'New Party Member ' + String(number).padStart(3, '0'), role: 'General Member', loyalty: 50 + (i % 30), experience: i % 10, joined: dateText(), isFounder: false, campaignFunds: 50000000 });
   }
   state.partyMembers = state.partyMemberRecords.length;
   state.partyPopularity = Math.min(100, state.partyPopularity + 3);
@@ -2757,14 +2791,20 @@ function proposePartySlate(typeId = 'assembly') {
   members.forEach((member, index) => {
     if (slate.some(item => item.memberId === member.id && item.scheduledAt === scheduledAt && item.typeId === typeId)) return;
     const explicitConstituency = String(member.constituencyName || member.constituency || member.ward || '').trim();
+    const stateName = String(member.state || member.stateName || state.stateName || '').trim();
+    const districtMap = districtDirectory?.districtCodes?.[stateName] || null;
+    const districtNames = districtMap ? Object.keys(districtMap) : [];
+    const assignedDistrict = String(member.district || (districtNames.length ? districtNames[(index - 1) % districtNames.length] : state.constituency?.district || '')).trim();
+    const assignedConstituency = explicitConstituency || (assignedDistrict ? `AI-suggested seat ${String(index).padStart(2,'0')} · ${assignedDistrict}` : '');
     slate.push({
       id: `slate-${Date.now()}-${typeId}-${index}-${String(member.id).replace(/[^a-zA-Z0-9_-]/g,'').slice(-12)}`,
       typeId, typeName: type?.name || schedule.label || 'Election',
       scheduledAt, memberId: member.id, candidateName: member.name,
       role: member.role || 'Party Member',
-      stateName: member.state || member.stateName || state.stateName || '',
-      district: member.district || '',
-      constituency: explicitConstituency,
+      stateName,
+      district: assignedDistrict,
+      constituency: assignedConstituency,
+      constituencyAssignment: explicitConstituency ? 'Member profile' : 'AI suggestion — confirm or edit before approval',
       seatType: member.seatType || '',
       age: Number(member.age) || '',
       politicalHistory: member.politicalHistory || '',
@@ -2839,20 +2879,28 @@ function bulkApprovePartySlate() {
 function allocatePartyCandidateBudget(id) {
   const item = ensurePartySlate().find(entry => entry.id === id);
   if (!item || item.status !== 'Party Approved') return toast('Approve this candidate before allocating campaign funds.');
-  const amounts = { local: 500000, assembly: 4000000, 'lok-sabha': 9500000 };
-  const amount = amounts[item.typeId] || 1000000;
-  if ((Number(state.partyFunds) || 0) < amount) return toast('Insufficient party treasury funds.');
-  state.partyFunds -= amount;
+  const totalBudgets = { local: 500000, assembly: 4000000, 'lok-sabha': 9500000 };
+  const total = totalBudgets[item.typeId] || 1000000;
+  const partyShare = Math.ceil(total / 2);
+  const candidateShare = total - partyShare;
+  const member = (state.partyMemberRecords || []).find(person => String(person.id) === String(item.memberId));
+  if (!member) return toast('The linked party member profile could not be found.');
+  if ((Number(state.partyFunds) || 0) < partyShare) return toast(`Party treasury needs ${money(partyShare)} for its 50% share.`);
+  if ((Number(member.campaignFunds) || 0) < candidateShare) return toast(`${item.candidateName} needs ${money(candidateShare)} in their own campaign reserve for the remaining 50%.`);
+  state.partyFunds -= partyShare;
+  member.campaignFunds = Number(member.campaignFunds || 0) - candidateShare;
   state.partyTreasury = state.partyTreasury || { incomeTotal: 0, expenseTotal: 0, ledger: [] };
-  state.partyTreasury.expenseTotal = (Number(state.partyTreasury.expenseTotal) || 0) + amount;
+  state.partyTreasury.expenseTotal = (Number(state.partyTreasury.expenseTotal) || 0) + partyShare;
   state.partyTreasury.ledger = Array.isArray(state.partyTreasury.ledger) ? state.partyTreasury.ledger : [];
-  state.partyTreasury.ledger.unshift({ type:'Expense', amount, note:`Campaign allocation: ${item.candidateName} · ${item.constituency}`, date:dateText() });
+  state.partyTreasury.ledger.unshift({ type:'Expense', amount:partyShare, note:`50% party campaign contribution: ${item.candidateName} · ${item.constituency}`, date:dateText() });
   state.partyTreasury.ledger = state.partyTreasury.ledger.slice(0,60);
-  item.approvedBudget = (Number(item.approvedBudget) || 0) + amount;
+  item.approvedBudget = total;
+  item.partyContribution = partyShare;
+  item.candidateContribution = candidateShare;
   item.status = 'Funded';
   item.fundedAt = dateText();
   saveState(); render();
-  toast(`${money(amount)} allocated from party treasury to ${item.candidateName}.`);
+  toast(`Campaign funded 50/50: party ${money(partyShare)} · candidate ${money(candidateShare)}.`);
 }
 function decidePartySlate(id, decision) {
   const item = ensurePartySlate().find(entry => entry.id === id);
@@ -2913,14 +2961,14 @@ function electionPage() {
       ${electionScheduleHtml}
       <p class="panel-description">The calendar is authoritative: prepare in advance, nominations open four months before polling, official campaigning opens two months before polling, and results are declared only after all counting rounds.</p>
       <h2>AI candidate nomination review</h2>
-      <p class="panel-description">Review every proposed candidate before the party submits a nomination. Approving records party approval; it does not claim that an official filing has occurred.</p>
+      <p class="panel-description">This queue covers scheduled nomination recommendations. Party-wide candidate deployment below is where you review constituency assignments, edit member profiles and approve the party ticket. Neither approval action files an official nomination.</p>
       <div class="election-metrics">
         <div><small>PENDING REVIEW</small><b>${pendingNominations.length}</b></div>
         <div><small>APPROVED BY YOU</small><b>${electionCalendar.nominationQueue.filter(item => item.status === 'Approved').length}</b></div>
         <div><small>REJECTED</small><b>${electionCalendar.nominationQueue.filter(item => item.status === 'Rejected').length}</b></div>
       </div>
       ${nominationHtml}
-      <div class="section-heading-row"><div><h2>Party-wide candidate deployment</h2><p class="panel-description">Build separate candidate slates for local, Assembly and Lok Sabha cycles. Approvals are internal party decisions; campaign allocations are recorded separately from personal wealth.</p></div></div>
+      <div class="section-heading-row"><div><h2>Party-wide candidate deployment</h2><p class="panel-description">AI proposes a district and a clearly labelled suggested seat for each member. The district comes from the state district directory; the suggested seat is a planning placeholder, not a verified Assembly constituency. Edit it to the correct constituency before approval. Campaign funding is split 50/50 between party treasury and the candidate's own reserve.</p></div></div>
       <div class="creator-panel"><div class="creator-grid"><div class="creator-field"><label for="partySlateElectionType">Election cycle</label><select id="partySlateElectionType"><option value="local">Local body</option><option value="assembly" selected>State Assembly</option><option value="lok-sabha">Lok Sabha</option></select></div><div class="creator-field"><label>Party treasury available</label><input value="${escapeHtml(money(state.partyFunds || 0))}" readonly></div></div><button class="primary-btn" data-party-slate-generate>Generate member proposals</button></div>
       ${(() => {
         const slate = ensurePartySlate();
@@ -2933,7 +2981,7 @@ function electionPage() {
             <div><small>AWAITING REVIEW</small><b>${proposed}</b></div>
             <div><small>READY FOR BULK APPROVAL</small><b>${eligible}</b></div>
           </div>
-          <p class="panel-description">Review the full candidate register below. Candidates missing a constituency, district or state cannot be approved. Edit any record first. Bulk approval affects all eligible proposed candidates across the displayed slate; it does not allocate campaign funds or submit official nominations.</p>
+          <p class="panel-description">Review the full candidate register below. AI-suggested seat labels are placeholders: replace them with the correct real constituency before approval. Incomplete or conflicting records stay pending. Bulk approval does not allocate campaign funds or submit official nominations.</p>
           <button class="primary-btn" data-party-slate-bulk-approve ${eligible===0?'disabled':''}>APPROVE ALL ELIGIBLE CANDIDATES (${eligible})</button>
           <div class="creator-field" style="margin-top:12px"><label for="candidateRegisterSearch">Search candidate / constituency / district / state</label><input id="candidateRegisterSearch" type="search" placeholder="Search the full candidate register..."></div>
           <div class="candidate-register-list" style="max-height:620px;overflow:auto">
@@ -2946,11 +2994,11 @@ function electionPage() {
                 <small>Seat: ${escapeHtml(item.seatType||'Not specified')} · Age: ${escapeHtml(item.age||'Not provided')} · Party position: ${escapeHtml(item.role||member?.role||'Party member')} · Polling month: ${Number(item.scheduledAt||0)}</small>
                 <div><small>Political history: ${escapeHtml(item.politicalHistory||'Not provided')}</small></div>
                 <div><small>Manifesto: ${escapeHtml(item.manifesto||'Not provided')}</small></div>
-                <div><small>Campaign allocation: ${money(item.approvedBudget||0)} · ${complete?'Profile complete':'PROFILE INCOMPLETE'}</small></div>
+                <div><small>Campaign total: ${money(item.approvedBudget||0)} · Party share: ${money(item.partyContribution||0)} · Candidate share: ${money(item.candidateContribution||0)}</small></div><div><small>Candidate reserve remaining: ${money(member?.campaignFunds||0)}</small></div><div><small>${escapeHtml(item.constituencyAssignment||'Constituency assignment requires review')}</small></div><div><small>${complete?'Profile complete':'PROFILE INCOMPLETE'}</small></div>
                 <div class="nomination-actions" style="margin-top:8px">
                   ${['Proposed','Party Approved'].includes(item.status)?`<button class="secondary-btn" data-party-slate-edit="${escapeHtml(item.id)}">Edit details</button>`:''}
                   ${item.status==='Proposed'?`<button class="secondary-btn" data-party-slate-action="approve" data-party-slate-id="${escapeHtml(item.id)}" ${complete?'':'disabled'}>Approve</button><button class="secondary-btn" data-party-slate-action="reject" data-party-slate-id="${escapeHtml(item.id)}">Reject</button>`:''}
-                  ${item.status==='Party Approved'?`<button class="secondary-btn" data-party-slate-fund="${escapeHtml(item.id)}">Allocate campaign budget</button>`:''}
+                  ${item.status==='Party Approved'?`<button class="secondary-btn" data-party-slate-fund="${escapeHtml(item.id)}">Fund 50/50 campaign</button>`:''}${['Elected','Not Elected'].includes(item.status)?`<span class="current-label">${escapeHtml(item.status)}</span>`:''}
                 </div>
               </article>`;
             }).join('')}
@@ -3167,9 +3215,20 @@ const governmentPortfolios = [
 ];
 
 function governmentMandateCount() {
+  const tally = state.elections?.lastAssemblySeatTally;
+  if (tally && Number.isFinite(Number(tally.seatsWon))) return Number(tally.seatsWon);
   return (state.elections?.history || []).filter(item =>
     item.result === 'Won' && String(item.typeName || item.type || '').toLowerCase().includes('assembly')
   ).length;
+}
+function governmentMajorityMark() { return 113; }
+// Correct saves from earlier builds that treated one Assembly victory as a full majority.
+if (state.government?.formed && governmentMandateCount() < governmentMajorityMark()) {
+  state.government.formed = false;
+  state.government.chiefMinister = '';
+  state.government.history = Array.isArray(state.government.history) ? state.government.history : [];
+  state.government.history.unshift({ day:state.day, month:state.month, year:state.year, event:'Government formation corrected: Assembly majority not reached' });
+  saveState();
 }
 
 function ensureGovernmentState() {
@@ -3190,7 +3249,7 @@ function ensureGovernmentState() {
 
 function formGovernment() {
   const g = ensureGovernmentState();
-  if (governmentMandateCount() < 1) return toast('Win a State Assembly election before forming a government.');
+  if (governmentMandateCount() < governmentMajorityMark()) return toast(`Your party has ${governmentMandateCount()} Assembly seat(s). A majority of 113 seats is required before forming the government.`);
   if (g.formed) return toast('Your state government is already formed.');
   g.formed = true;
   g.chiefMinister = state.playerName;
@@ -3247,6 +3306,7 @@ function launchGovernmentScheme() {
 function governmentPage() {
   const g = ensureGovernmentState();
   const wins = governmentMandateCount();
+  const majorityReached = wins >= governmentMajorityMark();
   const formed = !!g.formed;
   const totalAllocation = Object.values(g.departments).reduce((sum, value) => sum + Number(value || 0), 0);
   const ministries = governmentPortfolios.map(portfolio => `
@@ -3261,11 +3321,12 @@ function governmentPage() {
       <div class="gov-budget-actions"><button data-gov-budget="${escapeHtml(name)}" data-delta="-5" ${!formed || value <= 5 ? 'disabled' : ''}>−5%</button><button data-gov-budget="${escapeHtml(name)}" data-delta="5" ${!formed || totalAllocation >= 100 ? 'disabled' : ''}>+5%</button></div>
     </div>`).join('');
   return `
-    <div class="page-heading"><div><div class="eyebrow">PUBLIC ADMINISTRATION</div><h1>Government <em>command</em></h1><p>Form a cabinet, manage public funds and deliver state programmes.</p></div><div class="date-card"><span>GOVERNMENT STATUS</span><b>${formed ? 'GOVERNMENT FORMED' : wins ? 'MANDATE AVAILABLE' : 'NOT FORMED'}</b><small>${wins} Assembly victory/victories</small></div></div>
+    <div class="page-heading"><div><div class="eyebrow">PUBLIC ADMINISTRATION</div><h1>Government <em>command</em></h1><p>Form a cabinet, manage public funds and deliver state programmes.</p></div><div class="date-card"><span>GOVERNMENT STATUS</span><b>${formed ? 'GOVERNMENT FORMED' : wins ? 'MANDATE AVAILABLE' : 'NOT FORMED'}</b><small>${wins}/113 seats needed for majority</small></div></div>
     <section class="panel government-hero"><span class="gold-tag">STATE ADMINISTRATION</span><h2>${formed ? 'Your state government' : wins ? 'You have an Assembly mandate' : 'The path to government'}</h2>
-      <p class="panel-description">${formed ? `Chief Minister: ${escapeHtml(g.chiefMinister || state.playerName)}. Build your cabinet and deliver programmes.` : 'Win a State Assembly election to unlock government formation, ministerial appointments and administration.'}</p>
-      <div class="government-unlock-grid"><div><b>${money(g.treasury)}</b><small>Government treasury</small></div><div><b>${Number(g.performance)}%</b><small>Administration performance</small></div><div><b>${Object.keys(g.ministers).length}/${governmentPortfolios.length}</b><small>Ministers appointed</small></div></div>
-      <button class="primary-btn" data-action="gov-form" ${!wins || formed ? 'disabled' : ''}>${formed ? 'GOVERNMENT FORMED' : 'FORM STATE GOVERNMENT'}</button>
+      <p class="panel-description">${formed ? `Chief Minister: ${escapeHtml(g.chiefMinister || state.playerName)}. Build your cabinet and deliver programmes.` : 'One MLA victory gives you one Assembly seat, not a government. A single party needs 113 of 224 seats to form a majority government. Party candidates must be approved, funded and included in the election cycle before their simulated constituency results count.'}</p>
+      <div class="government-unlock-grid"><div><b>${wins} / 224</b><small>Party Assembly seats won · majority 113</small></div><div><b>${money(g.treasury)}</b><small>Government treasury</small></div><div><b>${Number(g.performance)}%</b><small>Administration performance</small></div><div><b>${Object.keys(g.ministers).length}/${governmentPortfolios.length}</b><small>Ministers appointed</small></div></div>
+      <button class="primary-btn" data-action="gov-form" ${!majorityReached || formed ? 'disabled' : ''}>${formed ? 'GOVERNMENT FORMED' : majorityReached ? 'FORM STATE GOVERNMENT' : 'MAJORITY NOT REACHED'}</button>
+      <p class="panel-description government-majority-note">${majorityReached ? 'Majority secured. You may now form the state government.' : `You currently have ${wins} seat(s). ${governmentMajorityMark()-wins} more seat(s) are required for a single-party majority.`}</p>
     </section>
     <section class="panel" style="margin-top:16px">
       <span class="eyebrow">PUBLIC ACCOUNTABILITY</span><h3>Election manifesto commitments</h3>
