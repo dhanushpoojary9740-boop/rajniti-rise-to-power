@@ -81,22 +81,29 @@ jobs:
           import re
           path = 'android/app/src/main/AndroidManifest.xml'
           text = open(path, encoding='utf-8').read()
-          if 'android:screenOrientation=' not in text:
-              text, count = re.subn(
-                  r'(<activity\\b[^>]*android:name="[^"]+"[^>]*)(>)',
-                  r'\\1 android:screenOrientation="sensor"\\2',
-                  text,
-                  count=1
-              )
-              if count != 1:
-                  raise SystemExit('Could not enable adaptive orientation in MainActivity')
-          else:
-              text = re.sub(
-                  r'android:screenOrientation="[^"]+"',
+
+          # Match an activity opening tag across multiple lines. Capacitor
+          # templates can format the MainActivity declaration differently.
+          matches = list(re.finditer(r'<activity\\b[^>]*>', text, flags=re.DOTALL))
+          if not matches:
+              raise SystemExit('No Android activity element found in AndroidManifest.xml')
+
+          # Prefer MainActivity, otherwise use the first app activity.
+          selected = next(
+              (m for m in matches if 'MainActivity' in m.group(0)),
+              matches[0]
+          )
+          tag = selected.group(0)
+          if re.search(r'\\bandroid:screenOrientation\\s*=', tag):
+              updated = re.sub(
+                  r'android:screenOrientation\\s*=\\s*["\\'][^"\\']*["\\']',
                   'android:screenOrientation="sensor"',
-                  text,
+                  tag,
                   count=1
               )
+          else:
+              updated = tag[:-1] + ' android:screenOrientation="sensor">'
+          text = text[:selected.start()] + updated + text[selected.end():]
           open(path, 'w', encoding='utf-8').write(text)
           print('RAJNITI Android orientation set to sensor (portrait and landscape)')
           PY
