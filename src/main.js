@@ -1332,7 +1332,75 @@ function profilePage() {
       </div>
       <button class="secondary-btn" data-action="edit-character">EDIT CHARACTER</button>
     </section>
+
+    <section class="panel" style="margin-top:15px">
+      <span class="eyebrow">SAVE DATA PROTECTION</span>
+      <h2>Backup & restore your political career</h2>
+      <p class="panel-description">
+        Export your complete RAJNITI save before changing phones or installing a one-time signing migration.
+        Keep the backup text somewhere private. It contains your game progress.
+      </p>
+      <button class="secondary-btn full" data-action="generate-save-backup">
+        GENERATE SAVE BACKUP
+      </button>
+      <div class="creator-field" style="margin-top:12px">
+        <label for="saveBackupData">Backup data</label>
+        <textarea id="saveBackupData" rows="7" placeholder="Generate a backup or paste a previous RAJNITI backup here" style="width:100%;box-sizing:border-box"></textarea>
+      </div>
+      <div class="creator-actions">
+        <button class="secondary-btn" data-action="copy-save-backup">COPY BACKUP</button>
+        <button class="primary-btn" data-action="restore-save-backup">RESTORE BACKUP</button>
+      </div>
+      <small class="creator-note">Restoring replaces the current local game save. Only restore a backup you trust.</small>
+    </section>
   `;
+}
+
+function generateSaveBackup() {
+  const backup = {
+    app: 'RAJNITI',
+    formatVersion: 1,
+    exportedAt: new Date().toISOString(),
+    save: state
+  };
+  const field = document.querySelector('#saveBackupData');
+  if (!field) return;
+  field.value = JSON.stringify(backup);
+  field.focus();
+  field.select();
+  toast('Backup generated. Copy and store it safely.');
+}
+
+async function copySaveBackup() {
+  const field = document.querySelector('#saveBackupData');
+  if (!field || !field.value.trim()) return toast('Generate a backup first.');
+  field.focus();
+  field.select();
+  try {
+    await navigator.clipboard.writeText(field.value);
+    toast('Backup copied to clipboard.');
+  } catch {
+    toast('Backup selected. Long-press the text and choose Copy.');
+  }
+}
+
+function restoreSaveBackup() {
+  const field = document.querySelector('#saveBackupData');
+  if (!field || !field.value.trim()) return toast('Paste your backup data first.');
+  try {
+    const parsed = JSON.parse(field.value);
+    if (parsed.app !== 'RAJNITI' || !parsed.save || typeof parsed.save !== 'object') {
+      return toast('This is not a valid RAJNITI backup.');
+    }
+    if (!confirm('Restore this backup? Your current local game save will be replaced.')) return;
+    state = { ...defaults, ...parsed.save };
+    saveState();
+    activeTab = 'Dashboard';
+    render();
+    toast('RAJNITI save restored successfully.');
+  } catch {
+    toast('Backup data is invalid or incomplete.');
+  }
 }
 
 function genericPage(name) {
@@ -1457,6 +1525,15 @@ document.addEventListener('click', event => {
       break;
     case 'leave-party':
       leaveParty();
+      break;
+    case 'generate-save-backup':
+      generateSaveBackup();
+      break;
+    case 'copy-save-backup':
+      copySaveBackup();
+      break;
+    case 'restore-save-backup':
+      restoreSaveBackup();
       break;
   }
 });
