@@ -113,6 +113,8 @@ const defaults = {
     treasury: 50000000,
     departments: { Finance: 20, Home: 15, Education: 20, Health: 20, Infrastructure: 25 },
     schemes: [],
+    manifestoPromises: [],
+    coalitionPartners: [],
     history: [],
     performance: 50
   },
@@ -2522,17 +2524,17 @@ function startDevelopmentProject(form) {
 /* ELECTION CAMPAIGN & ELECTORAL POLITICS */
 
 const electionTypes = [
-  { id: 'local', name: 'Local Body Election', level: 'Local', voters: 46900, baseSupport: 8, minInfluence: 0, minReputation: 0, winRole: 'Councillor / Panchayat Leader', deposit: 1500 },
-  { id: 'assembly', name: 'State Assembly Election', level: 'State', voters: 850000, baseSupport: 5, minInfluence: 18, minReputation: 22, winRole: 'MLA', deposit: 5000 },
-  { id: 'lok-sabha', name: 'Lok Sabha Election', level: 'National', voters: 1600000, baseSupport: 3, minInfluence: 35, minReputation: 45, winRole: 'Member of Parliament', deposit: 10000 }
+  { id: 'local', name: 'Local Body Election', level: 'Local', voters: 46900, baseSupport: 8, minInfluence: 0, minReputation: 0, winRole: 'Councillor / Panchayat Leader', deposit: 5000, partyBudget: 1000000, candidateLimit: 500000 },
+  { id: 'assembly', name: 'State Assembly Election', level: 'State', voters: 850000, baseSupport: 5, minInfluence: 18, minReputation: 22, winRole: 'MLA', deposit: 10000, partyBudget: 20000000, candidateLimit: 4000000 },
+  { id: 'lok-sabha', name: 'Lok Sabha Election', level: 'National', voters: 1600000, baseSupport: 3, minInfluence: 35, minReputation: 45, winRole: 'Member of Parliament', deposit: 25000, partyBudget: 100000000, candidateLimit: 9500000 }
 ];
 
 const campaignActions = [
-  { id: 'door-to-door', name: 'Door-to-door campaign', description: 'Meet voters and discuss local priorities.', cost: 500, score: 5, support: 2, influence: 1, xp: 12 },
-  { id: 'public-rally', name: 'Organise public rally', description: 'Hold a public gathering and present your agenda.', cost: 1200, score: 9, support: 3, influence: 2, xp: 18 },
-  { id: 'manifesto-drive', name: 'Manifesto outreach', description: 'Explain your policy commitments to residents.', cost: 800, score: 7, support: 2, influence: 1, xp: 15 },
-  { id: 'volunteer-network', name: 'Mobilise volunteers', description: 'Coordinate volunteers for lawful voter outreach.', cost: 1000, score: 8, support: 1, influence: 3, xp: 16 },
-  { id: 'public-debate', name: 'Public policy debate', description: 'Present your proposals and answer public questions.', cost: 600, score: 6, support: 2, influence: 2, xp: 14 }
+  { id: 'door-to-door', name: 'Door-to-door campaign', description: 'Meet voters and discuss local priorities.', cost: 25000, score: 5, support: 2, influence: 1, xp: 12 },
+  { id: 'public-rally', name: 'Public rally', description: 'Hold a permitted public gathering and present your agenda.', cost: 250000, score: 9, support: 3, influence: 2, xp: 18 },
+  { id: 'manifesto-drive', name: 'Manifesto outreach', description: 'Explain your policy commitments to residents.', cost: 100000, score: 7, support: 2, influence: 1, xp: 15 },
+  { id: 'volunteer-network', name: 'Volunteer coordination', description: 'Coordinate lawful volunteer outreach.', cost: 75000, score: 8, support: 1, influence: 3, xp: 16 },
+  { id: 'public-debate', name: 'Public policy debate', description: 'Present your proposals and answer public questions.', cost: 50000, score: 6, support: 2, influence: 2, xp: 14 }
 ];
 
 function electionCandidates() {
@@ -2599,7 +2601,10 @@ function electionPage() {
           <div><small>CAMPAIGN SCORE</small><b>${active.campaignScore}/100</b></div>
           <div><small>CAMPAIGN FUNDS</small><b>${money(active.budget)}</b></div>
           <div><small>ESTIMATED SUPPORT</small><b>${active.estimatedSupport}%</b></div>
+          <div><small>CANDIDATE SPEND</small><b>${money(active.candidateSpending || 0)}</b></div>
+          <div><small>SPENDING CEILING</small><b>${money(active.candidateSpendingLimit || 0)}</b></div>
         </div>
+        <p class="panel-description">${active.partyFunded ? 'Funded by the independent party treasury.' : 'Independent candidate campaign funded from candidate wealth.'} Campaign allocation is separate from the candidate expenditure ceiling. Main opponent: ${escapeHtml(active.opponentName)} (${escapeHtml(active.opponentParty || 'Opposition Party')}).</p>
         <div class="mini-progress"><i style="width:${Math.min(100, active.campaignScore)}%"></i></div>
         <div class="section-heading"><div><span class="eyebrow">CAMPAIGN OPERATIONS</span><h3>Choose your next move</h3></div></div>
         <div class="activity-grid">
@@ -2643,10 +2648,12 @@ function electionPage() {
             <div class="creator-field">
               <label for="campaignBudget">Campaign budget</label>
               <select id="campaignBudget" name="campaignBudget" required>
-                <option value="5000">₹5,000 · Starter</option>
-                <option value="10000">₹10,000 · Standard</option>
-                <option value="20000">₹20,000 · Strong</option>
-                <option value="40000">₹40,000 · Major campaign</option>
+                <option value="1000000">₹10 lakh · Local body campaign</option>
+                <option value="5000000">₹50 lakh · Constituency campaign</option>
+                <option value="20000000">₹2 crore · Assembly campaign</option>
+                <option value="50000000">₹5 crore · Large state campaign</option>
+                <option value="100000000">₹10 crore · Lok Sabha campaign</option>
+                <option value="200000000">₹20 crore · Large parliamentary campaign</option>
               </select>
             </div>
           </div>
@@ -2654,7 +2661,7 @@ function electionPage() {
             <label for="electionManifesto">Election manifesto summary</label>
             <textarea id="electionManifesto" name="manifesto" rows="4" maxlength="320" placeholder="Describe your priorities: roads, water, education, healthcare and jobs..." required></textarea>
           </div>
-          <div class="election-note"><b>Constituency:</b> ${escapeHtml(state.constituency.constituencyName)} · ${escapeHtml(state.constituency.district)}, ${escapeHtml(state.constituency.state)}<br><b>Estimated local voters:</b> ${totalVoters.toLocaleString('en-IN')}<br><b>Party:</b> ${escapeHtml(state.party)}</div>
+          <div class="election-note"><b>Constituency:</b> ${escapeHtml(state.constituency.constituencyName)} · ${escapeHtml(state.constituency.district)}, ${escapeHtml(state.constituency.state)}<br><b>Estimated local voters:</b> ${totalVoters.toLocaleString('en-IN')}<br><b>Party:</b> ${escapeHtml(state.party)}<br><b>Available party treasury:</b> ${money(state.partyFunds || 0)}<br><b>Funding rule:</b> Party candidates use party treasury only; personal wealth is not used for party campaigns. Independent candidates fund their own campaign.<br><b>Illustrative candidate expenditure ceilings:</b> Local ₹5 lakh · Assembly ₹40 lakh · Lok Sabha ₹95 lakh. Verify applicable legal limits for the game's election year and state.</div>
           <button type="submit" class="primary-btn full">LAUNCH ELECTION CAMPAIGN →</button>
         </form>
       </section>
@@ -2682,22 +2689,34 @@ function startElection(form) {
   const budget = Number(data.get('campaignBudget'));
   const manifesto = String(data.get('manifesto') || '').trim();
   if (!type || !candidate || manifesto.length < 20) return toast('Choose a candidate and write a manifesto of at least 20 characters.');
+  if (state.partyId !== 'independent' && candidate.id !== 'player' && !(state.partyMemberRecords || []).some(member => String(member.id) === String(candidate.id))) return toast('Select a registered party member as the party candidate.');
+  if (state.partyId === 'independent' && candidate.id !== 'player') return toast('An independent candidate must be you.');
   if (state.influence < type.minInfluence || state.reputation < type.minReputation) {
     return toast(`This election requires influence ${type.minInfluence} and reputation ${type.minReputation}. Build your political standing first.`);
   }
-  if (!Number.isFinite(budget) || budget < 5000 || state.money < budget + type.deposit) {
-    return toast(`You need ${money(budget + type.deposit)} for the selected campaign and deposit.`);
+  if (!Number.isFinite(budget) || budget < type.partyBudget || budget > type.partyBudget * 5) {
+    return toast(`Choose a realistic campaign allocation between ${money(type.partyBudget)} and ${money(type.partyBudget * 2)}.`);
   }
-  state.money -= budget + type.deposit;
-  state.totalExpenses += budget + type.deposit;
+  const partyCampaign = state.partyId !== 'independent';
+  const totalRequired = budget + type.deposit;
+  if (partyCampaign) {
+    if (Number(state.partyFunds || 0) < totalRequired) return toast(`Insufficient party treasury. Campaign and deposit require ${money(totalRequired)}. Personal wealth cannot be used.`);
+    addPartyLedgerEntry('Expense', totalRequired, `Election campaign authorised: ${type.name} · ${candidate.name}`);
+  } else {
+    if (Number(state.money || 0) < totalRequired) return toast(`Independent candidate funds of ${money(totalRequired)} are required. Party funds are unavailable to an independent candidate.`);
+    state.money -= totalRequired;
+    state.totalExpenses += totalRequired;
+  }
   const localitySupport = (state.constituency.localities || []).reduce((sum, item) => sum + Number(item.support || 0), 0) / Math.max(1, state.constituency.localities.length);
   const estimatedSupport = Math.max(1, Math.min(85, Math.round(localitySupport + state.reputation * 0.18 + state.influence * 0.12 + (state.partyPopularity || 0) * 0.08)));
   state.elections.active = {
     id: 'election-' + Date.now(), typeId: type.id, typeName: type.name, level: type.level,
     candidateId: candidate.id, candidateName: candidate.name, manifesto,
     budget, initialBudget: budget, deposit: type.deposit,
+    partyFunded: partyCampaign, candidateSpending: 0, candidateSpendingLimit: type.candidateLimit,
     campaignScore: 0, estimatedSupport, activities: [],
     opponentName: ['Arjun Rao', 'Meera Kulkarni', 'Ravi Shetty', 'Ananya Menon', 'Vikram Desai'][state.elections.totalContested % 5],
+    opponentParty: ['National Development Front', 'People\'s Democratic Union', 'Bharatiya Jan Collective', 'Regional Progress Party'][state.elections.totalContested % 4],
     started: dateText(), constituency: state.constituency.constituencyName
   };
   saveState();
@@ -2712,6 +2731,8 @@ function runCampaignAction(id) {
   if (state.actionsUsed >= dailyActionLimit()) return toast('Daily action limit reached. End the day to continue.');
   if (active.budget < action.cost) return toast('Not enough campaign funds.');
   active.budget -= action.cost;
+  const candidatePortion = Math.min(action.cost, Math.max(0, Number(active.candidateSpendingLimit || 0) - Number(active.candidateSpending || 0)));
+  active.candidateSpending = Number(active.candidateSpending || 0) + candidatePortion;
   active.campaignScore = Math.min(100, active.campaignScore + action.score);
   active.estimatedSupport = Math.min(90, active.estimatedSupport + action.support);
   active.activities.push({ name: action.name, date: dateText(), cost: action.cost });
@@ -2739,20 +2760,42 @@ function holdElection() {
   const turnoutRate = Math.min(0.78, 0.48 + active.campaignScore / 250 + active.estimatedSupport / 500);
   const turnout = Math.round(totalVoters * turnoutRate);
   const candidateShare = Math.max(5, Math.min(85, active.estimatedSupport * 0.48 + active.campaignScore * 0.32 + state.reputation * 0.12 + state.influence * 0.08));
-  const opponentShare = Math.max(5, Math.min(80, 100 - candidateShare - 8));
-  const otherShare = Math.max(0, 100 - candidateShare - opponentShare);
-  const candidateVotes = Math.round(turnout * candidateShare / 100);
-  const opponentVotes = Math.round(turnout * opponentShare / 100);
+  const rivalOneShare = Math.max(5, Math.min(55, 34 + ((state.elections.totalContested % 5) - 2) * 2));
+  const rivalTwoShare = Math.max(5, Math.min(35, 20 + ((state.partyPopularity || 0) % 7) - 3));
+  const rivalThreeShare = Math.max(3, 100 - candidateShare - rivalOneShare - rivalTwoShare);
+  const rawShares = [candidateShare, rivalOneShare, rivalTwoShare, rivalThreeShare];
+  const shareTotal = rawShares.reduce((sum, value) => sum + value, 0);
+  const shares = rawShares.map(value => Math.round(value / shareTotal * 100));
+  shares[0] += 100 - shares.reduce((sum, value) => sum + value, 0);
+  const candidateVotes = Math.round(turnout * shares[0] / 100);
+  const opponentVotes = Math.round(turnout * shares[1] / 100);
   const otherVotes = Math.max(0, turnout - candidateVotes - opponentVotes);
-  const won = candidateVotes > opponentVotes;
+  const contestants = [
+    { name: active.candidateName, party: state.party || 'Independent', share: shares[0], votes: candidateVotes },
+    { name: active.opponentName, party: active.opponentParty || 'Opposition Party', share: shares[1], votes: opponentVotes },
+    { name: 'Kiran Prasad', party: 'People\'s Democratic Union', share: shares[2], votes: Math.round(turnout * shares[2] / 100) },
+    { name: 'Nisha Fernandes', party: 'Regional Progress Party', share: shares[3], votes: Math.max(0, turnout - candidateVotes - opponentVotes - Math.round(turnout * shares[2] / 100)) }
+  ].sort((a,b) => b.votes-a.votes);
+  const won = contestants[0].name === active.candidateName;
   const result = {
     id: active.id, typeName: active.typeName, candidateName: active.candidateName,
     candidateId: active.candidateId, constituency: active.constituency,
     date: dateText(), result: won ? 'Won' : 'Lost', totalVoters, turnout,
     candidateVotes, opponentVotes, otherVotes, opponentName: active.opponentName,
-    candidateShare: Math.round(candidateVotes / Math.max(1, turnout) * 100),
-    campaignScore: active.campaignScore, manifesto: active.manifesto
+    candidateShare: shares[0], contestants,
+    campaignScore: active.campaignScore, manifesto: active.manifesto,
+    partyFunded: !!active.partyFunded, campaignAllocation: active.initialBudget,
+    candidateSpending: Number(active.candidateSpending || 0),
+    candidateSpendingLimit: Number(active.candidateSpendingLimit || 0)
   };
+  if (active.typeId === 'assembly' || active.typeId === 'lok-sabha') {
+    const totalSeats = active.typeId === 'assembly' ? 224 : 543;
+    result.totalSeats = totalSeats;
+    result.majorityMark = Math.floor(totalSeats / 2) + 1;
+    result.seatsWon = Math.max(0, Math.round(totalSeats * result.candidateShare / 100));
+    result.hungHouse = result.seatsWon < result.majorityMark;
+    state.elections.lastMandate = { typeId: active.typeId, totalSeats, majorityMark: result.majorityMark, seatsWon: result.seatsWon, hungHouse: result.hungHouse, party: state.party || 'Independent', date: dateText() };
+  }
   state.elections.history.unshift(result);
   state.elections.history = state.elections.history.slice(0, 30);
   state.elections.totalContested++;
@@ -2767,6 +2810,12 @@ function holdElection() {
       state.level = Math.max(state.level, type.id === 'local' ? 2 : type.id === 'assembly' ? 5 : 8);
     }
     if (state.partyId !== 'independent') state.partyPopularity = Math.min(100, state.partyPopularity + 8);
+    if (active.typeId === 'assembly') {
+      const government = ensureGovernmentState();
+      government.manifestoPromises.unshift({ id: 'promise-' + Date.now(), text: active.manifesto, status: 'Pending', progress: 0, announcedAt: dateText(), electionId: active.id });
+      government.manifestoPromises = government.manifestoPromises.slice(0, 20);
+      government.history.unshift({ day: state.day, month: state.month, year: state.year, event: 'Election manifesto commitment registered for public tracking' });
+    }
   } else {
     state.elections.totalLost++;
     state.reputation = Math.max(0, state.reputation - 2);
@@ -2795,6 +2844,9 @@ function showElectionResult(result) {
         <div><small>${escapeHtml(result.opponentName)}</small><b>${result.opponentVotes.toLocaleString('en-IN')}</b><span>Opposition votes</span></div>
       </div>
       <div class="party-stat-row"><span>Total turnout</span><b>${result.turnout.toLocaleString('en-IN')} / ${result.totalVoters.toLocaleString('en-IN')}</b></div>
+      ${(result.contestants || []).map((item,index)=>`<div class="finance-history"><span>${index+1}. ${escapeHtml(item.name)} · ${escapeHtml(item.party)}</span><b>${item.share}%</b></div>`).join('')}
+      <div class="party-stat-row"><span>Candidate expenditure / simulated ceiling</span><b>${money(result.candidateSpending || 0)} / ${money(result.candidateSpendingLimit || 0)}</b></div>
+      ${result.totalSeats ? `<div class="party-stat-row"><span>Simulated seat projection</span><b>${result.seatsWon} / ${result.totalSeats} · Majority ${result.majorityMark}</b></div><p class="panel-description">${result.hungHouse ? 'No single-party majority in this simulated result. Coalition negotiations would be needed to form a government.' : 'The simulated result reaches the majority threshold.'}</p>` : ''}
       <button class="primary-btn full" data-action="close-election-result">CONTINUE →</button>
     </section>`;
   document.body.appendChild(overlay);
@@ -2819,6 +2871,8 @@ function ensureGovernmentState() {
   if (!g.ministers) g.ministers = {};
   if (!g.departments) g.departments = JSON.parse(JSON.stringify(defaults.government.departments));
   if (!Array.isArray(g.schemes)) g.schemes = [];
+  if (!Array.isArray(g.manifestoPromises)) g.manifestoPromises = [];
+  if (!Array.isArray(g.coalitionPartners)) g.coalitionPartners = [];
   if (!Array.isArray(g.history)) g.history = [];
   if (!Number.isFinite(Number(g.treasury))) g.treasury = 50000000;
   if (!Number.isFinite(Number(g.performance))) g.performance = 50;
@@ -2903,6 +2957,10 @@ function governmentPage() {
       <p class="panel-description">${formed ? `Chief Minister: ${escapeHtml(g.chiefMinister || state.playerName)}. Build your cabinet and deliver programmes.` : 'Win a State Assembly election to unlock government formation, ministerial appointments and administration.'}</p>
       <div class="government-unlock-grid"><div><b>${money(g.treasury)}</b><small>Government treasury</small></div><div><b>${Number(g.performance)}%</b><small>Administration performance</small></div><div><b>${Object.keys(g.ministers).length}/${governmentPortfolios.length}</b><small>Ministers appointed</small></div></div>
       <button class="primary-btn" data-action="gov-form" ${!wins || formed ? 'disabled' : ''}>${formed ? 'GOVERNMENT FORMED' : 'FORM STATE GOVERNMENT'}</button>
+    </section>
+    <section class="panel" style="margin-top:16px">
+      <span class="eyebrow">PUBLIC ACCOUNTABILITY</span><h3>Election manifesto commitments</h3>
+      ${(g.manifestoPromises || []).length ? g.manifestoPromises.slice(0,8).map(item=>`<div class="finance-history"><span>${escapeHtml(item.text)}<br><small>${escapeHtml(item.announcedAt || '')} · ${escapeHtml(item.status || 'Pending')}</small></span><b>${Number(item.progress || 0)}%</b></div>`).join('') : '<p class="panel-description">Winning Assembly candidates will register their manifesto commitments here for public tracking.</p>'}
     </section>
     <div class="command-section-head"><div><span class="eyebrow">COUNCIL OF MINISTERS</span><h2>Cabinet formation</h2></div></div>
     <div class="government-cabinet-grid">${ministries}</div>
