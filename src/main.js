@@ -33,6 +33,8 @@ const defaults = {
   partyUnits: [],
   partyElectionHistory: [],
   partyDisputes: [],
+  partyCampaignPlans: [],
+  partyAuditReports: [],
 
   constituency: {
     state: 'Karnataka',
@@ -153,6 +155,8 @@ function migratePartyManagementSave() {
   if (!Array.isArray(state.partyUnits)) state.partyUnits = [];
   if (!Array.isArray(state.partyElectionHistory)) state.partyElectionHistory = [];
   if (!Array.isArray(state.partyDisputes)) state.partyDisputes = [];
+  if (!Array.isArray(state.partyCampaignPlans)) state.partyCampaignPlans = [];
+  if (!Array.isArray(state.partyAuditReports)) state.partyAuditReports = [];
 
   if (state.partyCreated && state.partyMemberRecords.length === 0) {
     const total = Math.max(1, Number(state.partyMembers) || 1);
@@ -966,7 +970,7 @@ function getPartyMember(id) {
 }
 
 function partySectionTabs() {
-  return ['Overview', 'Treasury', 'Leadership', 'Members', 'Organisation', 'Elections'].map(section => `
+  return ['Overview', 'Treasury', 'Leadership', 'Members', 'Organisation', 'Elections', 'Operations'].map(section => `
     <button class="secondary-btn ${partySection === section ? 'active' : ''}" data-party-section="${section}">${section}</button>
   `).join('');
 }
@@ -1055,6 +1059,97 @@ function partyElectionsSection() {
     </section>`;
 }
 
+
+function partyOperationsSection() {
+  if (!Array.isArray(state.partyCampaignPlans)) state.partyCampaignPlans = [];
+  if (!Array.isArray(state.partyAuditReports)) state.partyAuditReports = [];
+  const active = state.partyCampaignPlans.filter(item => item.status === 'Active');
+  const history = state.partyCampaignPlans.filter(item => item.status !== 'Active');
+  const reports = state.partyAuditReports;
+  return `
+    <section class="panel">
+      <span class="eyebrow">PARTY OPERATIONS COMMAND</span>
+      <h2>Campaign planning & field operations</h2>
+      <p class="panel-description">Create a funded organisational campaign with a target area, objective, budget and duration. Approved budgets are paid only from the party treasury and tracked independently from personal wealth.</p>
+      <div class="stats-grid">
+        ${statCard('ACTIVE CAMPAIGNS', active.length, 'Currently running', '◈')}
+        ${statCard('COMPLETED CAMPAIGNS', history.filter(x=>x.status==='Completed').length, 'Archived operations', '✓')}
+        ${statCard('CAMPAIGN ALLOCATIONS', money(state.partyCampaignPlans.reduce((n,x)=>n+(Number(x.budget)||0),0)), 'Total authorised budgets', '₹')}
+      </div>
+    </section>
+    <section class="panel" style="margin-top:15px">
+      <span class="eyebrow">AUTHORISE A NEW OPERATION</span><h3>Campaign plan</h3>
+      <form id="party-campaign-plan-form" class="creator-grid">
+        <div class="creator-field"><label for="planName">Campaign name</label><input id="planName" name="name" maxlength="70" placeholder="e.g. District membership expansion" required></div>
+        <div class="creator-field"><label for="planType">Campaign type</label><select id="planType" name="type"><option>Membership Expansion</option><option>Public Outreach</option><option>Constituency Organisation</option><option>Policy Awareness</option><option>Election Preparation</option><option>Volunteer Training</option></select></div>
+        <div class="creator-field"><label for="planArea">Target area</label><input id="planArea" name="area" maxlength="70" placeholder="State, district or constituency" required></div>
+        <div class="creator-field"><label for="planBudget">Approved budget (₹)</label><input id="planBudget" name="budget" type="number" min="10000" step="10000" placeholder="500000" required></div>
+        <div class="creator-field"><label for="planDuration">Duration</label><select id="planDuration" name="duration"><option value="1">1 month</option><option value="2">2 months</option><option value="3" selected>3 months</option><option value="6">6 months</option><option value="12">12 months</option></select></div>
+        <div class="creator-field"><label for="planObjective">Expected outcome</label><input id="planObjective" name="objective" maxlength="100" placeholder="Describe measurable organisational outcome" required></div>
+        <button class="primary-btn" type="submit">AUTHORISE FROM PARTY TREASURY →</button>
+      </form>
+    </section>
+    <section class="panel" style="margin-top:15px"><span class="eyebrow">ACTIVE FIELD OPERATIONS</span><h3>Campaign progress</h3>
+      ${active.length ? active.map(item=>`<div class="career-step"><div><b>${escapeHtml(item.name)}</b><small>${escapeHtml(item.type)} · ${escapeHtml(item.area)} · ${item.remainingMonths} month(s) remaining · ${item.progress}% complete</small><small>Budget ${money(item.budget)} · Expected: ${escapeHtml(item.objective)}</small><div class="progress-track"><i style="width:${Math.max(0,Math.min(100,Number(item.progress)||0))}%"></i></div></div><span class="current-label">ACTIVE</span></div>`).join('') : '<p class="panel-description">No active campaigns. Authorise a campaign plan to begin field operations.</p>'}
+    </section>
+    <section class="panel" style="margin-top:15px"><span class="eyebrow">CAMPAIGN ARCHIVE</span><h3>Completed and cancelled operations</h3>
+      ${history.length ? history.slice(0,12).map(item=>`<div class="career-step"><div><b>${escapeHtml(item.name)}</b><small>${escapeHtml(item.area)} · ${escapeHtml(item.startedAt)} · ${escapeHtml(item.status)} · ${money(item.budget)}</small></div><span class="current-label">${item.progress || 0}%</span></div>`).join('') : '<p class="panel-description">Campaign history will appear here.</p>'}
+    </section>
+    <section class="panel" style="margin-top:15px"><span class="eyebrow">FINANCIAL GOVERNANCE</span><h3>Internal treasury review</h3>
+      <p class="panel-description">Create a dated internal snapshot of recorded income, expenditure, available balance and ledger activity. This is a game audit record, not a statutory audit or legal certification.</p>
+      <button class="secondary-btn" data-party-audit>GENERATE INTERNAL FINANCIAL REVIEW →</button>
+      ${reports.length ? reports.slice(0,6).map(report=>`<div class="career-step"><div><b>Internal review · ${escapeHtml(report.date)}</b><small>Income ${money(report.income)} · Expenditure ${money(report.expense)} · Balance ${money(report.balance)} · ${report.entries} ledger entries</small></div><span class="current-label">RECORDED</span></div>`).join('') : '<p class="panel-description">No internal reviews have been generated.</p>'}
+    </section>`;
+}
+
+function createPartyCampaignPlan(form) {
+  const data = new FormData(form);
+  const name = String(data.get('name') || '').trim();
+  const type = String(data.get('type') || 'Public Outreach');
+  const area = String(data.get('area') || '').trim();
+  const objective = String(data.get('objective') || '').trim();
+  const budget = Math.floor(Number(data.get('budget')) || 0);
+  const duration = Math.max(1, Math.min(12, Number(data.get('duration')) || 3));
+  if (!name || !area || !objective || budget < 10000) return toast('Complete the campaign details and enter a budget of at least ₹10,000.');
+  if (state.partyId === 'independent') return toast('Join or establish a party before authorising party operations.');
+  if (budget > Number(state.partyFunds || 0)) return toast(`Insufficient party treasury. Available: ${money(state.partyFunds)}. Personal wealth cannot be used.`);
+  addPartyLedgerEntry('Expense', budget, `Campaign operation authorised: ${name} · ${area}`);
+  const plan = { id: 'party-campaign-' + Date.now(), name, type, area, objective, budget, duration, remainingMonths: duration, progress: 0, status: 'Active', startedAt: dateText(), monthlyReport: [] };
+  state.partyCampaignPlans.unshift(plan);
+  state.partyCampaignPlans = state.partyCampaignPlans.slice(0, 40);
+  state.partyHistory.unshift({ event: `Party campaign operation authorised: ${name} in ${area}`, date: dateText() });
+  saveState(); render(); toast('Campaign authorised and charged to the party treasury.');
+}
+
+function advancePartyCampaignOperations() {
+  if (!Array.isArray(state.partyCampaignPlans)) state.partyCampaignPlans = [];
+  for (const plan of state.partyCampaignPlans) {
+    if (plan.status !== 'Active') continue;
+    plan.remainingMonths = Math.max(0, Number(plan.remainingMonths || 1) - 1);
+    plan.progress = Math.min(100, Math.round((Number(plan.progress) || 0) + 100 / Math.max(1, Number(plan.duration) || 1)));
+    if (!Array.isArray(plan.monthlyReport)) plan.monthlyReport = [];
+    plan.monthlyReport.unshift({ date: dateText(), progress: plan.progress, note: 'Monthly field-operation review completed.' });
+    if (plan.remainingMonths <= 0 || plan.progress >= 100) {
+      plan.remainingMonths = 0;
+      plan.progress = 100;
+      plan.status = 'Completed';
+      state.partyPopularity = Math.min(100, Number(state.partyPopularity || 0) + 1);
+      state.partyHistory.unshift({ event: `Party campaign completed: ${plan.name}`, date: dateText() });
+    }
+  }
+}
+
+function generatePartyAuditReport() {
+  if (!state.partyTreasury || typeof state.partyTreasury !== 'object') state.partyTreasury = { incomeTotal: 0, expenseTotal: 0, ledger: [] };
+  if (!Array.isArray(state.partyAuditReports)) state.partyAuditReports = [];
+  const ledger = Array.isArray(state.partyTreasury.ledger) ? state.partyTreasury.ledger : [];
+  const report = { id: 'party-audit-' + Date.now(), date: dateText(), income: Number(state.partyTreasury.incomeTotal) || 0, expense: Number(state.partyTreasury.expenseTotal) || 0, balance: Number(state.partyFunds) || 0, entries: ledger.length, incomeEntries: ledger.filter(x=>x.type==='Income').length, expenseEntries: ledger.filter(x=>x.type==='Expense').length };
+  state.partyAuditReports.unshift(report);
+  state.partyAuditReports = state.partyAuditReports.slice(0,24);
+  state.partyHistory.unshift({ event: 'Internal party treasury review generated', date: dateText() });
+  saveState(); render(); toast('Internal financial review recorded.');
+}
+
 function createdPartyPage() {
   let sectionContent = partyOverviewSection();
   if (partySection === 'Treasury') sectionContent = partyTreasurySection();
@@ -1062,6 +1157,7 @@ function createdPartyPage() {
   if (partySection === 'Members') sectionContent = partyMembersSection();
   if (partySection === 'Organisation') sectionContent = partyOrganisationSection();
   if (partySection === 'Elections') sectionContent = partyElectionsSection();
+  if (partySection === 'Operations') sectionContent = partyOperationsSection();
   return `
     <div class="page-heading"><div><div class="eyebrow">FOUNDER & PARTY PRESIDENT</div><h1>Your political <em>movement</em></h1><p>Manage your party, leadership and grassroots organisation.</p></div></div>
     <section class="panel party-headquarters"><div class="party-large-emblem">${escapeHtml(state.partyAbbreviation.slice(0,1))}</div><span class="gold-tag">PARTY FOUNDER</span><h2>${escapeHtml(state.party)}</h2><p class="panel-description">${escapeHtml(state.partyIdeology)}</p>
@@ -1469,18 +1565,19 @@ function investFixedDeposit(form) {
 }
 
 function processMonthlyFinances() {
+  advancePartyCampaignOperations();
   if (state.partyId && state.partyId !== 'independent') {
     const members = Math.max(1, Number(state.partyMembers) || 1);
     const popularity = Math.max(0, Math.min(100, Number(state.partyPopularity) || 0));
     // Annual member subscription model, recognised monthly in the game ledger.
     const membershipIncome = Math.round(members * 100 / 12);
     // Simulated small-donor contributions scale with organisation size and public support.
-    const publicContributions = Math.round((members * 5) + (popularity * 1000));
-    const monthlyAdminCost = Math.round(5000 + (members * 5) + (popularity * 250));
+    const publicContributions = Math.round((members * 100) + (popularity * 5000));
+    const monthlyAdminCost = Math.round(25000 + (members * 50) + (popularity * 2500));
     if (membershipIncome > 0) addPartyLedgerEntry('Income', membershipIncome, 'Monthly accrual of annual membership subscriptions (₹100 per member/year)');
     if (publicContributions > 0) addPartyLedgerEntry('Income', publicContributions, 'Simulated voluntary small-donor contributions');
     if (monthlyAdminCost > 0 && Number(state.partyFunds) >= monthlyAdminCost) {
-      addPartyLedgerEntry('Expense', monthlyAdminCost, 'Monthly party administration, offices and organisation');
+      addPartyLedgerEntry('Expense', monthlyAdminCost, 'Monthly party offices, staff and organisational overhead');
     } else if (monthlyAdminCost > 0) {
       if (!state.partyTreasury) state.partyTreasury = { incomeTotal: 0, expenseTotal: 0, ledger: [] };
       state.partyTreasury.lastUnpaidOperatingCost = monthlyAdminCost;
@@ -1742,8 +1839,8 @@ function partyTreasurySection() {
   const members = Math.max(1, Number(state.partyMembers) || 1);
   const popularity = Math.max(0, Math.min(100, Number(state.partyPopularity) || 0));
   const monthlyDues = Math.round(members * 100 / 12);
-  const monthlyDonations = Math.round((members * 5) + (popularity * 1000));
-  const monthlyOverhead = Math.round(5000 + (members * 5) + (popularity * 250));
+  const monthlyDonations = Math.round((members * 100) + (popularity * 5000));
+  const monthlyOverhead = Math.round(25000 + (members * 50) + (popularity * 2500));
   return `
     <section class="panel">
       <span class="eyebrow">PARTY FINANCE & COMPLIANCE</span><h3>Independent party treasury</h3>
@@ -1755,7 +1852,7 @@ function partyTreasurySection() {
     <section class="panel" style="margin-top:15px">
       <span class="eyebrow">MONTHLY FINANCIAL FORECAST</span><h3>Estimated recurring finances</h3>
       <div class="party-stat-row"><span>Membership subscriptions · ₹100/member/year</span><b class="finance-positive">+${money(monthlyDues)}</b></div>
-      <div class="party-stat-row"><span>Simulated small-donor contributions</span><b class="finance-positive">+${money(monthlyDonations)}</b></div>
+      <div class="party-stat-row"><span>Simulated voluntary contributions</span><b class="finance-positive">+${money(monthlyDonations)}</b></div>
       <div class="party-stat-row"><span>Office and organisation overhead</span><b>-${money(monthlyOverhead)}</b></div>
       <p class="panel-description">Forecast only. Actual monthly transactions are posted when you advance the game month. Donations are simulated and are not guaranteed.</p>
     </section>
@@ -3952,6 +4049,9 @@ if (!Array.isArray(state.media.history)) state.media.history = [];
   const mediaResolve = event.target.closest('[data-media-resolve]');
   if (mediaResolve) { resolveMediaControversy(mediaResolve.dataset.mediaResolve); return; }
 
+  const partyAuditButton = event.target.closest('[data-party-audit]');
+  if (partyAuditButton) { generatePartyAuditReport(); return; }
+
   const partyCampaignButton = event.target.closest('[data-party-campaign]');
   if (partyCampaignButton) { authorisePartyCampaign(partyCampaignButton.dataset.partyCampaign); return; }
 
@@ -4111,6 +4211,7 @@ document.addEventListener('submit', event => {
   if (event.target.id === 'add-member-form') { event.preventDefault(); addPartyMember(event.target); }
   if (event.target.id === 'party-unit-form') { event.preventDefault(); createPartyUnit(event.target); }
   if (event.target.id === 'party-election-form') { event.preventDefault(); holdPartyElection(event.target); }
+  if (event.target.id === 'party-campaign-plan-form') { event.preventDefault(); createPartyCampaignPlan(event.target); }
   if (event.target.id === 'party-dispute-form') { event.preventDefault(); registerPartyDispute(event.target); }
   if (event.target.id === 'constituency-setup-form') { event.preventDefault(); saveConstituencySetup(event.target); }
   if (event.target.id === 'development-project-form') { event.preventDefault(); startDevelopmentProject(event.target); }
