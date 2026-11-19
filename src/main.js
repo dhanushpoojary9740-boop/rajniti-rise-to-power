@@ -342,7 +342,7 @@ function statCard(label, value, sub, symbol) {
 function shell(content) {
   const nav = [
     'Dashboard', 'Career', 'Activities', 'Party',
-    'Constituency', 'Constituency Intel', 'India Map', 'Elections', 'Government', 'Parliament',
+    'Constituency', 'Constituency Intel', 'India Map', 'Elections', 'Government', 'Parliament', 'Alliances',
     'Relationships', 'Intelligence', 'Public Opinion', 'Finance', 'News', 'Profile'
   ];
 
@@ -2896,6 +2896,78 @@ function constituencyIntelligencePage() {
 }
 
 
+
+function ensureAllianceState() {
+  if (!state.alliances || typeof state.alliances !== 'object') {
+    state.alliances = { partners: [], rivalCoalition: [], history: [], seatSharing: {}, stability: 50, coalitionName: 'National Progress Coalition' };
+  }
+  const a = state.alliances;
+  for (const key of ['partners', 'rivalCoalition', 'history']) if (!Array.isArray(a[key])) a[key] = [];
+  if (!a.seatSharing || typeof a.seatSharing !== 'object') a.seatSharing = {};
+  a.stability = Math.max(0, Math.min(100, Number(a.stability) || 50));
+  return a;
+}
+const allianceParties = [
+  { id: 'regional-development', name: 'Regional Development Front', seats: 12, demand: 'Infrastructure portfolio' },
+  { id: 'farmers-united', name: 'Farmers United Party', seats: 9, demand: 'Agriculture portfolio' },
+  { id: 'people-first', name: 'People First Movement', seats: 7, demand: 'Rural welfare commitments' },
+  { id: 'green-citizens', name: 'Green Citizens League', seats: 6, demand: 'Environment portfolio' },
+  { id: 'workers-voice', name: 'Workers Voice Party', seats: 8, demand: 'Employment policy commitments' }
+];
+function alliancesPage() {
+  const a = ensureAllianceState();
+  const p = ensureParliamentState();
+  const totalPartnerSeats = a.partners.reduce((n, x) => n + Number(x.seats || 0), 0);
+  const majority = Math.floor(p.seats / 2) + 1;
+  const options = allianceParties.filter(x => !a.partners.some(y => y.id === x.id));
+  return `<section class="page-heading"><span class="eyebrow">COALITION STRATEGY</span><h1>Political Alliances</h1><p>Negotiate partnerships, share seats and maintain coalition confidence.</p></section>
+  <div class="stats-grid">${statCard('Coalition partners',a.partners.length,'Active partners','⚑')}${statCard('Partner seats',totalPartnerSeats,'Illustrative seats','▤')}${statCard('Coalition stability',a.stability+'%','Partner confidence index','◇')}${statCard('Majority target',majority,'Illustrative house model','🏛')}</div>
+  <div class="dashboard-grid"><section class="panel"><span class="eyebrow">YOUR COALITION</span><h2>${escapeHtml(a.coalitionName)}</h2><p>Current party seats: ${p.rulingSeats}. Partner seats: ${totalPartnerSeats}. Combined strength: ${p.rulingSeats+totalPartnerSeats} / ${p.seats}.</p>
+  <label class="field-label">Coalition name</label><input id="coalitionName" class="text-input" maxlength="50" value="${escapeHtml(a.coalitionName)}"><button class="primary-btn" data-alliance-action="rename">SAVE COALITION NAME</button>
+  <p><b>${p.rulingSeats+totalPartnerSeats >= majority ? 'Majority secured' : 'Majority not secured'}</b></p></section>
+  <section class="panel"><span class="eyebrow">NEGOTIATION DESK</span><h2>Invite a party</h2>${options.map(x=>`<div class="history-row alliance-option"><div><b>${escapeHtml(x.name)}</b><small>${x.seats} seats · Demand: ${escapeHtml(x.demand)}</small></div><button class="secondary-btn" data-alliance-join="${x.id}">NEGOTIATE</button></div>`).join('') || '<p class="muted">All available parties have been approached.</p>'}</section></div>
+  <section class="panel"><span class="eyebrow">CABINET BARGAINING</span><h2>Partner agreements</h2>${a.partners.length ? a.partners.map(x=>`<div class="history-row"><div><b>${escapeHtml(x.name)}</b><small>${x.seats} seats · ${escapeHtml(x.demand)}</small></div><span>${escapeHtml(x.status || 'Agreement active')}</span><button class="text-btn" data-alliance-withdraw="${x.id}">REMOVE</button></div>`).join('') : '<p class="muted">No coalition partners yet. Invite parties to begin negotiations.</p>'}
+  <div class="alliance-actions"><button class="secondary-btn" data-alliance-action="confidence">REVIEW COALITION CONFIDENCE</button><button class="secondary-btn" data-alliance-action="seat-sharing">SIGN SEAT-SHARING AGREEMENT</button><button class="secondary-btn" data-alliance-action="rival">SIMULATE OPPOSITION ALLIANCE</button></div></section>
+  <section class="panel"><span class="eyebrow">DIPLOMATIC RECORD</span><h2>Alliance history</h2>${a.history.length ? a.history.slice().reverse().map(x=>`<div class="history-row"><b>${escapeHtml(x.event)}</b><small>${escapeHtml(x.date)}</small></div>`).join('') : '<p class="muted">No alliance negotiations recorded.</p>'}</section>`;
+}
+function allianceAction(action, id='') {
+  const a = ensureAllianceState(), p = ensureParliamentState();
+  if (action === 'join') {
+    const party = allianceParties.find(x=>x.id===id);
+    if (!party || a.partners.some(x=>x.id===id)) return;
+    a.partners.push({...party, status:'Agreement active'});
+    a.stability = Math.min(100, a.stability+5);
+    a.history.push({event:`Alliance agreement signed with ${party.name}`,date:dateText()});
+    toast(`${party.name} joined your coalition.`);
+  } else if (action === 'withdraw') {
+    const party = a.partners.find(x=>x.id===id);
+    if (!party) return;
+    a.partners = a.partners.filter(x=>x.id!==id);
+    a.stability = Math.max(0,a.stability-12);
+    a.history.push({event:`${party.name} withdrew from coalition`,date:dateText()});
+    toast('Coalition partner removed.');
+  } else if (action === 'rename') {
+    const value = document.querySelector('#coalitionName')?.value.trim();
+    if (!value) { toast('Enter a coalition name.'); return; }
+    a.coalitionName = value;
+    a.history.push({event:`Coalition renamed to ${value}`,date:dateText()});
+  } else if (action === 'confidence') {
+    const strength = p.rulingSeats + a.partners.reduce((n,x)=>n+Number(x.seats||0),0);
+    a.stability = Math.max(0,Math.min(100, Math.round((strength/p.seats)*100)));
+    a.history.push({event:`Coalition confidence reviewed: ${a.stability}% stability`,date:dateText()});
+    toast(`Coalition stability: ${a.stability}%`);
+  } else if (action === 'seat-sharing') {
+    a.history.push({event:'Seat-sharing agreement signed with current coalition partners',date:dateText()});
+    a.stability = Math.min(100,a.stability+3);
+    toast('Seat-sharing agreement recorded.');
+  } else if (action === 'rival') {
+    if (!a.rivalCoalition.length) a.rivalCoalition = [{name:'United Opposition Front',seats:Math.min(35,Math.max(12, p.oppositionSeats))}];
+    a.history.push({event:'Opposition parties announced the United Opposition Front',date:dateText()});
+    toast('Opposition alliance simulation updated.');
+  }
+  saveState(); render();
+}
+
 function ensureParliamentState() {
   if (!state.parliament || typeof state.parliament !== 'object') {
     state.parliament = { seats: 224, rulingSeats: 0, oppositionSeats: 0, bills: [], sessions: 0, questions: 0, confidence: 'Not tested', alliances: [], history: [] };
@@ -2999,6 +3071,9 @@ function render() {
       break;
     case 'Parliament':
       content = parliamentPage();
+      break;
+    case 'Alliances':
+      content = alliancesPage();
       break;
     default:
       content = genericPage(activeTab);
@@ -3115,6 +3190,13 @@ if (!Array.isArray(state.media.history)) state.media.history = [];
     performActivity(activity.dataset.activity);
     return;
   }
+
+  const allianceJoin = event.target.closest('[data-alliance-join]');
+  if (allianceJoin) { allianceAction('join', allianceJoin.dataset.allianceJoin); return; }
+  const allianceWithdraw = event.target.closest('[data-alliance-withdraw]');
+  if (allianceWithdraw) { allianceAction('withdraw', allianceWithdraw.dataset.allianceWithdraw); return; }
+  const allianceButton = event.target.closest('[data-alliance-action]');
+  if (allianceButton) { allianceAction(allianceButton.dataset.allianceAction); return; }
 
   const parliamentButton = event.target.closest('[data-parliament-action]');
   if (parliamentButton) { parliamentAction(parliamentButton.dataset.parliamentAction); return; }

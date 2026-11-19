@@ -1868,3 +1868,15 @@ button {
 /* RAJNITI 1.1.6 Parliament */
 .text-input{width:100%;margin:8px 0;padding:12px;border:1px solid var(--border,#39465a);border-radius:10px;background:var(--panel,#121b2a);color:inherit}
 .history-row{display:flex;gap:12px;align-items:center;justify-content:space-between;padding:12px 0;border-bottom:1px solid var(--border,#39465a);flex-wrap:wrap}
+
+
+/* RAJNITI 1.1.7 — Political alliances and coalition management */
+.alliance-option { align-items: center; gap: 14px; }
+.alliance-option > div { display: flex; flex-direction: column; gap: 5px; }
+.alliance-option small { color: var(--muted, #9b9b9b); font-size: 12px; }
+.alliance-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 18px; }
+[data-alliance-withdraw] { margin-left: auto; }
+@media (min-width: 900px) {
+  .alliance-option { padding: 14px 0; }
+  .alliance-actions > button { flex: 1 1 220px; }
+}
