@@ -1572,3 +1572,189 @@ button {
   .intel-region-grid { grid-template-columns:repeat(2,minmax(0,1fr)); }
   .government-cabinet-grid { grid-template-columns:repeat(2,minmax(0,1fr)); }
 }
+
+
+/* RAJNITI 1.1.2 — INDIA STATE ATLAS */
+.india-atlas-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(300px, .85fr);
+  gap: 16px;
+  align-items: start;
+}
+.atlas-map-panel, .atlas-state-detail, .atlas-district-panel, .atlas-expansion-panel {
+  min-width: 0;
+}
+.atlas-region-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 16px;
+}
+.atlas-region {
+  padding: 12px;
+  border: 1px solid var(--border, #29374c);
+  border-radius: 10px;
+  background: rgba(255,255,255,.018);
+}
+.atlas-region-title {
+  color: var(--gold, #d9b66d);
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 1.7px;
+  margin-bottom: 9px;
+}
+.atlas-state-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+}
+.atlas-state-button, .atlas-district-button {
+  appearance: none;
+  border: 1px solid var(--border, #29374c);
+  background: #111e30;
+  color: var(--text, #e8edf5);
+  border-radius: 7px;
+  padding: 9px 10px;
+  min-height: 36px;
+  text-align: left;
+  font: inherit;
+  font-size: 10px;
+  cursor: pointer;
+  transition: border-color .15s ease, background .15s ease;
+}
+.atlas-state-button:hover, .atlas-district-button:hover {
+  border-color: #b99453;
+}
+.atlas-state-button.selected, .atlas-district-button.selected {
+  border-color: #d6b46b;
+  background: linear-gradient(135deg, rgba(199,158,83,.22), rgba(199,158,83,.07));
+  color: #f1d28c;
+}
+.atlas-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  margin-top: 14px;
+  color: var(--muted, #8f9bad);
+  font-size: 9px;
+}
+.atlas-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.atlas-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #53647a;
+}
+.atlas-dot.selected-dot {
+  background: #d6b46b;
+  box-shadow: 0 0 9px rgba(214,180,107,.6);
+}
+.atlas-detail-column {
+  display: grid;
+  gap: 12px;
+}
+.atlas-state-detail h2 {
+  font-size: 24px;
+  margin: 12px 0 6px;
+}
+.atlas-stat-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 15px;
+}
+.atlas-stat-grid > div {
+  border: 1px solid var(--border, #29374c);
+  border-radius: 8px;
+  padding: 11px;
+  background: rgba(255,255,255,.025);
+  display: grid;
+  gap: 5px;
+}
+.atlas-stat-grid small {
+  color: var(--muted, #8f9bad);
+  font-size: 8px;
+  letter-spacing: 1px;
+}
+.atlas-stat-grid b {
+  font-size: 17px;
+}
+.atlas-note {
+  margin-top: 12px;
+  padding: 10px 11px;
+  border-left: 2px solid #c8a45f;
+  background: rgba(255,255,255,.035);
+  color: var(--muted, #9ba8ba);
+  font-size: 9px;
+  line-height: 1.6;
+}
+.atlas-district-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px;
+  margin: 12px 0;
+}
+.atlas-district-button {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+.atlas-district-button b {
+  color: #c6a66b;
+  font-size: 7px;
+  letter-spacing: .7px;
+  white-space: nowrap;
+}
+.atlas-selected-summary {
+  border-top: 1px solid var(--border, #29374c);
+  padding-top: 13px;
+  margin-top: 12px;
+}
+.atlas-selected-summary strong {
+  display: block;
+  margin-top: 7px;
+  font-size: 14px;
+}
+.atlas-expansion-panel h3 {
+  margin: 8px 0 5px;
+  font-size: 15px;
+}
+@media (max-width: 760px) {
+  .india-atlas-layout {
+    grid-template-columns: 1fr;
+  }
+  .atlas-region-grid {
+    grid-template-columns: 1fr;
+  }
+}
+@media screen and (orientation: landscape) and (min-width: 600px) {
+  .india-atlas-layout {
+    grid-template-columns: minmax(0, 1.2fr) minmax(320px, .8fr);
+    gap: 14px;
+  }
+  .atlas-region-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .atlas-state-button {
+    min-height: 32px;
+    padding: 7px 8px;
+    font-size: 9px;
+  }
+  .atlas-district-list {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media screen and (orientation: landscape) and (min-width: 1100px) {
+  .india-atlas-layout {
+    grid-template-columns: minmax(0, 1.35fr) minmax(380px, .75fr);
+  }
+  .atlas-region-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}

@@ -84,6 +84,8 @@ const defaults = {
   completed: [],
   activityHistory: [],
   reviewedNews: [],
+  mapState: 'Karnataka',
+  mapDistrict: 'Udupi',
   activeTab: 'Dashboard'
 };
 
@@ -268,6 +270,7 @@ function icon(name) {
     Finance: '₹',
     News: '▣',
     Intelligence: '◈',
+    'India Map': '⌖',
     Profile: '◉'
   };
   return icons[name] || '•';
@@ -309,7 +312,7 @@ function statCard(label, value, sub, symbol) {
 function shell(content) {
   const nav = [
     'Dashboard', 'Career', 'Activities', 'Party',
-    'Constituency', 'Elections', 'Government',
+    'Constituency', 'India Map', 'Elections', 'Government',
     'Relationships', 'Intelligence', 'Finance', 'News', 'Profile'
   ];
 
@@ -368,7 +371,7 @@ function shell(content) {
       </main>
 
       <nav class="mobile-nav">
-        ${['Dashboard', 'Career', 'Party', 'Constituency', 'Elections', 'Intelligence', 'Finance', 'News', 'Activities', 'Profile']
+        ${['Dashboard', 'Career', 'Party', 'Constituency', 'India Map', 'Elections', 'Intelligence', 'Finance', 'News', 'Activities', 'Profile']
           .map(name => `
             <button class="${activeTab === name ? 'active' : ''}"
               data-tab="${name}">
@@ -2369,6 +2372,167 @@ function genericPage(name) {
   `;
 }
 
+
+/* INDIA POLITICAL STATE ATLAS — RAJNITI 1.1.2
+   The state/district directory is a playable simulation index, not an official
+   administrative boundary dataset. District lists are representative samples. */
+const indiaAtlas = [
+  { region: 'North', states: [
+    { name: 'Jammu and Kashmir', districts: ['Srinagar', 'Jammu', 'Anantnag', 'Baramulla'] },
+    { name: 'Himachal Pradesh', districts: ['Shimla', 'Kangra', 'Mandi', 'Solan'] },
+    { name: 'Punjab', districts: ['Amritsar', 'Ludhiana', 'Jalandhar', 'Patiala'] },
+    { name: 'Haryana', districts: ['Gurugram', 'Faridabad', 'Hisar', 'Karnal'] },
+    { name: 'Uttarakhand', districts: ['Dehradun', 'Haridwar', 'Nainital', 'Udham Singh Nagar'] },
+    { name: 'Uttar Pradesh', districts: ['Lucknow', 'Varanasi', 'Kanpur Nagar', 'Prayagraj', 'Gorakhpur'] },
+    { name: 'Delhi', districts: ['Central Delhi', 'East Delhi', 'New Delhi', 'South Delhi'] },
+    { name: 'Chandigarh', districts: ['Chandigarh'] },
+    { name: 'Ladakh', districts: ['Leh', 'Kargil'] }
+  ]},
+  { region: 'West', states: [
+    { name: 'Rajasthan', districts: ['Jaipur', 'Jodhpur', 'Udaipur', 'Kota'] },
+    { name: 'Gujarat', districts: ['Ahmedabad', 'Surat', 'Vadodara', 'Rajkot'] },
+    { name: 'Maharashtra', districts: ['Mumbai City', 'Pune', 'Nagpur', 'Nashik'] },
+    { name: 'Goa', districts: ['North Goa', 'South Goa'] },
+    { name: 'Dadra and Nagar Haveli and Daman and Diu', districts: ['Dadra and Nagar Haveli', 'Daman', 'Diu'] }
+  ]},
+  { region: 'Central', states: [
+    { name: 'Madhya Pradesh', districts: ['Bhopal', 'Indore', 'Jabalpur', 'Gwalior'] },
+    { name: 'Chhattisgarh', districts: ['Raipur', 'Bilaspur', 'Durg', 'Bastar'] }
+  ]},
+  { region: 'East', states: [
+    { name: 'Bihar', districts: ['Patna', 'Gaya', 'Muzaffarpur', 'Bhagalpur'] },
+    { name: 'Jharkhand', districts: ['Ranchi', 'Dhanbad', 'Jamshedpur', 'Hazaribagh'] },
+    { name: 'Odisha', districts: ['Khordha', 'Cuttack', 'Ganjam', 'Sambalpur'] },
+    { name: 'West Bengal', districts: ['Kolkata', 'Howrah', 'Darjeeling', 'North 24 Parganas'] },
+    { name: 'Sikkim', districts: ['Gangtok', 'Namchi', 'Gyalshing', 'Mangan'] }
+  ]},
+  { region: 'South', states: [
+    { name: 'Andhra Pradesh', districts: ['Visakhapatnam', 'Vijayawada', 'Guntur', 'Nellore'] },
+    { name: 'Karnataka', districts: ['Udupi', 'Dakshina Kannada', 'Uttara Kannada', 'Shivamogga', 'Mysuru', 'Bengaluru Urban'] },
+    { name: 'Kerala', districts: ['Kasaragod', 'Kannur', 'Wayanad', 'Kozhikode', 'Ernakulam', 'Thiruvananthapuram'] },
+    { name: 'Tamil Nadu', districts: ['Chennai', 'Coimbatore', 'Madurai', 'Salem', 'Thanjavur'] },
+    { name: 'Telangana', districts: ['Hyderabad', 'Warangal', 'Karimnagar', 'Nizamabad'] },
+    { name: 'Puducherry', districts: ['Puducherry', 'Karaikal', 'Mahe', 'Yanam'] }
+  ]},
+  { region: 'North East', states: [
+    { name: 'Arunachal Pradesh', districts: ['Itanagar', 'Tawang', 'Papum Pare', 'Namsai'] },
+    { name: 'Assam', districts: ['Kamrup Metropolitan', 'Dibrugarh', 'Jorhat', 'Cachar'] },
+    { name: 'Manipur', districts: ['Imphal West', 'Imphal East', 'Thoubal', 'Churachandpur'] },
+    { name: 'Meghalaya', districts: ['East Khasi Hills', 'West Garo Hills', 'Ri-Bhoi', 'West Jaintia Hills'] },
+    { name: 'Mizoram', districts: ['Aizawl', 'Lunglei', 'Champhai', 'Kolasib'] },
+    { name: 'Nagaland', districts: ['Kohima', 'Dimapur', 'Mokokchung', 'Mon'] },
+    { name: 'Tripura', districts: ['West Tripura', 'Gomati', 'Sepahijala', 'North Tripura'] }
+  ]}
+];
+
+function getAtlasState(name) {
+  for (const region of indiaAtlas) {
+    const found = region.states.find(item => item.name === name);
+    if (found) return found;
+  }
+  return indiaAtlas.find(region => region.region === 'South').states.find(item => item.name === 'Karnataka');
+}
+
+function indiaMapPage() {
+  const selectedState = getAtlasState(state.mapState || state.constituency?.state || 'Karnataka');
+  const selectedDistrict = selectedState.districts.includes(state.mapDistrict)
+    ? state.mapDistrict
+    : selectedState.districts[0];
+  const stateCount = indiaAtlas.reduce((sum, region) => sum + region.states.length, 0);
+  const currentFocus = state.constituency?.state === selectedState.name
+    && state.constituency?.district === selectedDistrict;
+  const trackedVoters = currentFocus
+    ? Number(state.constituency?.totalVoters || 0)
+    : 0;
+  const localities = currentFocus && Array.isArray(state.constituency?.localities)
+    ? state.constituency.localities.length
+    : 0;
+
+  return `
+    <div class="page-heading india-atlas-heading">
+      <div>
+        <div class="eyebrow">NATIONAL POLITICAL GEOGRAPHY · OFFLINE SIMULATION</div>
+        <h1>India <em>state atlas</em></h1>
+        <p>Select a state and district to inspect your political footprint and regional directory.</p>
+      </div>
+      <div class="date-card">
+        <span>ATLAS COVERAGE</span>
+        <b>${stateCount} regions</b>
+        <small>States and Union Territories</small>
+      </div>
+    </div>
+
+    <div class="india-atlas-layout">
+      <section class="panel atlas-map-panel">
+        <div class="command-section-head">
+          <div><span class="eyebrow">INDIA · REGIONAL SELECTOR</span><h2>Choose your state</h2></div>
+          <span class="command-symbol">⌖</span>
+        </div>
+        <p class="panel-description">Tap a state or Union Territory to open its district directory. This is a schematic game atlas, not a survey-accurate boundary map.</p>
+        <div class="atlas-region-grid">
+          ${indiaAtlas.map(region => `
+            <section class="atlas-region">
+              <div class="atlas-region-title">${escapeHtml(region.region)} INDIA</div>
+              <div class="atlas-state-grid">
+                ${region.states.map(item => `
+                  <button class="atlas-state-button ${selectedState.name === item.name ? 'selected' : ''}"
+                    data-map-state="${escapeHtml(item.name)}" title="${escapeHtml(item.name)}">
+                    ${escapeHtml(item.name)}
+                  </button>
+                `).join('')}
+              </div>
+            </section>
+          `).join('')}
+        </div>
+        <div class="atlas-legend"><span><i class="atlas-dot selected-dot"></i> Selected region</span><span><i class="atlas-dot"></i> Available region</span></div>
+      </section>
+
+      <div class="atlas-detail-column">
+        <section class="panel atlas-state-detail">
+          <span class="gold-tag">${escapeHtml(selectedState.name.toUpperCase())}</span>
+          <h2>${escapeHtml(selectedState.name)}</h2>
+          <p class="panel-description">Regional political overview and district selection.</p>
+          <div class="atlas-stat-grid">
+            <div><small>PLAYER INFLUENCE</small><b>${Math.max(0, Math.min(100, Number(state.influence || 0)))}/100</b></div>
+            <div><small>PUBLIC SUPPORT</small><b>${Math.max(0, Math.min(100, Number(state.publicSupport || 0)))}%</b></div>
+            <div><small>TRACKED VOTERS</small><b>${trackedVoters.toLocaleString('en-IN')}</b></div>
+            <div><small>LOCALITIES TRACKED</small><b>${localities}</b></div>
+          </div>
+          <div class="atlas-note">Player influence and public support are your current career-wide simulation values. Voter and locality counts appear only when this district matches your active constituency.</div>
+        </section>
+
+        <section class="panel atlas-district-panel">
+          <div class="command-section-head compact">
+            <div><span class="eyebrow">DISTRICT DIRECTORY</span><h2>Select a district</h2></div>
+            <span class="command-symbol">▦</span>
+          </div>
+          <div class="atlas-district-list">
+            ${selectedState.districts.map(district => `
+              <button class="atlas-district-button ${selectedDistrict === district ? 'selected' : ''}"
+                data-map-district="${escapeHtml(district)}">
+                <span>${escapeHtml(district)}</span><b>${selectedDistrict === district ? 'SELECTED' : 'OPEN'}</b>
+              </button>
+            `).join('')}
+          </div>
+          <div class="atlas-selected-summary">
+            <span class="eyebrow">CURRENT ATLAS SELECTION</span>
+            <strong>${escapeHtml(selectedDistrict)}, ${escapeHtml(selectedState.name)}</strong>
+            <p class="panel-description">Use this selection as your active political constituency region. Existing localities and election records will be preserved.</p>
+            <button class="primary-btn full" data-map-focus="1">SET AS POLITICAL FOCUS →</button>
+          </div>
+        </section>
+
+        <section class="panel atlas-expansion-panel">
+          <span class="eyebrow">NEXT ATLAS EXPANSION</span>
+          <h3>Constituency-level intelligence</h3>
+          <p class="panel-description">The current release provides a state and sample-district directory. Detailed assembly constituency boundaries, seat profiles and region-specific election records will be added in later updates.</p>
+        </section>
+      </div>
+    </div>
+  `;
+}
+
+
 /* MAIN RENDER */
 
 function render() {
@@ -2399,6 +2563,9 @@ function render() {
     case 'Constituency':
       content = constituencyPage();
       break;
+    case 'India Map':
+      content = indiaMapPage();
+      break;
     case 'Elections':
       content = electionPage();
       break;
@@ -2424,6 +2591,37 @@ function render() {
 /* EVENT HANDLERS */
 
 document.addEventListener('click', event => {
+  const mapStateButton = event.target.closest('[data-map-state]');
+  if (mapStateButton) {
+    state.mapState = mapStateButton.dataset.mapState;
+    const selected = getAtlasState(state.mapState);
+    state.mapDistrict = selected.districts[0];
+    saveState();
+    render();
+    return;
+  }
+
+  const mapDistrictButton = event.target.closest('[data-map-district]');
+  if (mapDistrictButton) {
+    state.mapDistrict = mapDistrictButton.dataset.mapDistrict;
+    saveState();
+    render();
+    return;
+  }
+
+  const mapFocusButton = event.target.closest('[data-map-focus]');
+  if (mapFocusButton) {
+    if (!state.constituency) state.constituency = { state: 'Karnataka', district: 'Udupi', localities: [], campaigns: [], projects: [], resolvedIssues: [], totalVoters: 0 };
+    state.constituency.state = state.mapState;
+    state.constituency.district = state.mapDistrict;
+    state.stateName = state.mapState;
+    saveState();
+    activeTab = 'Constituency';
+    render();
+    toast('Political focus updated. Existing locality and election records were preserved.');
+    return;
+  }
+
   const regionButton = event.target.closest('[data-intel-region]');
   if (regionButton) {
     selectedIntelRegion = regionButton.dataset.intelRegion;
