@@ -2013,3 +2013,12 @@ button {
 .intel-report-row small{display:block;color:var(--muted,#999);margin-top:4px}
 .intel-report-row p{margin:7px 0 0}
 @media(max-width:760px){.intel-strategy-grid,.intel-adviser-grid{grid-template-columns:1fr}}
+
+/* RAJNITI 1.7.0 — scheduled election lifecycle and live counting */
+.election-phase-banner{display:flex;flex-direction:column;gap:5px;padding:14px 16px;margin:14px 0;border:1px solid var(--gold,rgba(216,179,106,.45));border-radius:12px;background:rgba(216,179,106,.07)}
+.election-phase-banner small{color:var(--muted,#9b9b9b)}
+.live-counting-panel{margin-top:16px;border-color:rgba(46,204,113,.35)}
+.live-counting-panel .finance-history{align-items:center;gap:12px}
+.live-counting-panel .finance-history>span{flex:1;min-width:0}
+.live-counting-panel .finance-history> b{font-variant-numeric:tabular-nums;white-space:nowrap}
+.live-counting-panel .mini-progress{margin-top:8px}

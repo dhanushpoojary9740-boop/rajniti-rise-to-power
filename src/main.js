@@ -147,6 +147,8 @@ for (const key of ['incomeTotal','expenseTotal']) if (!Number.isFinite(Number(st
 if (!state.elections || typeof state.elections !== 'object') state.elections = JSON.parse(JSON.stringify(defaults.elections));
 if (!state.elections.calendar) state.elections.calendar = JSON.parse(JSON.stringify(defaults.elections.calendar));
 if (!Array.isArray(state.elections.nominationQueue)) state.elections.nominationQueue = [];
+if (!Array.isArray(state.elections.completedCounting)) state.elections.completedCounting = [];
+if (!Number.isFinite(Number(state.elections.lifecycleVersion))) state.elections.lifecycleVersion = 1;
 let activeTab = 'Dashboard';
 let partySection = 'Overview';
 if (!Array.isArray(state.reviewedNews)) state.reviewedNews = [];
@@ -1680,6 +1682,20 @@ function ensureElectionCalendar() {
   if (!Array.isArray(state.elections.nominationQueue)) state.elections.nominationQueue = [];
   return state.elections;
 }
+function electionMonthsUntil(typeId) {
+  const schedule = ensureElectionCalendar().calendar[typeId];
+  return Math.max(0, Number(schedule?.nextAt || 0) - currentMonthIndex());
+}
+function electionPhase(active) {
+  if (!active) return null;
+  if (active.phase === 'counting') return 'counting';
+  if (active.phase === 'voting') return 'voting';
+  const remaining = Number(active.scheduledAt || 0) - currentMonthIndex();
+  if (remaining <= 0) return 'voting';
+  if (remaining <= 2) return 'campaign';
+  if (remaining <= 4) return 'nominations';
+  return 'preparation';
+}
 function processElectionCalendar() {
   const elections = ensureElectionCalendar();
   const now = currentMonthIndex();
@@ -1692,27 +1708,135 @@ function processElectionCalendar() {
     let schedule = elections.calendar[type.id];
     if (!schedule || typeof schedule !== 'object') schedule = elections.calendar[type.id] = { intervalMonths: type.interval, nextAt: type.offset, label: type.label };
     if (!Number.isFinite(Number(schedule.nextAt))) schedule.nextAt = type.offset;
-    if (now >= Number(schedule.nextAt) && !elections.nominationQueue.some(item => item.typeId === type.id && item.status === 'Pending')) {
+    const activeForCycle = elections.active && elections.active.typeId === type.id && Number(elections.active.scheduledAt) === Number(schedule.nextAt);
+    if (now > Number(schedule.nextAt) && !activeForCycle) {
+      schedule.lastSkippedAt = Number(schedule.nextAt);
+      schedule.nextAt = Number(schedule.nextAt) + Number(schedule.intervalMonths || type.interval);
+      delete schedule.proposalKey;
+    }
+    const monthsUntil = Number(schedule.nextAt) - now;
+    const proposalKey = `${type.id}-${schedule.nextAt}`;
+    if (monthsUntil <= 4 && monthsUntil >= 0 && schedule.proposalKey !== proposalKey) {
       const members = Array.isArray(state.partyMemberRecords) ? state.partyMemberRecords : [];
       const proposals = members.filter(member => member && member.name).slice(0, 8);
       if (proposals.length) proposals.forEach((member, index) => elections.nominationQueue.push({
-        id: `${type.id}-${now}-${index}`, typeId: type.id, typeName: type.label,
-        candidateName: member.name, candidateRole: member.role || 'Party member',
+        id: `${proposalKey}-${index}`, typeId: type.id, typeName: type.label,
+        scheduledAt: Number(schedule.nextAt), candidateName: member.name,
+        candidateRole: member.role || 'Party member',
         constituency: member.constituency || member.district || state.constituency?.constituencyName || 'Assigned constituency',
-        status: 'Pending', aiReason: 'AI party committee proposal. Review eligibility and suitability before approval.',
+        status: 'Pending', aiReason: 'AI party committee proposal for the upcoming scheduled election. Review before the nomination deadline.',
         createdAt: dateText()
       }));
       else elections.nominationQueue.push({
-        id: `${type.id}-${now}-vacant`, typeId: type.id, typeName: type.label,
-        candidateName: 'Candidate required', candidateRole: 'Vacant nomination',
-        constituency: 'Constituency assignment required', status: 'Pending',
-        aiReason: 'No party-member records are available. Add party members before approving nominations.',
+        id: `${proposalKey}-vacant`, typeId: type.id, typeName: type.label,
+        scheduledAt: Number(schedule.nextAt), candidateName: 'Candidate required',
+        candidateRole: 'Vacant nomination', constituency: 'Constituency assignment required',
+        status: 'Pending', aiReason: 'No party-member records are available. Add party members before approving nominations.',
         createdAt: dateText()
       });
-      schedule.nextAt = now + Number(schedule.intervalMonths || type.interval);
+      schedule.proposalKey = proposalKey;
     }
   });
+  const active = elections.active;
+  if (active) {
+    const phase = electionPhase(active);
+    if (phase !== active.phase) {
+      active.phase = phase;
+      active.phaseUpdatedAt = dateText();
+      if (phase === 'voting') active.pollingOpenedAt = dateText();
+    }
+  }
 }
+function initializeElectionCounting(active) {
+  const type = electionTypes.find(item => item.id === active.typeId);
+  const totalVoters = type?.id === 'local' ? Number(state.constituency.totalVoters) || type.voters : (type?.voters || 100000);
+  const turnoutRate = Math.min(0.78, 0.48 + Number(active.campaignScore || 0) / 250 + Number(active.estimatedSupport || 0) / 500);
+  const turnout = Math.round(totalVoters * turnoutRate);
+  const candidateShare = Math.max(5, Math.min(85, Number(active.estimatedSupport || 0) * 0.48 + Number(active.campaignScore || 0) * 0.32 + state.reputation * 0.12 + state.influence * 0.08));
+  const rivalOneShare = Math.max(5, Math.min(55, 34 + ((state.elections.totalContested % 5) - 2) * 2));
+  const rivalTwoShare = Math.max(5, Math.min(35, 20 + ((state.partyPopularity || 0) % 7) - 3));
+  const rawShares = [candidateShare, rivalOneShare, rivalTwoShare, Math.max(3, 100 - candidateShare - rivalOneShare - rivalTwoShare)];
+  const total = rawShares.reduce((a,b)=>a+b,0);
+  const shares = rawShares.map(value=>Math.round(value/total*100));
+  shares[0] += 100 - shares.reduce((a,b)=>a+b,0);
+  const names = [
+    { name: active.candidateName, party: state.party || 'Independent', share: shares[0] },
+    { name: active.opponentName, party: active.opponentParty || 'Opposition Party', share: shares[1] },
+    { name: 'Kiran Prasad', party: "People's Democratic Union", share: shares[2] },
+    { name: 'Nisha Fernandes', party: 'Regional Progress Party', share: shares[3] }
+  ];
+  let remaining = turnout;
+  const candidates = names.map((item,index)=>{
+    const votes = index === names.length-1 ? remaining : Math.round(turnout*item.share/100);
+    remaining -= votes;
+    return {...item, finalVotes:votes, votes:0};
+  });
+  const rounds = 10;
+  const roundTotals = Array(rounds).fill(0).map((_,i)=>Math.floor(turnout/rounds)+(i<turnout%rounds?1:0));
+  active.counting = { round:0, totalRounds:rounds, totalVoters, turnout, counted:0, candidates, roundTotals, startedAt:dateText(), complete:false };
+  active.phase = 'counting';
+}
+function advanceElectionCount() {
+  const active = state.elections.active;
+  if (!active || active.phase !== 'counting' || !active.counting) return toast('Counting is not open yet.');
+  const count = active.counting;
+  if (count.round >= count.totalRounds) return;
+  const nextRound = count.round + 1;
+  const votesToAdd = count.roundTotals[nextRound-1];
+  let distributed = 0;
+  count.candidates.forEach((candidate,index)=>{
+    const votes = index === count.candidates.length-1
+      ? votesToAdd-distributed
+      : Math.round(votesToAdd*candidate.finalVotes/Math.max(1,count.turnout));
+    candidate.votes += votes;
+    distributed += votes;
+  });
+  count.round = nextRound;
+  count.counted = Math.min(count.turnout, count.counted + votesToAdd);
+  count.updatedAt = dateText();
+  if (count.round >= count.totalRounds) completeElectionCounting(active);
+  saveState(); render();
+}
+function completeElectionCounting(active) {
+  const count = active.counting;
+  const contestants = count.candidates.map(item=>({name:item.name,party:item.party,votes:item.votes,share:Math.round(item.votes/Math.max(1,count.counted)*100)})).sort((a,b)=>b.votes-a.votes);
+  const winner = contestants[0];
+  const won = winner && winner.name === active.candidateName;
+  const result = {
+    id: active.id, typeName: active.typeName, candidateName: active.candidateName, candidateId: active.candidateId,
+    constituency: active.constituency, date: dateText(), result: won ? 'Won' : 'Lost',
+    totalVoters: count.totalVoters, turnout: count.turnout,
+    candidateVotes: contestants.find(x=>x.name===active.candidateName)?.votes || 0,
+    opponentVotes: contestants.find(x=>x.name===active.opponentName)?.votes || 0,
+    otherVotes: count.turnout-(contestants.find(x=>x.name===active.candidateName)?.votes || 0)-(contestants.find(x=>x.name===active.opponentName)?.votes || 0),
+    opponentName: active.opponentName, candidateShare: contestants.find(x=>x.name===active.candidateName)?.share || 0,
+    contestants, campaignScore: active.campaignScore, manifesto: active.manifesto,
+    partyFunded: !!active.partyFunded, campaignAllocation: active.initialBudget,
+    candidateSpending: Number(active.candidateSpending||0), candidateSpendingLimit:Number(active.candidateSpendingLimit||0)
+  };
+  if (active.typeId === 'assembly' || active.typeId === 'lok-sabha') {
+    const totalSeats = active.typeId === 'assembly' ? 224 : 543;
+    result.totalSeats=totalSeats; result.majorityMark=Math.floor(totalSeats/2)+1;
+    result.seatsWon=Math.max(0,Math.round(totalSeats*result.candidateShare/100));
+    result.hungHouse=result.seatsWon<result.majorityMark;
+    state.elections.lastMandate={typeId:active.typeId,totalSeats,majorityMark:result.majorityMark,seatsWon:result.seatsWon,hungHouse:result.hungHouse,party:state.party||'Independent',date:dateText()};
+  }
+  const type=electionTypes.find(item=>item.id===active.typeId);
+  state.elections.history.unshift(result); state.elections.history=state.elections.history.slice(0,30);
+  state.elections.totalContested++; if(won){state.elections.totalWon++;state.reputation=Math.min(100,state.reputation+8);state.influence=Math.min(100,state.influence+10);state.publicSupport=Math.min(100,state.publicSupport+8);state.experience+=100;if(active.candidateId==='player'){state.role=type?.winRole||state.role;state.level=Math.max(state.level,active.typeId==='local'?2:active.typeId==='assembly'?5:8);}if(state.partyId!=='independent')state.partyPopularity=Math.min(100,state.partyPopularity+8);if(active.typeId==='assembly'){const government=ensureGovernmentState();government.manifestoPromises.unshift({id:'promise-'+Date.now(),text:active.manifesto,status:'Pending',progress:0,announcedAt:dateText(),electionId:active.id});government.manifestoPromises=government.manifestoPromises.slice(0,20);}}
+  else {state.elections.totalLost++;state.reputation=Math.max(0,state.reputation-2);state.experience+=25;}
+  if(state.partyId!=='independent')state.partyElectionHistory.push({event:`${result.result} ${active.typeName}`,date:dateText()});
+  state.elections.completedCounting=Array.isArray(state.elections.completedCounting)?state.elections.completedCounting:[];
+  state.elections.completedCounting.unshift({electionId:active.id,rounds:count.totalRounds,counted:count.counted,completedAt:dateText()});
+  const schedule = ensureElectionCalendar().calendar[active.typeId];
+  if (schedule && Number(schedule.nextAt) === Number(active.scheduledAt)) {
+    schedule.nextAt = Number(active.scheduledAt) + Number(schedule.intervalMonths || 60);
+    delete schedule.proposalKey;
+  }
+  state.elections.active=null;
+  saveState(); render(); showElectionResult(result);
+}
+
 function endDay() {
   if (!state.characterCreated) return toast('Create your politician first.');
   state.day = 1;
@@ -2555,9 +2679,11 @@ function electionPage() {
 
   const electionCalendar = ensureElectionCalendar();
   const pendingNominations = electionCalendar.nominationQueue.filter(item => item.status === 'Pending');
-  const electionScheduleHtml = Object.entries(electionCalendar.calendar).map(([id, item]) =>
-    `<div class="finance-history"><span>${escapeHtml(item.label || id)}</span><b>${Math.max(0, Number(item.nextAt || 0) - currentMonthIndex())} months</b></div>`
-  ).join('');
+  const electionScheduleHtml = Object.entries(electionCalendar.calendar).map(([id, item]) => {
+    const remaining = Math.max(0, Number(item.nextAt || 0) - currentMonthIndex());
+    const stage = remaining <= 0 ? 'Scheduled now' : remaining <= 2 ? 'Campaign window soon' : remaining <= 4 ? 'Nomination window soon' : 'Preparation period';
+    return `<div class="finance-history"><span>${escapeHtml(item.label || id)}<br><small>${stage}</small></span><b>${remaining} months</b></div>`;
+  }).join('');
   const nominationHtml = pendingNominations.length ? pendingNominations.map(item =>
     `<div class="finance-history nomination-card"><span><b>${escapeHtml(item.typeName)}</b><br>${escapeHtml(item.candidateName)} · ${escapeHtml(item.constituency)}<br><small>${escapeHtml(item.candidateRole || 'Party member')} · ${escapeHtml(item.aiReason)}</small></span><div class="nomination-actions"><button class="secondary-btn" data-nomination-action="approve" data-nomination-id="${escapeHtml(item.id)}">Approve</button><button class="secondary-btn" data-nomination-action="replace" data-nomination-id="${escapeHtml(item.id)}">Replace</button><button class="secondary-btn" data-nomination-action="reject" data-nomination-id="${escapeHtml(item.id)}">Reject</button></div></div>`
   ).join('') : '<p class="panel-description">No AI candidate proposals are awaiting your review.</p>';
@@ -2567,7 +2693,7 @@ function electionPage() {
       <div>
         <div class="eyebrow">DEMOCRATIC COMPETITION</div>
         <h1>Election <em>command centre</em></h1>
-        <p>Prepare your candidate, campaign responsibly and face the ballot.</p>
+        <p>Register for a scheduled election, prepare in advance and campaign only during the official window.</p>
       </div>
     </div>
 
@@ -2582,6 +2708,7 @@ function electionPage() {
       <span class="gold-tag">RECURRING ELECTION CALENDAR</span>
       <h2>Upcoming election cycles</h2>
       ${electionScheduleHtml}
+      <p class="panel-description">The calendar is authoritative: prepare in advance, nominations open four months before polling, official campaigning opens two months before polling, and results are declared only after all counting rounds.</p>
       <h2>AI candidate nomination review</h2>
       <p class="panel-description">Review every proposed candidate before the party submits a nomination. Approving records party approval; it does not claim that an official filing has occurred.</p>
       <div class="election-metrics">
@@ -2594,7 +2721,7 @@ function electionPage() {
 
     ${active ? `
       <section class="panel election-active-panel">
-        <span class="gold-tag">CAMPAIGN IN PROGRESS</span>
+        <span class="gold-tag">REGISTERED ELECTION CONTEST</span>
         <h2>${escapeHtml(active.typeName)}</h2>
         <p class="panel-description">Candidate: <b>${escapeHtml(active.candidateName)}</b> · ${escapeHtml(active.candidateId === 'player' ? 'You are contesting' : 'Party candidate')}</p>
         <div class="election-metrics">
@@ -2606,7 +2733,8 @@ function electionPage() {
         </div>
         <p class="panel-description">${active.partyFunded ? 'Funded by the independent party treasury.' : 'Independent candidate campaign funded from candidate wealth.'} Campaign allocation is separate from the candidate expenditure ceiling. Main opponent: ${escapeHtml(active.opponentName)} (${escapeHtml(active.opponentParty || 'Opposition Party')}).</p>
         <div class="mini-progress"><i style="width:${Math.min(100, active.campaignScore)}%"></i></div>
-        <div class="section-heading"><div><span class="eyebrow">CAMPAIGN OPERATIONS</span><h3>Choose your next move</h3></div></div>
+        <div class="election-phase-banner"><b>CURRENT STAGE: ${escapeHtml((active.phase || electionPhase(active) || 'preparation').toUpperCase())}</b><small>Scheduled election month: ${Math.max(0, Number(active.scheduledAt || 0) - currentMonthIndex())} month(s) remaining</small></div>
+        ${electionPhase(active) === 'campaign' ? `<div class="section-heading"><div><span class="eyebrow">OFFICIAL CAMPAIGN PERIOD</span><h3>Choose your next move</h3></div></div>
         <div class="activity-grid">
           ${campaignActions.map(action => `
             <article class="panel activity-card election-action-card">
@@ -2617,13 +2745,14 @@ function electionPage() {
               <button class="secondary-btn full" data-campaign-action="${action.id}" ${active.budget < action.cost || state.actionsUsed >= dailyActionLimit() ? 'disabled' : ''}>${state.actionsUsed >= dailyActionLimit() ? 'DAILY LIMIT REACHED' : active.budget < action.cost ? 'INSUFFICIENT CAMPAIGN FUNDS' : 'RUN CAMPAIGN ACTIVITY →'}</button>
             </article>
           `).join('')}
-        </div>
+        </div>` : `<section class="panel manifesto-panel"><h3>${electionPhase(active)==='counting'?'Counting day':'Election preparation'}</h3><p class="panel-description">${electionPhase(active)==='counting'?'Polling has closed. Proceed through the live counting rounds below.':electionPhase(active)==='voting'?'Voting is taking place. Close the polls when ready to begin counting.':'Prepare your candidate, verify the nomination and finalise the manifesto. Official campaign activities unlock two months before polling.'}</p></section>`}
+        ${electionPhase(active)==='voting' ? `<section class="panel live-counting-panel"><span class="gold-tag">POLLING DAY</span><h2>Voting is underway</h2><p class="panel-description">The scheduled polling month has arrived. Close the polls to begin the ten-round simulated count. No winner is declared until every round is complete.</p><div class="election-metrics"><div><small>REGISTERED CONTEST</small><b>${escapeHtml(active.typeName)}</b></div><div><small>CONSTITUENCY</small><b>${escapeHtml(active.constituency)}</b></div></div><button class="primary-btn full" data-action="begin-counting" ${active.activities.length < 2 ? 'disabled' : ''}>CLOSE POLLS & START COUNTING →</button>${active.activities.length < 2 ? '<small class="creator-note">Complete at least two official campaign activities before polls can close.</small>' : ''}</section>` : ''}
+        ${electionPhase(active)==='counting' && active.counting ? `<section class="panel live-counting-panel"><span class="gold-tag">LIVE COUNTING</span><h2>${escapeHtml(active.constituency)} · ${escapeHtml(active.typeName)}</h2><div class="election-metrics"><div><small>COUNTING ROUND</small><b>${active.counting.round}/${active.counting.totalRounds}</b></div><div><small>VOTES COUNTED</small><b>${Number(active.counting.counted).toLocaleString('en-IN')}</b></div><div><small>TOTAL TURNOUT</small><b>${Number(active.counting.turnout).toLocaleString('en-IN')}</b></div></div>${active.counting.candidates.slice().sort((a,b)=>b.votes-a.votes).map((candidate,index)=>`<div class="finance-history"><span><b>${index+1}. ${escapeHtml(candidate.name)}</b><br><small>${escapeHtml(candidate.party)}</small><div class="mini-progress"><i style="width:${active.counting.counted?Math.min(100,candidate.votes/active.counting.counted*100):0}%"></i></div></span><b>${Number(candidate.votes).toLocaleString('en-IN')}</b></div>`).join('')}<button class="primary-btn full" data-action="count-next-round" ${active.counting.round>=active.counting.totalRounds?'disabled':''}>${active.counting.round>=active.counting.totalRounds?'COUNTING COMPLETE':'COUNT NEXT ROUND →'}</button><small class="creator-note">Fictional simulated count. Final result is declared only after all rounds are counted.</small></section>` : ''}
         <section class="panel manifesto-panel">
           <span class="eyebrow">YOUR ELECTION MANIFESTO</span>
           <p>${escapeHtml(active.manifesto)}</p>
           <div class="party-stat-row"><span>Campaign activities completed</span><b>${active.activities.length}</b></div>
-          <button class="primary-btn full" data-action="hold-election" ${active.activities.length < 2 ? 'disabled' : ''}>GO TO POLLING & COUNTING →</button>
-          ${active.activities.length < 2 ? '<small class="creator-note">Complete at least two campaign activities before polling day.</small>' : ''}
+          <p class="creator-note">${electionPhase(active)==='counting'?'Counting is underway. Use the live counting panel to reveal each round.':electionPhase(active)==='campaign'?'Polling and counting unlock when the scheduled election month arrives.':'Your election is registered. The calendar controls nomination, campaigning, polling and counting dates.'}</p>
         </section>
       </section>
     ` : `
@@ -2662,7 +2791,7 @@ function electionPage() {
             <textarea id="electionManifesto" name="manifesto" rows="4" maxlength="320" placeholder="Describe your priorities: roads, water, education, healthcare and jobs..." required></textarea>
           </div>
           <div class="election-note"><b>Constituency:</b> ${escapeHtml(state.constituency.constituencyName)} · ${escapeHtml(state.constituency.district)}, ${escapeHtml(state.constituency.state)}<br><b>Estimated local voters:</b> ${totalVoters.toLocaleString('en-IN')}<br><b>Party:</b> ${escapeHtml(state.party)}<br><b>Available party treasury:</b> ${money(state.partyFunds || 0)}<br><b>Funding rule:</b> Party candidates use party treasury only; personal wealth is not used for party campaigns. Independent candidates fund their own campaign.<br><b>Illustrative candidate expenditure ceilings:</b> Local ₹5 lakh · Assembly ₹40 lakh · Lok Sabha ₹95 lakh. Verify applicable legal limits for the game's election year and state.</div>
-          <button type="submit" class="primary-btn full">LAUNCH ELECTION CAMPAIGN →</button>
+          <button type="submit" class="primary-btn full">REGISTER CANDIDACY & RESERVE BUDGET →</button>
         </form>
       </section>
     `}
@@ -2697,6 +2826,12 @@ function startElection(form) {
   if (!Number.isFinite(budget) || budget < type.partyBudget || budget > type.partyBudget * 5) {
     return toast(`Choose a realistic campaign allocation between ${money(type.partyBudget)} and ${money(type.partyBudget * 2)}.`);
   }
+  const schedule = ensureElectionCalendar().calendar[type.id];
+  const scheduledAt = Number(schedule?.nextAt ?? currentMonthIndex());
+  if (scheduledAt <= currentMonthIndex()) return toast('This election cycle is already at or past polling day. Register for the next scheduled cycle.');
+  if (state.elections.nominationQueue.some(item => item.typeId === type.id && item.status === 'Approved' && Number(item.scheduledAt) === scheduledAt && item.candidateName !== candidate.name)) {
+    return toast('An approved nomination exists for a different candidate in this election cycle. Review the nomination first.');
+  }
   const partyCampaign = state.partyId !== 'independent';
   const totalRequired = budget + type.deposit;
   if (partyCampaign) {
@@ -2717,17 +2852,21 @@ function startElection(form) {
     campaignScore: 0, estimatedSupport, activities: [],
     opponentName: ['Arjun Rao', 'Meera Kulkarni', 'Ravi Shetty', 'Ananya Menon', 'Vikram Desai'][state.elections.totalContested % 5],
     opponentParty: ['National Development Front', 'People\'s Democratic Union', 'Bharatiya Jan Collective', 'Regional Progress Party'][state.elections.totalContested % 4],
-    started: dateText(), constituency: state.constituency.constituencyName
+    started: dateText(), constituency: state.constituency.constituencyName,
+    scheduledAt, phase: electionPhase({ scheduledAt }), phaseUpdatedAt: dateText(),
+    preparationChecklist: { candidateSelected: true, manifestoPrepared: true, fundingReserved: true }
   };
+
   saveState();
   render();
-  toast('Election campaign launched. Build support before polling day.');
+  toast(`Election registered for its scheduled cycle. Current stage: ${state.elections.active.phase}.`);
 }
 
 function runCampaignAction(id) {
   const active = state.elections.active;
   const action = campaignActions.find(item => item.id === id);
   if (!active || !action) return;
+  if (electionPhase(active) !== 'campaign') return toast('Official campaigning opens two months before the scheduled election.');
   if (state.actionsUsed >= dailyActionLimit()) return toast('Daily action limit reached. End the day to continue.');
   if (active.budget < action.cost) return toast('Not enough campaign funds.');
   active.budget -= action.cost;
@@ -2753,81 +2892,12 @@ function runCampaignAction(id) {
 
 function holdElection() {
   const active = state.elections.active;
-  if (!active) return toast('No active election campaign.');
-  if (active.activities.length < 2) return toast('Complete at least two campaign activities first.');
-  const type = electionTypes.find(item => item.id === active.typeId);
-  const totalVoters = type.id === 'local' ? Number(state.constituency.totalVoters) || type.voters : type.voters;
-  const turnoutRate = Math.min(0.78, 0.48 + active.campaignScore / 250 + active.estimatedSupport / 500);
-  const turnout = Math.round(totalVoters * turnoutRate);
-  const candidateShare = Math.max(5, Math.min(85, active.estimatedSupport * 0.48 + active.campaignScore * 0.32 + state.reputation * 0.12 + state.influence * 0.08));
-  const rivalOneShare = Math.max(5, Math.min(55, 34 + ((state.elections.totalContested % 5) - 2) * 2));
-  const rivalTwoShare = Math.max(5, Math.min(35, 20 + ((state.partyPopularity || 0) % 7) - 3));
-  const rivalThreeShare = Math.max(3, 100 - candidateShare - rivalOneShare - rivalTwoShare);
-  const rawShares = [candidateShare, rivalOneShare, rivalTwoShare, rivalThreeShare];
-  const shareTotal = rawShares.reduce((sum, value) => sum + value, 0);
-  const shares = rawShares.map(value => Math.round(value / shareTotal * 100));
-  shares[0] += 100 - shares.reduce((sum, value) => sum + value, 0);
-  const candidateVotes = Math.round(turnout * shares[0] / 100);
-  const opponentVotes = Math.round(turnout * shares[1] / 100);
-  const otherVotes = Math.max(0, turnout - candidateVotes - opponentVotes);
-  const contestants = [
-    { name: active.candidateName, party: state.party || 'Independent', share: shares[0], votes: candidateVotes },
-    { name: active.opponentName, party: active.opponentParty || 'Opposition Party', share: shares[1], votes: opponentVotes },
-    { name: 'Kiran Prasad', party: 'People\'s Democratic Union', share: shares[2], votes: Math.round(turnout * shares[2] / 100) },
-    { name: 'Nisha Fernandes', party: 'Regional Progress Party', share: shares[3], votes: Math.max(0, turnout - candidateVotes - opponentVotes - Math.round(turnout * shares[2] / 100)) }
-  ].sort((a,b) => b.votes-a.votes);
-  const won = contestants[0].name === active.candidateName;
-  const result = {
-    id: active.id, typeName: active.typeName, candidateName: active.candidateName,
-    candidateId: active.candidateId, constituency: active.constituency,
-    date: dateText(), result: won ? 'Won' : 'Lost', totalVoters, turnout,
-    candidateVotes, opponentVotes, otherVotes, opponentName: active.opponentName,
-    candidateShare: shares[0], contestants,
-    campaignScore: active.campaignScore, manifesto: active.manifesto,
-    partyFunded: !!active.partyFunded, campaignAllocation: active.initialBudget,
-    candidateSpending: Number(active.candidateSpending || 0),
-    candidateSpendingLimit: Number(active.candidateSpendingLimit || 0)
-  };
-  if (active.typeId === 'assembly' || active.typeId === 'lok-sabha') {
-    const totalSeats = active.typeId === 'assembly' ? 224 : 543;
-    result.totalSeats = totalSeats;
-    result.majorityMark = Math.floor(totalSeats / 2) + 1;
-    result.seatsWon = Math.max(0, Math.round(totalSeats * result.candidateShare / 100));
-    result.hungHouse = result.seatsWon < result.majorityMark;
-    state.elections.lastMandate = { typeId: active.typeId, totalSeats, majorityMark: result.majorityMark, seatsWon: result.seatsWon, hungHouse: result.hungHouse, party: state.party || 'Independent', date: dateText() };
-  }
-  state.elections.history.unshift(result);
-  state.elections.history = state.elections.history.slice(0, 30);
-  state.elections.totalContested++;
-  if (won) {
-    state.elections.totalWon++;
-    state.reputation = Math.min(100, state.reputation + 8);
-    state.influence = Math.min(100, state.influence + 10);
-    state.publicSupport = Math.min(100, state.publicSupport + 8);
-    state.experience += 100;
-    if (active.candidateId === 'player') {
-      state.role = type.winRole;
-      state.level = Math.max(state.level, type.id === 'local' ? 2 : type.id === 'assembly' ? 5 : 8);
-    }
-    if (state.partyId !== 'independent') state.partyPopularity = Math.min(100, state.partyPopularity + 8);
-    if (active.typeId === 'assembly') {
-      const government = ensureGovernmentState();
-      government.manifestoPromises.unshift({ id: 'promise-' + Date.now(), text: active.manifesto, status: 'Pending', progress: 0, announcedAt: dateText(), electionId: active.id });
-      government.manifestoPromises = government.manifestoPromises.slice(0, 20);
-      government.history.unshift({ day: state.day, month: state.month, year: state.year, event: 'Election manifesto commitment registered for public tracking' });
-    }
-  } else {
-    state.elections.totalLost++;
-    state.reputation = Math.max(0, state.reputation - 2);
-    state.experience += 25;
-  }
-  if (state.partyId !== 'independent' && state.partyFunds >= 0) {
-    state.partyElectionHistory.push({ event: `${result.result} ${active.typeName}`, date: dateText() });
-  }
-  state.elections.active = null;
-  saveState();
-  render();
-  showElectionResult(result);
+  if (!active) return toast('No registered election.');
+  if (currentMonthIndex() < Number(active.scheduledAt || 0)) return toast('Polling day has not arrived. The election calendar controls the voting date.');
+  if (active.activities.length < 2) return toast('Complete at least two official campaign activities before polling day.');
+  active.phase = 'counting';
+  if (!active.counting) initializeElectionCounting(active);
+  saveState(); render(); toast('Polls closed. Live vote counting is now open.');
 }
 
 function showElectionResult(result) {
@@ -4248,6 +4318,10 @@ if (!Array.isArray(state.media.history)) state.media.history = [];
   const groundAction = event.target.closest('[data-ground-action]');
   if (groundAction) { performGroundAction(groundAction.dataset.groundAction); return; }
 
+  const beginCounting = event.target.closest('[data-action="begin-counting"]');
+  if (beginCounting) { holdElection(); return; }
+  const countNext = event.target.closest('[data-action="count-next-round"]');
+  if (countNext) { advanceElectionCount(); return; }
   const campaignAction = event.target.closest('[data-campaign-action]');
   if (campaignAction) { runCampaignAction(campaignAction.dataset.campaignAction); return; }
 
