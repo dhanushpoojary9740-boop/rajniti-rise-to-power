@@ -2027,3 +2027,18 @@ button {
 /* RAJNITI 2.0.0 — party-wide candidate operations */
 #partySlateElectionType { min-height: 44px; }
 [data-party-slate-fund] { white-space: nowrap; }
+
+/* Opposition & rival party intelligence centre */
+.rival-layout{grid-template-columns:minmax(260px,.8fr) minmax(0,1.6fr);align-items:start;gap:18px}
+.rival-party-card{display:block;width:100%;text-align:left;cursor:pointer;margin:0 0 12px;color:inherit;background:var(--panel,rgba(255,255,255,.03))}
+.rival-party-card.active{border-color:var(--gold,#c6a15b);box-shadow:0 0 0 1px var(--gold,#c6a15b) inset}
+.rival-card-top{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.rival-party-card p{color:var(--muted,#9aa3b2);margin:8px 0 14px}
+.rival-party-card .stats-grid{grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+.rival-party-card .stats-grid small,.rival-party-card .stats-grid strong{display:block}
+.rival-party-card .stats-grid small{font-size:11px;color:var(--muted,#9aa3b2)}
+.rival-party-card .stats-grid strong{font-size:17px;margin-top:3px}
+.rival-dossier-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:4px 18px;margin:18px 0}
+.rival-dossier-grid p{margin:7px 0}
+@media(max-width:900px){.rival-layout{grid-template-columns:1fr}}
+@media(max-width:560px){.rival-dossier-grid{grid-template-columns:1fr}.rival-party-card .stats-grid{grid-template-columns:repeat(3,minmax(0,1fr))}}

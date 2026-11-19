@@ -35,6 +35,7 @@ const defaults = {
   partyDisputes: [],
   partyCampaignPlans: [],
   partyAuditReports: [],
+  rivalPartyIntelligence: { parties: [], reports: [], lastUpdated: '' },
 
   constituency: {
     state: 'Karnataka',
@@ -411,7 +412,7 @@ function shell(content) {
   const nav = [
     'Dashboard', 'Career', 'Activities', 'Party',
     'Constituency', 'Constituency Intel', 'India Map', 'Elections', 'Executive Office', 'Government', 'Parliament', 'Alliances',
-    'National Command', 'Relationships', 'Intelligence', 'Public Opinion', 'Finance', 'News', 'Profile'
+    'National Command', 'Relationships', 'Intelligence', 'Opposition & Rivals', 'Public Opinion', 'Finance', 'News', 'Profile'
   ];
 
   return `
@@ -469,7 +470,7 @@ function shell(content) {
       </main>
 
       <nav class="mobile-nav">
-        ${['Dashboard', 'Career', 'Party', 'Constituency', 'Constituency Intel', 'India Map', 'Elections', 'Executive Office', 'Government', 'Parliament', 'National Command', 'Intelligence', 'Public Opinion', 'Finance', 'News', 'Activities', 'Profile']
+        ${['Dashboard', 'Career', 'Party', 'Constituency', 'Constituency Intel', 'India Map', 'Elections', 'Executive Office', 'Government', 'Parliament', 'National Command', 'Intelligence', 'Opposition & Rivals', 'Public Opinion', 'Finance', 'News', 'Activities', 'Profile']
           .map(name => `
             <button class="${activeTab === name ? 'active' : ''}"
               data-tab="${name}">
@@ -4101,6 +4102,94 @@ function advanceNationalCommandMonth() {
   });
 }
 
+
+/* OPPOSITION & RIVAL PARTY INTELLIGENCE */
+function ensureRivalPartyIntelligence() {
+  if (!state.rivalPartyIntelligence || typeof state.rivalPartyIntelligence !== 'object') {
+    state.rivalPartyIntelligence = { parties: [], reports: [], lastUpdated: '' };
+  }
+  const intel = state.rivalPartyIntelligence;
+  if (!Array.isArray(intel.parties) || !intel.parties.length) {
+    const seed = [
+      { name: 'National Unity Front', abbr: 'NUF', ideology: 'Centrist · National development', leader: 'Arjun Rao', base: 'North and Central India', members: 1850000, volunteers: 420000, treasury: 1850000000, income: 240000000, expense: 215000000, seats: 112, voteShare: 24.6, popularity: 58, organisation: 72, campaignBudget: 420000000, alliances: ['People’s Regional Forum'], disputes: 1 },
+      { name: 'People’s Regional Forum', abbr: 'PRF', ideology: 'Regionalist · Federal development', leader: 'Meera Nair', base: 'Southern and Coastal India', members: 640000, volunteers: 155000, treasury: 465000000, income: 72000000, expense: 68000000, seats: 38, voteShare: 13.2, popularity: 49, organisation: 61, campaignBudget: 125000000, alliances: ['National Unity Front'], disputes: 2 },
+      { name: 'Social Justice Congress', abbr: 'SJC', ideology: 'Social democratic · Welfare', leader: 'Kabir Sen', base: 'Eastern and Central India', members: 920000, volunteers: 210000, treasury: 780000000, income: 105000000, expense: 98000000, seats: 67, voteShare: 18.4, popularity: 53, organisation: 66, campaignBudget: 190000000, alliances: [], disputes: 0 },
+      { name: 'People’s Reform Party', abbr: 'PRP', ideology: 'Reformist · Governance', leader: 'Ananya Deshmukh', base: 'Urban constituencies nationwide', members: 285000, volunteers: 78000, treasury: 215000000, income: 38000000, expense: 34000000, seats: 19, voteShare: 7.8, popularity: 41, organisation: 48, campaignBudget: 68000000, alliances: [], disputes: 1 }
+    ];
+    intel.parties = seed.map((party, i) => ({ id: `rival-${i+1}`, ...party, history: [] }));
+  }
+  if (!Array.isArray(intel.reports)) intel.reports = [];
+  return intel;
+}
+function oppositionRivalsPage() {
+  const intel = ensureRivalPartyIntelligence();
+  const parties = intel.parties;
+  const selectedId = state.selectedRivalPartyId || parties[0]?.id;
+  const selected = parties.find(p => p.id === selectedId) || parties[0];
+  const cards = parties.map(p => `
+    <button class="panel rival-party-card ${p.id===selected.id?'active':''}" data-rival-select="${p.id}">
+      <div class="rival-card-top"><b>${escapeHtml(p.name)}</b><span class="eyebrow">${escapeHtml(p.abbr)}</span></div>
+      <p>${escapeHtml(p.ideology)}</p>
+      <div class="stats-grid">
+        <div><small>Seats</small><strong>${Number(p.seats).toLocaleString('en-IN')}</strong></div>
+        <div><small>Vote share</small><strong>${Number(p.voteShare).toFixed(1)}%</strong></div>
+        <div><small>Popularity</small><strong>${p.popularity}/100</strong></div>
+      </div>
+    </button>`).join('');
+  const reports = intel.reports.slice(0,12).map(r=>`<div class="history-item"><b>${escapeHtml(r.title)}</b><small>${escapeHtml(r.date)} · ${escapeHtml(r.detail)}</small></div>`).join('') || '<p class="muted">No intelligence reports yet. Generate a briefing to create the first report.</p>';
+  if (!selected) return '<section class="panel"><h2>Opposition & Rival Parties</h2><p>No rival party records available.</p></section>';
+  return `
+    <div class="page-heading"><div><span class="eyebrow">POLITICAL INTELLIGENCE BUREAU</span><h1>Opposition & <em>Rival Parties</em></h1><p>Independent AI-run rival organisations · Fictional simulation intelligence</p></div><button class="primary-btn" data-rival-action="briefing">GENERATE MONTHLY BRIEFING</button></div>
+    <div class="stats-grid">
+      ${statCard('RIVAL ORGANISATIONS', parties.length, 'Simulated competing parties', '♟')}
+      ${statCard('COMBINED SEATS', parties.reduce((s,p)=>s+Number(p.seats||0),0), 'Illustrative previous results', '▤')}
+      ${statCard('COMBINED MEMBERS', parties.reduce((s,p)=>s+Number(p.members||0),0).toLocaleString('en-IN'), 'Reported party membership', '♙')}
+      ${statCard('LATEST INTELLIGENCE', intel.lastUpdated || 'Not generated', 'Last briefing date', '◷')}
+    </div>
+    <div class="dashboard-grid rival-layout"><section><div class="section-heading"><h2>Competing political organisations</h2><span class="eyebrow">SELECT A PARTY</span></div>${cards}</section>
+    <section class="panel rival-detail"><span class="eyebrow">DETAILED PARTY DOSSIER</span><h2>${escapeHtml(selected.name)}</h2><p>${escapeHtml(selected.ideology)}</p>
+      <div class="stats-grid">
+        ${statCard('TREASURY',money(selected.treasury),'Simulated available party funds','₹')}
+        ${statCard('ANNUAL INCOME',money(selected.income),'Illustrative annual income','↗')}
+        ${statCard('ANNUAL EXPENSE',money(selected.expense),'Illustrative annual expenditure','↘')}
+        ${statCard('CAMPAIGN BUDGET',money(selected.campaignBudget),'Current simulated allocation','◎')}
+        ${statCard('MEMBERS',Number(selected.members).toLocaleString('en-IN'),'Reported membership','♙')}
+        ${statCard('VOLUNTEERS',Number(selected.volunteers).toLocaleString('en-IN'),'Active organisation network','♧')}
+        ${statCard('ORGANISATION',`${selected.organisation}/100`,'Internal structure index','▦')}
+        ${statCard('DISPUTES',selected.disputes,'Unresolved internal disputes','!')}
+      </div>
+      <div class="rival-dossier-grid"><p><b>Party president:</b> ${escapeHtml(selected.leader)}</p><p><b>Strongest regions:</b> ${escapeHtml(selected.base)}</p><p><b>Alliance partners:</b> ${escapeHtml(selected.alliances.join(', ') || 'No declared partners')}</p><p><b>Previous seats:</b> ${selected.seats}</p><p><b>Previous vote share:</b> ${Number(selected.voteShare).toFixed(1)}%</p><p><b>Public popularity:</b> ${selected.popularity}/100</p></div>
+      <button class="secondary-btn" data-rival-action="profile-report" data-rival-id="${selected.id}">GENERATE THIS PARTY'S DOSSIER</button>
+    </section></div>
+    <section class="panel"><span class="eyebrow">INTELLIGENCE ARCHIVE</span><h2>Recent rival-party reports</h2>${reports}</section>
+    <p class="muted">All rival party names, leaders, finances, membership, seats and political indicators are fictional gameplay data. They are not claims about real political parties or public figures.</p>`;
+}
+function updateRivalPartyIntelligence(action, id) {
+  const intel = ensureRivalPartyIntelligence();
+  if (action === 'briefing') {
+    intel.parties.forEach(p => {
+      const drift = () => Math.floor(Math.random()*5)-2;
+      p.popularity = Math.max(10,Math.min(90,p.popularity+drift()));
+      p.organisation = Math.max(10,Math.min(95,p.organisation+drift()));
+      p.members = Math.max(10000,Math.round(p.members*(1+(Math.random()-.48)*.012)));
+      p.volunteers = Math.max(1000,Math.round(p.volunteers*(1+(Math.random()-.5)*.018)));
+      p.treasury = Math.max(0,p.treasury+p.income-p.expense);
+      p.history.unshift({date:dateText(), popularity:p.popularity, treasury:p.treasury});
+    });
+    const focus = intel.parties[Math.floor(Math.random()*intel.parties.length)];
+    intel.reports.unshift({title:'Monthly opposition landscape briefing',date:dateText(),detail:`${focus.name} reported membership and organisation changes; popularity index ${focus.popularity}/100.`});
+    intel.lastUpdated = dateText();
+    toast('Monthly rival-party intelligence briefing generated.');
+  } else if (action === 'profile-report') {
+    const p = intel.parties.find(x=>x.id===id);
+    if (!p) return;
+    intel.reports.unshift({title:`Dossier updated: ${p.name}`,date:dateText(),detail:`Treasury ${money(p.treasury)} · ${p.members.toLocaleString('en-IN')} members · ${p.seats} previous seats.`});
+    toast('Party dossier added to intelligence archive.');
+  }
+  intel.reports = intel.reports.slice(0,40);
+  saveState(); render();
+}
+
 /* MAIN RENDER */
 
 function render() {
@@ -4146,6 +4235,9 @@ function render() {
     case 'Intelligence':
       content = intelligencePage();
       break;
+    case 'Opposition & Rivals':
+      content = oppositionRivalsPage();
+      break;
     case 'Public Opinion':
       content = publicOpinionPage();
       break;
@@ -4186,6 +4278,11 @@ document.addEventListener('input', event => {
 });
 
 document.addEventListener('click', event => {
+  const rivalSelect = event.target.closest('[data-rival-select]');
+  if (rivalSelect) { state.selectedRivalPartyId = rivalSelect.dataset.rivalSelect; saveState(); render(); return; }
+  const rivalAction = event.target.closest('[data-rival-action]');
+  if (rivalAction) { updateRivalPartyIntelligence(rivalAction.dataset.rivalAction, rivalAction.dataset.rivalId); return; }
+
   const slateGenerateButton = event.target.closest('[data-party-slate-generate]');
   if (slateGenerateButton) { proposePartySlate(document.querySelector('#partySlateElectionType')?.value || 'assembly'); return; }
   const slateFundButton = event.target.closest('[data-party-slate-fund]');
