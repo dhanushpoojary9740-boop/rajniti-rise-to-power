@@ -62,7 +62,7 @@ const defaults = {
     totalLost: 0,
     calendar: {
       local: { intervalMonths: 60, nextAt: 36, label: 'Local body elections' },
-      assembly: { intervalMonths: 60, nextAt: 60, label: 'State Assembly elections' },
+      assembly: { intervalMonths: 60, nextAt: 8, label: 'State Assembly elections' },
       'lok-sabha': { intervalMonths: 60, nextAt: 48, label: 'Lok Sabha elections' }
     },
     nominationQueue: []
@@ -142,6 +142,33 @@ function loadState() {
 }
 
 let state = loadState();
+
+// RAJNITI 2.2.1: move the next State Assembly election to eight months
+// from the player's current game month, without resetting other election cycles.
+if (!state.assemblyElection8MonthScheduleV221) {
+  if (!state.elections || typeof state.elections !== 'object') {
+    state.elections = JSON.parse(JSON.stringify(defaults.elections));
+  }
+  if (!state.elections.calendar || typeof state.elections.calendar !== 'object') {
+    state.elections.calendar = JSON.parse(JSON.stringify(defaults.elections.calendar));
+  }
+  const currentGameMonth = Math.max(0, (Number(state.year || 1) - 1) * 12 + (Number(state.month || 1) - 1));
+  const assemblySchedule = state.elections.calendar.assembly ||
+    (state.elections.calendar.assembly = { intervalMonths: 60, label: 'State Assembly elections' });
+  const previousScheduledAt = Number(assemblySchedule.nextAt);
+  assemblySchedule.intervalMonths = 60;
+  assemblySchedule.label = 'State Assembly elections';
+  assemblySchedule.nextAt = currentGameMonth + 8;
+  const activeAssemblyElection = state.elections.active;
+  if (activeAssemblyElection &&
+      activeAssemblyElection.typeId === 'assembly' &&
+      Number(activeAssemblyElection.scheduledAt) === previousScheduledAt &&
+      !['counting', 'voting'].includes(activeAssemblyElection.phase)) {
+    activeAssemblyElection.scheduledAt = assemblySchedule.nextAt;
+  }
+  state.assemblyElection8MonthScheduleV221 = true;
+  localStorage.setItem(STORE_KEY, JSON.stringify(state));
+}
 
 // One-time ₹300 crore special grant to the existing party treasury.
 // This flag is persisted in the same save, so reloads and future updates cannot credit it again.
@@ -1743,7 +1770,7 @@ function processElectionCalendar() {
   const now = currentMonthIndex();
   const types = [
     { id: 'local', label: 'Local Body Election', interval: 60, offset: 36 },
-    { id: 'assembly', label: 'State Assembly Election', interval: 60, offset: 60 },
+    { id: 'assembly', label: 'State Assembly Election', interval: 60, offset: 8 },
     { id: 'lok-sabha', label: 'Lok Sabha Election', interval: 60, offset: 48 }
   ];
   types.forEach(type => {
