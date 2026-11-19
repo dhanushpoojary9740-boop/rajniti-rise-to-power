@@ -71,6 +71,33 @@ jobs:
       - name: Sync Android project
         run: npx cap sync android
 
+      - name: Lock Android app to landscape orientation
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import re
+          path = 'android/app/src/main/AndroidManifest.xml'
+          text = open(path, encoding='utf-8').read()
+          if 'android:screenOrientation=' not in text:
+              text, count = re.subn(
+              r'(<activity\b[^>]*android:name="[^"]+"[^>]*)(>)',
+              r'\1 android:screenOrientation="landscape"\2',
+                  text,
+                  count=1
+              )
+              if count != 1:
+                  raise SystemExit('Could not set Android landscape orientation in MainActivity')
+          else:
+              text = re.sub(
+                  r'android:screenOrientation="[^"]+"',
+                  'android:screenOrientation="landscape"',
+                  text,
+                  count=1
+              )
+          open(path, 'w', encoding='utf-8').write(text)
+          print('RAJNITI Android orientation set to landscape')
+          PY
+
       - name: Configure permanent release signing
         env:
           KEYSTORE_BASE64: ${{ secrets.RAJNITI_KEYSTORE_BASE64 }}
@@ -86,7 +113,7 @@ jobs:
           text = open(path, encoding='utf-8').read()
           run_number = int(os.environ['RUN_NUMBER'])
           version_code = 1000 + run_number
-          version_name = f"1.0.8.{run_number}"
+          version_name = f"1.1.0.{run_number}"
           text, count = re.subn(r'versionCode\s+\d+', f'versionCode {version_code}', text, count=1)
           if count != 1:
               raise SystemExit('Could not set Android versionCode')
