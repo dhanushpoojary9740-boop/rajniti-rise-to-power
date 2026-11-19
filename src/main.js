@@ -2312,8 +2312,9 @@ function electionPage() {
     `<div class="finance-history"><span>${escapeHtml(item.label || id)}</span><b>${Math.max(0, Number(item.nextAt || 0) - currentMonthIndex())} months</b></div>`
   ).join('');
   const nominationHtml = pendingNominations.length ? pendingNominations.map(item =>
-    `<div class="finance-history"><span><b>${escapeHtml(item.typeName)}</b><br>${escapeHtml(item.candidateName)} · ${escapeHtml(item.constituency)}<br><small>${escapeHtml(item.aiReason)}</small></span><b>Pending</b></div>`
-  ).join('') : '<p class="panel-description">No AI candidate proposals are awaiting review.</p>';
+    `<div class="finance-history nomination-card"><span><b>${escapeHtml(item.typeName)}</b><br>${escapeHtml(item.candidateName)} · ${escapeHtml(item.constituency)}<br><small>${escapeHtml(item.candidateRole || 'Party member')} · ${escapeHtml(item.aiReason)}</small></span><div class="nomination-actions"><button class="secondary-btn" data-nomination-action="approve" data-nomination-id="${escapeHtml(item.id)}">Approve</button><button class="secondary-btn" data-nomination-action="replace" data-nomination-id="${escapeHtml(item.id)}">Replace</button><button class="secondary-btn" data-nomination-action="reject" data-nomination-id="${escapeHtml(item.id)}">Reject</button></div></div>`
+  ).join('') : '<p class="panel-description">No AI candidate proposals are awaiting your review.</p>';
+
   return `
     <div class="page-heading">
       <div>
@@ -2335,7 +2336,12 @@ function electionPage() {
       <h2>Upcoming election cycles</h2>
       ${electionScheduleHtml}
       <h2>AI candidate nomination review</h2>
-      <p class="panel-description">AI proposals appear here for your review. No nomination is submitted automatically.</p>
+      <p class="panel-description">Review every proposed candidate before the party submits a nomination. Approving records party approval; it does not claim that an official filing has occurred.</p>
+      <div class="election-metrics">
+        <div><small>PENDING REVIEW</small><b>${pendingNominations.length}</b></div>
+        <div><small>APPROVED BY YOU</small><b>${electionCalendar.nominationQueue.filter(item => item.status === 'Approved').length}</b></div>
+        <div><small>REJECTED</small><b>${electionCalendar.nominationQueue.filter(item => item.status === 'Rejected').length}</b></div>
+      </div>
       ${nominationHtml}
     </section>
 
@@ -3241,6 +3247,43 @@ document.addEventListener('input', event => {
 });
 
 document.addEventListener('click', event => {
+  const nominationButton = event.target.closest('[data-nomination-action]');
+  if (nominationButton) {
+    const elections = ensureElectionCalendar();
+    const nomination = elections.nominationQueue.find(item => String(item.id) === nominationButton.dataset.nominationId);
+    if (!nomination || nomination.status !== 'Pending') return toast('This nomination is no longer pending.');
+    const decision = nominationButton.dataset.nominationAction;
+    if (decision === 'replace') {
+      const members = (state.partyMemberRecords || []).filter(member => member && member.name && member.name !== nomination.candidateName);
+      if (!members.length) return toast('Recruit another party member before replacing this candidate.');
+      const options = members.map((member, index) => `${index + 1}. ${member.name} · ${member.role || 'Party member'}`).join('\n');
+      const answer = prompt(`Choose replacement candidate number:\n${options}`);
+      if (answer === null) return;
+      const selected = members[Number(answer) - 1];
+      if (!selected) return toast('Invalid candidate selection.');
+      nomination.candidateName = selected.name;
+      nomination.candidateRole = selected.role || 'Party member';
+      nomination.constituency = selected.constituency || selected.district || nomination.constituency;
+      nomination.aiReason = 'Replacement selected by the party leader for final review.';
+      nomination.updatedAt = dateText();
+      saveState(); render(); toast('Candidate proposal replaced. Review and approve it when ready.');
+      return;
+    }
+    if (decision === 'approve') {
+      nomination.status = 'Approved';
+      nomination.approvedAt = dateText();
+      nomination.approvedBy = state.characterName || 'Player';
+      nomination.submissionStatus = 'Party-approved · official filing not yet simulated';
+      toast('Party nomination approved. It is recorded for the election workflow.');
+    } else {
+      nomination.status = 'Rejected';
+      nomination.rejectedAt = dateText();
+      toast('Candidate proposal rejected.');
+    }
+    saveState(); render();
+    return;
+  }
+
   const mapStateButton = event.target.closest('[data-map-state]');
   if (mapStateButton) {
     state.mapState = mapStateButton.dataset.mapState;

@@ -1973,3 +1973,8 @@ button {
 .atlas-compare-bars.secondary i{background:#689bd3}
 .atlas-compare-legend{display:flex;justify-content:space-between;gap:10px;margin-top:10px;font-size:10px;color:var(--muted,#9298a5)}
 @media(max-width:520px){.atlas-compare-row{grid-template-columns:minmax(82px,1.1fr) 24px minmax(28px,.7fr) 24px minmax(28px,.7fr);gap:5px;font-size:10px}}
+
+/* RAJNITI 1.2.7 Election Command Centre */
+.nomination-card { align-items: center; gap: 14px; flex-wrap: wrap; }
+.nomination-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+.nomination-actions .secondary-btn { min-height: 34px; padding: 7px 10px; font-size: 11px; }
