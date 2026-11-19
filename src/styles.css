@@ -1210,3 +1210,237 @@ button {
   .mobile-nav button small { font-size:7px; }
   .finance-stats { grid-template-columns:repeat(2,minmax(0,1fr)); }
 }
+
+
+/* RAJNITI 1.1.0 — LANDSCAPE COMMAND-CENTRE LAYOUT
+   Optimised for Android phones held horizontally and larger screens. */
+@media screen and (orientation: landscape) and (min-width: 600px) {
+  html, body, #app, .app-shell {
+    min-height: 100%;
+    width: 100%;
+  }
+
+  body {
+    overflow-x: hidden;
+  }
+
+  .sidebar {
+    display: flex !important;
+    width: 176px;
+    padding: 14px 10px;
+    overflow-y: auto;
+  }
+
+  .brand {
+    gap: 8px;
+    padding: 0 5px 18px;
+  }
+
+  .brand-mark {
+    width: 32px;
+    height: 32px;
+    font-size: 20px;
+  }
+
+  .brand b {
+    font-size: 13px;
+  }
+
+  .brand small {
+    font-size: 7px;
+    letter-spacing: 1.7px;
+  }
+
+  .side-label {
+    font-size: 8px;
+    padding: 0 8px 8px;
+  }
+
+  .sidebar nav {
+    gap: 3px;
+  }
+
+  .nav-item {
+    padding: 8px 9px;
+    gap: 9px;
+    font-size: 10px;
+    border-radius: 7px;
+  }
+
+  .nav-item span {
+    font-size: 14px;
+    width: 15px;
+  }
+
+  .sidebar-bottom {
+    gap: 8px;
+    margin-top: 12px;
+  }
+
+  .season-chip {
+    padding: 7px;
+    font-size: 7px;
+  }
+
+  .sidebar-bottom > small {
+    font-size: 6px;
+  }
+
+  .main-area {
+    margin-left: 176px;
+    min-height: 100vh;
+    padding-bottom: 0;
+  }
+
+  .topbar {
+    height: 48px;
+    padding: 0 22px;
+  }
+
+  .mobile-brand {
+    display: none !important;
+  }
+
+  .top-context {
+    display: block;
+    font-size: 8px;
+  }
+
+  .top-right {
+    gap: 10px;
+  }
+
+  .day-pill {
+    padding: 6px 9px;
+    font-size: 9px;
+  }
+
+  .avatar {
+    width: 28px;
+    height: 28px;
+  }
+
+  .page {
+    width: 100%;
+    max-width: 1600px;
+    padding: 20px 24px 30px;
+  }
+
+  .page-heading {
+    margin-bottom: 16px;
+  }
+
+  .page-heading h1 {
+    font-size: 23px;
+  }
+
+  .hero-panel {
+    min-height: 175px;
+    margin-bottom: 20px;
+  }
+
+  .hero-copy {
+    padding: 20px 24px;
+    max-width: 62%;
+  }
+
+  .hero-copy h2 {
+    font-size: 26px;
+    margin: 9px 0 7px;
+  }
+
+  .hero-copy p {
+    font-size: 10px;
+    max-width: 480px;
+    margin-bottom: 10px;
+  }
+
+  .hero-art {
+    width: 38%;
+  }
+
+  .parliament {
+    font-size: 70px;
+  }
+
+  .orbit {
+    width: 140px;
+    height: 140px;
+  }
+
+  .orbit-two {
+    width: 180px;
+    height: 180px;
+  }
+
+  .stats-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+    gap: 10px;
+  }
+
+  .stat-card {
+    padding: 12px;
+  }
+
+  .stat-card strong {
+    font-size: 20px;
+  }
+
+  .content-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    gap: 12px;
+  }
+
+  .creator-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+  }
+
+  .locality-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .ground-metrics {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .election-metrics {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .finance-stats {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .panel {
+    padding: 15px;
+  }
+
+  .section-heading {
+    margin-bottom: 12px;
+  }
+
+  .mobile-nav {
+    display: none !important;
+  }
+}
+
+/* Extra-wide landscape displays use a roomier command centre. */
+@media screen and (orientation: landscape) and (min-width: 1000px) {
+  .sidebar {
+    width: 210px;
+    padding: 20px 13px;
+  }
+
+  .main-area {
+    margin-left: 210px;
+  }
+
+  .page {
+    padding: 26px 32px 38px;
+  }
+
+  .content-grid {
+    grid-template-columns: 1.2fr 1fr !important;
+  }
+}
