@@ -49,6 +49,14 @@ const defaults = {
     totalVoters: 46900
   },
 
+  elections: {
+    active: null,
+    history: [],
+    totalContested: 0,
+    totalWon: 0,
+    totalLost: 0
+  },
+
   level: 1,
   experience: 0,
   money: 25000,
@@ -118,6 +126,19 @@ function migrateConstituencySave() {
   if (!Number.isFinite(c.totalVoters)) c.totalVoters = c.localities.reduce((sum, x) => sum + (Number(x.voters) || 0), 0);
 }
 migrateConstituencySave();
+
+// Safely add the election system to existing career saves.
+function migrateElectionSave() {
+  if (!state.elections || typeof state.elections !== 'object') {
+    state.elections = JSON.parse(JSON.stringify(defaults.elections));
+  }
+  if (!Array.isArray(state.elections.history)) state.elections.history = [];
+  if (!Number.isFinite(state.elections.totalContested)) state.elections.totalContested = state.elections.history.length;
+  if (!Number.isFinite(state.elections.totalWon)) state.elections.totalWon = state.elections.history.filter(x => x.result === 'Won').length;
+  if (!Number.isFinite(state.elections.totalLost)) state.elections.totalLost = state.elections.history.filter(x => x.result === 'Lost').length;
+  if (state.elections.active && !Array.isArray(state.elections.active.activities)) state.elections.active.activities = [];
+}
+migrateElectionSave();
 
 const parties = [
   {
@@ -302,7 +323,7 @@ function shell(content) {
       </main>
 
       <nav class="mobile-nav">
-        ${['Dashboard', 'Career', 'Party', 'Activities', 'Profile']
+        ${['Dashboard', 'Career', 'Party', 'Constituency', 'Elections', 'Activities', 'Profile']
           .map(name => `
             <button class="${activeTab === name ? 'active' : ''}"
               data-tab="${name}">
@@ -1729,6 +1750,264 @@ function startDevelopmentProject(form) {
   toast('Development proposal added to your record.');
 }
 
+/* ELECTION CAMPAIGN & ELECTORAL POLITICS */
+
+const electionTypes = [
+  { id: 'local', name: 'Local Body Election', level: 'Local', voters: 46900, baseSupport: 8, minInfluence: 0, minReputation: 0, winRole: 'Councillor / Panchayat Leader', deposit: 1500 },
+  { id: 'assembly', name: 'State Assembly Election', level: 'State', voters: 850000, baseSupport: 5, minInfluence: 18, minReputation: 22, winRole: 'MLA', deposit: 5000 },
+  { id: 'lok-sabha', name: 'Lok Sabha Election', level: 'National', voters: 1600000, baseSupport: 3, minInfluence: 35, minReputation: 45, winRole: 'Member of Parliament', deposit: 10000 }
+];
+
+const campaignActions = [
+  { id: 'door-to-door', name: 'Door-to-door campaign', description: 'Meet voters and discuss local priorities.', cost: 500, score: 5, support: 2, influence: 1, xp: 12 },
+  { id: 'public-rally', name: 'Organise public rally', description: 'Hold a public gathering and present your agenda.', cost: 1200, score: 9, support: 3, influence: 2, xp: 18 },
+  { id: 'manifesto-drive', name: 'Manifesto outreach', description: 'Explain your policy commitments to residents.', cost: 800, score: 7, support: 2, influence: 1, xp: 15 },
+  { id: 'volunteer-network', name: 'Mobilise volunteers', description: 'Coordinate volunteers for lawful voter outreach.', cost: 1000, score: 8, support: 1, influence: 3, xp: 16 },
+  { id: 'public-debate', name: 'Public policy debate', description: 'Present your proposals and answer public questions.', cost: 600, score: 6, support: 2, influence: 2, xp: 14 }
+];
+
+function electionCandidates() {
+  const candidates = [{ id: 'player', name: state.playerName || 'Player Candidate', role: state.role || 'Political Volunteer' }];
+  (state.partyMemberRecords || []).forEach(member => {
+    if (member && member.id !== 'founder' && member.name) candidates.push({ id: member.id, name: member.name, role: member.role || 'Party Member' });
+  });
+  return candidates;
+}
+
+function electionPage() {
+  const e = state.elections;
+  const active = e.active;
+  const candidateList = electionCandidates();
+  const totalVoters = Number(state.constituency.totalVoters) || 46900;
+  const averageSupport = Math.round((state.constituency.localities || []).reduce((sum, item) => sum + Number(item.support || 0), 0) / Math.max(1, (state.constituency.localities || []).length));
+  const winRate = e.totalContested ? Math.round(e.totalWon / e.totalContested * 100) : 0;
+
+  return `
+    <div class="page-heading">
+      <div>
+        <div class="eyebrow">DEMOCRATIC COMPETITION</div>
+        <h1>Election <em>command centre</em></h1>
+        <p>Prepare your candidate, campaign responsibly and face the ballot.</p>
+      </div>
+    </div>
+
+    <div class="stats-grid election-stats">
+      ${statCard('ELECTIONS CONTESTED', e.totalContested, 'Career record', '▤')}
+      ${statCard('ELECTIONS WON', e.totalWon, 'Successful contests', '★')}
+      ${statCard('WIN RATE', winRate + '%', 'Based on completed contests', '✦')}
+      ${statCard('LOCAL SUPPORT', averageSupport + '%', 'Across your localities', '♥')}
+    </div>
+
+    ${active ? `
+      <section class="panel election-active-panel">
+        <span class="gold-tag">CAMPAIGN IN PROGRESS</span>
+        <h2>${escapeHtml(active.typeName)}</h2>
+        <p class="panel-description">Candidate: <b>${escapeHtml(active.candidateName)}</b> · ${escapeHtml(active.candidateId === 'player' ? 'You are contesting' : 'Party candidate')}</p>
+        <div class="election-metrics">
+          <div><small>CAMPAIGN SCORE</small><b>${active.campaignScore}/100</b></div>
+          <div><small>CAMPAIGN FUNDS</small><b>${money(active.budget)}</b></div>
+          <div><small>ESTIMATED SUPPORT</small><b>${active.estimatedSupport}%</b></div>
+        </div>
+        <div class="mini-progress"><i style="width:${Math.min(100, active.campaignScore)}%"></i></div>
+        <div class="section-heading"><div><span class="eyebrow">CAMPAIGN OPERATIONS</span><h3>Choose your next move</h3></div></div>
+        <div class="activity-grid">
+          ${campaignActions.map(action => `
+            <article class="panel activity-card election-action-card">
+              <h3>${action.name}</h3>
+              <p class="panel-description">${action.description}</p>
+              <div class="party-stat-row"><span>Campaign cost</span><b>${money(action.cost)}</b></div>
+              <div class="activity-rewards"><span>+${action.score} campaign score</span><span>+${action.support}% support potential</span></div>
+              <button class="secondary-btn full" data-campaign-action="${action.id}" ${active.budget < action.cost || state.actionsUsed >= 2 ? 'disabled' : ''}>${state.actionsUsed >= 2 ? 'DAILY LIMIT REACHED' : active.budget < action.cost ? 'INSUFFICIENT CAMPAIGN FUNDS' : 'RUN CAMPAIGN ACTIVITY →'}</button>
+            </article>
+          `).join('')}
+        </div>
+        <section class="panel manifesto-panel">
+          <span class="eyebrow">YOUR ELECTION MANIFESTO</span>
+          <p>${escapeHtml(active.manifesto)}</p>
+          <div class="party-stat-row"><span>Campaign activities completed</span><b>${active.activities.length}</b></div>
+          <button class="primary-btn full" data-action="hold-election" ${active.activities.length < 2 ? 'disabled' : ''}>GO TO POLLING & COUNTING →</button>
+          ${active.activities.length < 2 ? '<small class="creator-note">Complete at least two campaign activities before polling day.</small>' : ''}
+        </section>
+      </section>
+    ` : `
+      <section class="panel election-start-panel">
+        <span class="gold-tag">NEXT ELECTORAL OPPORTUNITY</span>
+        <h2>Prepare to contest an election</h2>
+        <p class="panel-description">Choose an election level, candidate and campaign plan. Higher offices require stronger political standing.</p>
+        <form id="start-election-form" class="creator-panel election-form">
+          <div class="creator-grid">
+            <div class="creator-field">
+              <label for="electionType">Election type</label>
+              <select id="electionType" name="electionType" required>
+                ${electionTypes.map(type => `<option value="${type.id}">${type.name} · ${type.level}</option>`).join('')}
+              </select>
+            </div>
+            <div class="creator-field">
+              <label for="electionCandidate">Candidate</label>
+              <select id="electionCandidate" name="candidateId" required>
+                ${candidateList.map(candidate => `<option value="${escapeHtml(candidate.id)}">${escapeHtml(candidate.name)} · ${escapeHtml(candidate.role)}</option>`).join('')}
+              </select>
+            </div>
+            <div class="creator-field">
+              <label for="campaignBudget">Campaign budget</label>
+              <select id="campaignBudget" name="campaignBudget" required>
+                <option value="5000">₹5,000 · Starter</option>
+                <option value="10000">₹10,000 · Standard</option>
+                <option value="20000">₹20,000 · Strong</option>
+                <option value="40000">₹40,000 · Major campaign</option>
+              </select>
+            </div>
+          </div>
+          <div class="creator-field">
+            <label for="electionManifesto">Election manifesto summary</label>
+            <textarea id="electionManifesto" name="manifesto" rows="4" maxlength="320" placeholder="Describe your priorities: roads, water, education, healthcare and jobs..." required></textarea>
+          </div>
+          <div class="election-note"><b>Constituency:</b> ${escapeHtml(state.constituency.constituencyName)} · ${escapeHtml(state.constituency.district)}, ${escapeHtml(state.constituency.state)}<br><b>Estimated local voters:</b> ${totalVoters.toLocaleString('en-IN')}<br><b>Party:</b> ${escapeHtml(state.party)}</div>
+          <button type="submit" class="primary-btn full">LAUNCH ELECTION CAMPAIGN →</button>
+        </form>
+      </section>
+    `}
+
+    <section class="panel" style="margin-top:16px">
+      <span class="eyebrow">ELECTION HISTORY</span>
+      <h3>Your electoral record</h3>
+      ${e.history.length ? e.history.slice(0, 10).map(item => `
+        <div class="career-step election-history-row">
+          <div><b>${escapeHtml(item.typeName)}</b><small>${escapeHtml(item.candidateName)} · ${escapeHtml(item.date)}</small></div>
+          <span class="${item.result === 'Won' ? 'current-label' : 'locked'}">${item.result.toUpperCase()}</span>
+        </div>
+      `).join('') : '<p class="panel-description">You have not contested an election yet. Your first contest can begin here.</p>'}
+    </section>
+  `;
+}
+
+function startElection(form) {
+  if (!state.characterCreated) return toast('Create your politician profile first.');
+  if (state.elections.active) return toast('An election campaign is already active.');
+  const data = new FormData(form);
+  const type = electionTypes.find(item => item.id === String(data.get('electionType')));
+  const candidate = electionCandidates().find(item => item.id === String(data.get('candidateId')));
+  const budget = Number(data.get('campaignBudget'));
+  const manifesto = String(data.get('manifesto') || '').trim();
+  if (!type || !candidate || manifesto.length < 20) return toast('Choose a candidate and write a manifesto of at least 20 characters.');
+  if (state.influence < type.minInfluence || state.reputation < type.minReputation) {
+    return toast(`This election requires influence ${type.minInfluence} and reputation ${type.minReputation}. Build your political standing first.`);
+  }
+  if (!Number.isFinite(budget) || budget < 5000 || state.money < budget + type.deposit) {
+    return toast(`You need ${money(budget + type.deposit)} for the selected campaign and deposit.`);
+  }
+  state.money -= budget + type.deposit;
+  state.totalExpenses += budget + type.deposit;
+  const localitySupport = (state.constituency.localities || []).reduce((sum, item) => sum + Number(item.support || 0), 0) / Math.max(1, state.constituency.localities.length);
+  const estimatedSupport = Math.max(1, Math.min(85, Math.round(localitySupport + state.reputation * 0.18 + state.influence * 0.12 + (state.partyPopularity || 0) * 0.08)));
+  state.elections.active = {
+    id: 'election-' + Date.now(), typeId: type.id, typeName: type.name, level: type.level,
+    candidateId: candidate.id, candidateName: candidate.name, manifesto,
+    budget, initialBudget: budget, deposit: type.deposit,
+    campaignScore: 0, estimatedSupport, activities: [],
+    opponentName: ['Arjun Rao', 'Meera Kulkarni', 'Ravi Shetty', 'Ananya Menon', 'Vikram Desai'][state.elections.totalContested % 5],
+    started: dateText(), constituency: state.constituency.constituencyName
+  };
+  saveState();
+  render();
+  toast('Election campaign launched. Build support before polling day.');
+}
+
+function runCampaignAction(id) {
+  const active = state.elections.active;
+  const action = campaignActions.find(item => item.id === id);
+  if (!active || !action) return;
+  if (state.actionsUsed >= 2) return toast('Daily action limit reached. End the day to continue.');
+  if (active.budget < action.cost) return toast('Not enough campaign funds.');
+  active.budget -= action.cost;
+  active.campaignScore = Math.min(100, active.campaignScore + action.score);
+  active.estimatedSupport = Math.min(90, active.estimatedSupport + action.support);
+  active.activities.push({ name: action.name, date: dateText(), cost: action.cost });
+  state.actionsUsed++;
+  state.totalActions++;
+  state.experience += action.xp;
+  state.influence = Math.min(100, state.influence + action.influence);
+  state.reputation = Math.min(100, state.reputation + Math.max(1, Math.floor(action.support / 2)));
+  state.publicSupport = Math.min(100, state.publicSupport + action.support);
+  if (active.candidateId === 'player') {
+    const locality = state.constituency.localities.find(item => item.name === state.constituency.selectedLocality) || state.constituency.localities[0];
+    if (locality) locality.support = Math.min(100, Number(locality.support || 0) + action.support);
+  }
+  saveState();
+  render();
+  toast(`${action.name} completed.`);
+}
+
+function holdElection() {
+  const active = state.elections.active;
+  if (!active) return toast('No active election campaign.');
+  if (active.activities.length < 2) return toast('Complete at least two campaign activities first.');
+  const type = electionTypes.find(item => item.id === active.typeId);
+  const totalVoters = type.id === 'local' ? Number(state.constituency.totalVoters) || type.voters : type.voters;
+  const turnoutRate = Math.min(0.78, 0.48 + active.campaignScore / 250 + active.estimatedSupport / 500);
+  const turnout = Math.round(totalVoters * turnoutRate);
+  const candidateShare = Math.max(5, Math.min(85, active.estimatedSupport * 0.48 + active.campaignScore * 0.32 + state.reputation * 0.12 + state.influence * 0.08));
+  const opponentShare = Math.max(5, Math.min(80, 100 - candidateShare - 8));
+  const otherShare = Math.max(0, 100 - candidateShare - opponentShare);
+  const candidateVotes = Math.round(turnout * candidateShare / 100);
+  const opponentVotes = Math.round(turnout * opponentShare / 100);
+  const otherVotes = Math.max(0, turnout - candidateVotes - opponentVotes);
+  const won = candidateVotes > opponentVotes;
+  const result = {
+    id: active.id, typeName: active.typeName, candidateName: active.candidateName,
+    candidateId: active.candidateId, constituency: active.constituency,
+    date: dateText(), result: won ? 'Won' : 'Lost', totalVoters, turnout,
+    candidateVotes, opponentVotes, otherVotes, opponentName: active.opponentName,
+    candidateShare: Math.round(candidateVotes / Math.max(1, turnout) * 100),
+    campaignScore: active.campaignScore, manifesto: active.manifesto
+  };
+  state.elections.history.unshift(result);
+  state.elections.history = state.elections.history.slice(0, 30);
+  state.elections.totalContested++;
+  if (won) {
+    state.elections.totalWon++;
+    state.reputation = Math.min(100, state.reputation + 8);
+    state.influence = Math.min(100, state.influence + 10);
+    state.publicSupport = Math.min(100, state.publicSupport + 8);
+    state.experience += 100;
+    if (active.candidateId === 'player') {
+      state.role = type.winRole;
+      state.level = Math.max(state.level, type.id === 'local' ? 2 : type.id === 'assembly' ? 5 : 8);
+    }
+    if (state.partyId !== 'independent') state.partyPopularity = Math.min(100, state.partyPopularity + 8);
+  } else {
+    state.elections.totalLost++;
+    state.reputation = Math.max(0, state.reputation - 2);
+    state.experience += 25;
+  }
+  if (state.partyId !== 'independent' && state.partyFunds >= 0) {
+    state.partyElectionHistory.push({ event: `${result.result} ${active.typeName}`, date: dateText() });
+  }
+  state.elections.active = null;
+  saveState();
+  render();
+  showElectionResult(result);
+}
+
+function showElectionResult(result) {
+  const message = result.result === 'Won' ? 'Congratulations! Your candidate has won the election.' : 'Your candidate did not win this election. Review the result and prepare for the next contest.';
+  const overlay = document.createElement('div');
+  overlay.className = 'election-result-overlay';
+  overlay.innerHTML = `
+    <section class="panel election-result-card">
+      <span class="gold-tag">OFFICIAL SIMULATION RESULT</span>
+      <h2 class="${result.result === 'Won' ? 'result-won' : 'result-lost'}">${result.result === 'Won' ? 'ELECTION WON' : 'ELECTION LOST'}</h2>
+      <p class="panel-description">${message}</p>
+      <div class="election-result-score">
+        <div><small>${escapeHtml(result.candidateName)}</small><b>${result.candidateVotes.toLocaleString('en-IN')}</b><span>${result.candidateShare}% votes</span></div>
+        <div><small>${escapeHtml(result.opponentName)}</small><b>${result.opponentVotes.toLocaleString('en-IN')}</b><span>Opposition votes</span></div>
+      </div>
+      <div class="party-stat-row"><span>Total turnout</span><b>${result.turnout.toLocaleString('en-IN')} / ${result.totalVoters.toLocaleString('en-IN')}</b></div>
+      <button class="primary-btn full" data-action="close-election-result">CONTINUE →</button>
+    </section>`;
+  document.body.appendChild(overlay);
+}
+
 function genericPage(name) {
   const descriptions = {
     Constituency: 'Understand your local community and constituency.',
@@ -1788,6 +2067,9 @@ function render() {
     case 'Constituency':
       content = constituencyPage();
       break;
+    case 'Elections':
+      content = electionPage();
+      break;
     default:
       content = genericPage(activeTab);
   }
@@ -1816,6 +2098,9 @@ document.addEventListener('click', event => {
 
   const groundAction = event.target.closest('[data-ground-action]');
   if (groundAction) { performGroundAction(groundAction.dataset.groundAction); return; }
+
+  const campaignAction = event.target.closest('[data-campaign-action]');
+  if (campaignAction) { runCampaignAction(campaignAction.dataset.campaignAction); return; }
 
   const partyNav = event.target.closest('[data-party-section]');
   if (partyNav) { partySection = partyNav.dataset.partySection; render(); return; }
@@ -1878,6 +2163,14 @@ document.addEventListener('click', event => {
     case 'resolve-local-issue':
       resolveLocalIssue();
       break;
+    case 'hold-election':
+      holdElection();
+      break;
+    case 'close-election-result':
+      document.querySelector('.election-result-overlay')?.remove();
+      activeTab = 'Elections';
+      render();
+      break;
   }
 });
 
@@ -1906,6 +2199,7 @@ document.addEventListener('submit', event => {
   if (event.target.id === 'party-election-form') { event.preventDefault(); holdPartyElection(event.target); }
   if (event.target.id === 'constituency-setup-form') { event.preventDefault(); saveConstituencySetup(event.target); }
   if (event.target.id === 'development-project-form') { event.preventDefault(); startDevelopmentProject(event.target); }
+  if (event.target.id === 'start-election-form') { event.preventDefault(); startElection(event.target); }
 
   if (event.target.id === 'character-form') {
     event.preventDefault();

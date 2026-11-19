@@ -1147,3 +1147,39 @@ button {
   .ground-metrics > div:last-child { grid-column: 1 / -1; }
   .ground-panel .creator-grid { grid-template-columns: 1fr; }
 }
+
+
+/* RAJNITI 1.0.6 — ELECTION CAMPAIGN SYSTEM */
+.election-stats { margin-bottom: 16px; }
+.election-active-panel, .election-start-panel { border-color: #c9a75b55; }
+.election-form { padding: 0; margin-top: 18px; background: transparent; border: 0; }
+.election-form .creator-grid { margin-bottom: 15px; }
+.election-form textarea { width: 100%; min-height: 105px; resize: vertical; border: 1px solid var(--line); border-radius: 9px; background: #0b1523; color: var(--text); padding: 13px; font: inherit; outline: none; }
+.election-form textarea:focus { border-color: var(--gold); box-shadow: 0 0 0 2px #d8b56b20; }
+.election-note { padding: 13px; margin: 14px 0; border-left: 3px solid var(--gold); background: #d8b56b0c; color: var(--muted); font-size: 12px; line-height: 1.9; }
+.election-note b { color: var(--text); }
+.election-metrics { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 9px; margin: 16px 0; }
+.election-metrics > div { min-width: 0; padding: 12px; border: 1px solid var(--line); border-radius: 9px; background: #0d1726; }
+.election-metrics small { display: block; color: var(--muted); font-size: 8px; letter-spacing: 1px; margin-bottom: 7px; }
+.election-metrics b { font-size: 13px; overflow-wrap: anywhere; }
+.election-action-card { min-width: 0; }
+.election-action-card .activity-rewards { margin-top: auto; }
+.manifesto-panel { margin-top: 15px; background: #d8b56b0b; }
+.manifesto-panel p { color: var(--text); line-height: 1.7; }
+.election-history-row { align-items: center; gap: 12px; }
+.election-history-row > div { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.election-history-row small { color: var(--muted); font-size: 10px; }
+.election-result-overlay { position: fixed; inset: 0; z-index: 1000; display: grid; place-items: center; padding: 18px; background: #030812eF; overflow-y: auto; }
+.election-result-card { width: min(100%, 520px); border-color: #d8b56b88; box-shadow: 0 20px 80px #0009; }
+.election-result-card h2 { font-size: 28px; margin: 18px 0 8px; }
+.result-won { color: #8fd2a3; }
+.result-lost { color: #e0a2a2; }
+.election-result-score { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 20px 0; }
+.election-result-score > div { display: flex; flex-direction: column; gap: 6px; padding: 14px; border: 1px solid var(--line); border-radius: 9px; background: #0d1726; min-width: 0; }
+.election-result-score small { color: var(--muted); font-size: 10px; }
+.election-result-score b { font-size: 21px; }
+.election-result-score span { color: var(--muted); font-size: 10px; }
+@media (max-width: 650px) {
+  .election-metrics { grid-template-columns: 1fr; }
+  .election-result-card h2 { font-size: 23px; }
+}
