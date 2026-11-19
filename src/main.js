@@ -24,6 +24,7 @@ const defaults = {
   partyPosition: 'Independent Politician',
   partyMembers: 1,
   partyFunds: 0,
+  partyTreasury: { incomeTotal: 0, expenseTotal: 0, ledger: [] },
   partyPopularity: 0,
   partyCreated: false,
   partyHistory: [],
@@ -124,6 +125,9 @@ function loadState() {
 }
 
 let state = loadState();
+if (!state.partyTreasury || typeof state.partyTreasury !== 'object') state.partyTreasury = { incomeTotal: 0, expenseTotal: 0, ledger: [] };
+if (!Array.isArray(state.partyTreasury.ledger)) state.partyTreasury.ledger = [];
+for (const key of ['incomeTotal','expenseTotal']) if (!Number.isFinite(Number(state.partyTreasury[key]))) state.partyTreasury[key] = 0;
 if (!state.elections || typeof state.elections !== 'object') state.elections = JSON.parse(JSON.stringify(defaults.elections));
 if (!state.elections.calendar) state.elections.calendar = JSON.parse(JSON.stringify(defaults.elections.calendar));
 if (!Array.isArray(state.elections.nominationQueue)) state.elections.nominationQueue = [];
@@ -939,17 +943,6 @@ function joinedPartyPage() {
     </section>
 
     <section class="panel" style="margin-top:15px">
-      <span class="eyebrow">POLITICAL FINANCES</span>
-      <h3>Contribute to party funds</h3>
-      <p class="panel-description">
-        Make a voluntary contribution from your personal wealth.
-      </p>
-      <button class="secondary-btn" data-action="party-donate">
-        CONTRIBUTE ₹1,000 →
-      </button>
-    </section>
-
-    <section class="panel" style="margin-top:15px">
       <span class="eyebrow">MEMBERSHIP OPTIONS</span>
       <button class="secondary-btn full" data-action="leave-party">
         LEAVE POLITICAL PARTY
@@ -969,7 +962,7 @@ function getPartyMember(id) {
 }
 
 function partySectionTabs() {
-  return ['Overview', 'Leadership', 'Members', 'Organisation', 'Elections'].map(section => `
+  return ['Overview', 'Treasury', 'Leadership', 'Members', 'Organisation', 'Elections'].map(section => `
     <button class="secondary-btn ${partySection === section ? 'active' : ''}" data-party-section="${section}">${section}</button>
   `).join('');
 }
@@ -1044,6 +1037,7 @@ function partyElectionsSection() {
 
 function createdPartyPage() {
   let sectionContent = partyOverviewSection();
+  if (partySection === 'Treasury') sectionContent = partyTreasurySection();
   if (partySection === 'Leadership') sectionContent = partyLeadershipSection();
   if (partySection === 'Members') sectionContent = partyMembersSection();
   if (partySection === 'Organisation') sectionContent = partyOrganisationSection();
@@ -1057,7 +1051,7 @@ function createdPartyPage() {
     <div class="section-heading" style="margin-top:22px"><div><span class="eyebrow">PARTY ADMINISTRATION</span><h2>Management centre</h2></div></div>
     <div class="content-grid">${partySectionTabs()}</div>
     <div style="margin-top:15px">${sectionContent}</div>
-    <section class="panel" style="margin-top:15px"><span class="eyebrow">PARTY TREASURY</span><p class="panel-description">Contribute personal funds to support party operations.</p><button class="secondary-btn" data-action="party-donate">CONTRIBUTE ₹1,000 →</button></section>`;
+    `;
 }
 
 function createPartyPage() {
@@ -1455,6 +1449,14 @@ function investFixedDeposit(form) {
 }
 
 function processMonthlyFinances() {
+  if (state.partyId && state.partyId !== 'independent') {
+    const members = Math.max(1, Number(state.partyMembers) || 1);
+    const membershipIncome = Math.min(50000, members * 25);
+    const publicContributions = Math.floor(Math.max(0, Number(state.partyPopularity) || 0) * 20);
+    if (membershipIncome > 0) addPartyLedgerEntry('Income', membershipIncome, 'Monthly party membership contributions');
+    if (publicContributions > 0) addPartyLedgerEntry('Income', publicContributions, 'Monthly voluntary public contributions');
+  }
+
   const salary = monthlySalary();
   const businessIncome = monthlyBusinessIncome();
   const investmentIncome = Math.floor(state.finance.fixedDeposits * 0.005);
@@ -1608,6 +1610,7 @@ function joinParty(id) {
   state.partyMembers = party.members;
   state.partyPopularity = party.popularity;
   state.partyFunds = 0;
+  state.partyTreasury = { incomeTotal: 0, expenseTotal: 0, ledger: [] };
   state.partyCreated = false;
 
   state.partyHistory.unshift({
@@ -1648,6 +1651,7 @@ function establishParty(form) {
   state.partyPosition = 'Founder & President';
   state.partyMembers = 1;
   state.partyFunds = 0;
+  state.partyTreasury = { incomeTotal: 0, expenseTotal: 0, ledger: [] };
   state.partyPopularity = 5;
   state.partyCreated = true;
   state.partyMemberRecords = [{ id: 'founder', name: state.playerName, role: 'Founder & National President', loyalty: 95, experience: 100, joined: dateText(), isFounder: true }];
@@ -1686,16 +1690,50 @@ function partyMeeting() {
 }
 
 function donatePartyFunds() {
-  if (state.partyId === 'independent') return;
-  if (state.money < 1000) return toast('You need ₹1,000.');
+  return toast('Personal-to-party transfers are disabled. Use the Party Treasury to manage independent party income.');
+}
 
-  state.money -= 1000;
-  state.partyFunds += 1000;
-  state.totalExpenses += 1000;
+function addPartyLedgerEntry(type, amount, note) {
+  if (!state.partyTreasury || typeof state.partyTreasury !== 'object') state.partyTreasury = { incomeTotal: 0, expenseTotal: 0, ledger: [] };
+  if (!Array.isArray(state.partyTreasury.ledger)) state.partyTreasury.ledger = [];
+  const value = Math.max(0, Math.floor(Number(amount) || 0));
+  if (!value) return;
+  state.partyFunds = Math.max(0, Number(state.partyFunds) || 0) + (type === 'Income' ? value : -value);
+  if (type === 'Income') state.partyTreasury.incomeTotal = (Number(state.partyTreasury.incomeTotal) || 0) + value;
+  else state.partyTreasury.expenseTotal = (Number(state.partyTreasury.expenseTotal) || 0) + value;
+  state.partyTreasury.ledger.unshift({ type, amount: value, note, date: dateText() });
+  state.partyTreasury.ledger = state.partyTreasury.ledger.slice(0, 60);
+}
 
-  saveState();
-  render();
-  toast('₹1,000 added to party treasury.');
+function partyTreasurySection() {
+  const treasury = state.partyTreasury || { incomeTotal: 0, expenseTotal: 0, ledger: [] };
+  const ledger = Array.isArray(treasury.ledger) ? treasury.ledger : [];
+  return `
+    <section class="panel">
+      <span class="eyebrow">INDEPENDENT PARTY FINANCES</span><h3>Party treasury</h3>
+      <div class="party-stat-row"><span>Available party funds</span><b>${money(state.partyFunds)}</b></div>
+      <div class="party-stat-row"><span>Total party income</span><b>${money(treasury.incomeTotal || 0)}</b></div>
+      <div class="party-stat-row"><span>Total party expenses</span><b>${money(treasury.expenseTotal || 0)}</b></div>
+      <p class="panel-description">This account is separate from your personal wealth. No personal money is transferred automatically.</p>
+    </section>
+    <section class="panel" style="margin-top:15px">
+      <span class="eyebrow">FUNDRAISING</span><h3>Organise a party fundraising event</h3>
+      <p class="panel-description">Use ₹2,000 from the party treasury for event administration. The simulation records ₹5,000 in public contributions. This does not use your personal wealth.</p>
+      <button class="primary-btn" data-action="party-fundraiser">ORGANISE FUNDRAISER · ₹2,000 PARTY FUNDS →</button>
+    </section>
+    <section class="panel" style="margin-top:15px">
+      <span class="eyebrow">TRANSACTION HISTORY</span><h3>Party ledger</h3>
+      ${ledger.length ? ledger.slice(0,12).map(item => `<div class="party-stat-row"><span>${escapeHtml(item.note)}<small style="display:block;color:var(--muted)">${escapeHtml(item.date || '')}</small></span><b class="${item.type === 'Income' ? 'finance-positive' : ''}">${item.type === 'Income' ? '+' : '-'}${money(item.amount)}</b></div>`).join('') : '<p class="panel-description">No party transactions recorded yet. Membership income will appear after monthly turns.</p>'}
+    </section>`;
+}
+
+function organisePartyFundraiser() {
+  if (state.partyId === 'independent') return toast('Join or establish a party first.');
+  if (Number(state.partyFunds) < 2000) return toast('The party treasury needs ₹2,000 for this event. Your personal wealth cannot be used.');
+  addPartyLedgerEntry('Expense', 2000, 'Fundraising event operating cost');
+  addPartyLedgerEntry('Income', 5000, 'Public contributions from fundraising event');
+  saveState(); render();
+  toast('Fundraiser completed. Net party treasury increase: ₹3,000.');
 }
 
 function recruitMembers() {
@@ -1732,6 +1770,7 @@ function leaveParty() {
   state.partyPosition = 'Independent Politician';
   state.partyMembers = 1;
   state.partyFunds = 0;
+  state.partyTreasury = { incomeTotal: 0, expenseTotal: 0, ledger: [] };
   state.partyPopularity = 0;
   state.partyCreated = false;
   state.partyMemberRecords = [];
@@ -3914,6 +3953,9 @@ if (!Array.isArray(state.media.history)) state.media.history = [];
       break;
     case 'party-donate':
       donatePartyFunds();
+      break;
+    case 'party-fundraiser':
+      organisePartyFundraiser();
       break;
     case 'recruit-members':
       recruitMembers();
