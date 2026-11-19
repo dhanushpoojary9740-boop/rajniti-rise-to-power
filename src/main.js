@@ -2630,59 +2630,14 @@ function genericPage(name) {
 }
 
 
-/* INDIA POLITICAL STATE ATLAS — RAJNITI 1.1.2
-   The state/district directory is a playable simulation index, not an official
-   administrative boundary dataset. District lists are representative samples. */
-const indiaAtlas = [
-  { region: 'North', states: [
-    { name: 'Jammu and Kashmir', districts: ['Srinagar', 'Jammu', 'Anantnag', 'Baramulla'] },
-    { name: 'Himachal Pradesh', districts: ['Shimla', 'Kangra', 'Mandi', 'Solan'] },
-    { name: 'Punjab', districts: ['Amritsar', 'Ludhiana', 'Jalandhar', 'Patiala'] },
-    { name: 'Haryana', districts: ['Gurugram', 'Faridabad', 'Hisar', 'Karnal'] },
-    { name: 'Uttarakhand', districts: ['Dehradun', 'Haridwar', 'Nainital', 'Udham Singh Nagar'] },
-    { name: 'Uttar Pradesh', districts: ['Lucknow', 'Varanasi', 'Kanpur Nagar', 'Prayagraj', 'Gorakhpur'] },
-    { name: 'Delhi', districts: ['Central Delhi', 'East Delhi', 'New Delhi', 'South Delhi'] },
-    { name: 'Chandigarh', districts: ['Chandigarh'] },
-    { name: 'Ladakh', districts: ['Leh', 'Kargil'] },
-    { name: 'Andaman and Nicobar Islands', districts: ['South Andaman', 'North and Middle Andaman', 'Nicobar'] }
-  ]},
-  { region: 'West', states: [
-    { name: 'Rajasthan', districts: ['Jaipur', 'Jodhpur', 'Udaipur', 'Kota'] },
-    { name: 'Gujarat', districts: ['Ahmedabad', 'Surat', 'Vadodara', 'Rajkot'] },
-    { name: 'Maharashtra', districts: ['Mumbai City', 'Pune', 'Nagpur', 'Nashik'] },
-    { name: 'Goa', districts: ['North Goa', 'South Goa'] },
-    { name: 'Lakshadweep', districts: ['Lakshadweep'] },
-    { name: 'Dadra and Nagar Haveli and Daman and Diu', districts: ['Dadra and Nagar Haveli', 'Daman', 'Diu'] }
-  ]},
-  { region: 'Central', states: [
-    { name: 'Madhya Pradesh', districts: ['Bhopal', 'Indore', 'Jabalpur', 'Gwalior'] },
-    { name: 'Chhattisgarh', districts: ['Raipur', 'Bilaspur', 'Durg', 'Bastar'] }
-  ]},
-  { region: 'East', states: [
-    { name: 'Bihar', districts: ['Patna', 'Gaya', 'Muzaffarpur', 'Bhagalpur'] },
-    { name: 'Jharkhand', districts: ['Ranchi', 'Dhanbad', 'Jamshedpur', 'Hazaribagh'] },
-    { name: 'Odisha', districts: ['Khordha', 'Cuttack', 'Ganjam', 'Sambalpur'] },
-    { name: 'West Bengal', districts: ['Kolkata', 'Howrah', 'Darjeeling', 'North 24 Parganas'] },
-    { name: 'Sikkim', districts: ['Gangtok', 'Namchi', 'Gyalshing', 'Mangan'] }
-  ]},
-  { region: 'South', states: [
-    { name: 'Andhra Pradesh', districts: ['Visakhapatnam', 'Vijayawada', 'Guntur', 'Nellore'] },
-    { name: 'Karnataka', districts: ['Udupi', 'Dakshina Kannada', 'Uttara Kannada', 'Shivamogga', 'Mysuru', 'Bengaluru Urban'] },
-    { name: 'Kerala', districts: ['Kasaragod', 'Kannur', 'Wayanad', 'Kozhikode', 'Ernakulam', 'Thiruvananthapuram'] },
-    { name: 'Tamil Nadu', districts: ['Chennai', 'Coimbatore', 'Madurai', 'Salem', 'Thanjavur'] },
-    { name: 'Telangana', districts: ['Hyderabad', 'Warangal', 'Karimnagar', 'Nizamabad'] },
-    { name: 'Puducherry', districts: ['Puducherry', 'Karaikal', 'Mahe', 'Yanam'] }
-  ]},
-  { region: 'North East', states: [
-    { name: 'Arunachal Pradesh', districts: ['Itanagar', 'Tawang', 'Papum Pare', 'Namsai'] },
-    { name: 'Assam', districts: ['Kamrup Metropolitan', 'Dibrugarh', 'Jorhat', 'Cachar'] },
-    { name: 'Manipur', districts: ['Imphal West', 'Imphal East', 'Thoubal', 'Churachandpur'] },
-    { name: 'Meghalaya', districts: ['East Khasi Hills', 'West Garo Hills', 'Ri-Bhoi', 'West Jaintia Hills'] },
-    { name: 'Mizoram', districts: ['Aizawl', 'Lunglei', 'Champhai', 'Kolasib'] },
-    { name: 'Nagaland', districts: ['Kohima', 'Dimapur', 'Mokokchung', 'Mon'] },
-    { name: 'Tripura', districts: ['West Tripura', 'Gomati', 'Sepahijala', 'North Tripura'] }
-  ]}
-];
+/* INDIA POLITICAL & DEVELOPMENT ATLAS — RAJNITI 1.2.2
+   District names and LGD codes are loaded from the user-supplied LGD extract
+   dated 12 October 2026. Simulated development indicators remain fictional. */
+import indiaDistrictData from './data/india-districts.json';
+
+const indiaAtlas = indiaDistrictData.regions;
+const atlasDistrictTotal = indiaDistrictData.sourceDistrictCount;
+const atlasStateTotal = indiaAtlas.reduce((sum, region) => sum + region.states.length, 0);
 
 function getAtlasState(name) {
   for (const region of indiaAtlas) {
@@ -2724,7 +2679,6 @@ function indiaMapPage() {
   const districtProjects = Array.isArray(state.atlasProjects)
     ? state.atlasProjects.filter(item => item.state === selectedState.name && item.district === selectedDistrict)
     : [];
-  const stateCount = indiaAtlas.reduce((sum, region) => sum + region.states.length, 0);
   const currentFocus = state.constituency?.state === selectedState.name
     && state.constituency?.district === selectedDistrict;
   const trackedVoters = currentFocus
@@ -2739,12 +2693,12 @@ function indiaMapPage() {
       <div>
         <div class="eyebrow">NATIONAL POLITICAL GEOGRAPHY · OFFLINE SIMULATION</div>
         <h1>India <em>state atlas</em></h1>
-        <p>Browse all 28 states and 8 Union Territories, then inspect the available district entries.</p>
+        <p>Browse the national district directory by state and search the official LGD district names.</p>
       </div>
       <div class="date-card">
         <span>ATLAS COVERAGE</span>
-        <b>${stateCount} states / UTs</b>
-        <small>States and Union Territories</small>
+        <b>${atlasStateTotal} states / UTs</b>
+        <small>${atlasDistrictTotal.toLocaleString('en-IN')} LGD district records</small>
       </div>
     </div>
 
@@ -2754,7 +2708,7 @@ function indiaMapPage() {
           <div><span class="eyebrow">INDIA · REGIONAL SELECTOR</span><h2>Choose your state</h2></div>
           <span class="command-symbol">⌖</span>
         </div>
-        <p class="panel-description">All 28 states and 8 Union Territories are represented. District entries are starter samples and must not be treated as a complete official district register. Development indicators are simulated.</p>
+        <p class="panel-description">District names are loaded from the supplied Ministry of Panchayati Raj LGD extract (12 Oct 2026). The extract contains 781 district records across 35 administrative units. Chandigarh is retained from the previous atlas because it is absent from this extract. Development indicators are simulated, not official statistics.</p>
         <div class="atlas-region-grid">
           ${indiaAtlas.map(region => `
             <section class="atlas-region">
@@ -2794,7 +2748,7 @@ function indiaMapPage() {
           </div>
           <label class="atlas-search-label" for="atlasDistrictSearch">SEARCH DISTRICTS IN ${escapeHtml(selectedState.name.toUpperCase())}</label>
           <input id="atlasDistrictSearch" class="atlas-district-search" type="search" placeholder="Type a district name..." autocomplete="off">
-          <div class="atlas-directory-meta">${selectedState.districts.length} districts currently listed for this state</div>
+          <div class="atlas-directory-meta">${selectedState.districts.length} districts in this directory</div>
           <div class="atlas-district-list" id="atlasDistrictList">
             ${selectedState.districts.map(district => `
               <button class="atlas-district-button ${selectedDistrict === district ? 'selected' : ''}"
