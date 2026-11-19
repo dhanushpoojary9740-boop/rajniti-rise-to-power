@@ -27,6 +27,10 @@ const defaults = {
   partyPopularity: 0,
   partyCreated: false,
   partyHistory: [],
+  partyMemberRecords: [],
+  partyLeadership: {},
+  partyUnits: [],
+  partyElectionHistory: [],
 
   level: 1,
   experience: 0,
@@ -57,6 +61,27 @@ function loadState() {
 
 let state = loadState();
 let activeTab = 'Dashboard';
+let partySection = 'Overview';
+
+// Upgrade older saves without changing the existing party, wealth or career data.
+function migratePartyManagementSave() {
+  if (!Array.isArray(state.partyMemberRecords)) state.partyMemberRecords = [];
+  if (!state.partyLeadership || typeof state.partyLeadership !== 'object') state.partyLeadership = {};
+  if (!Array.isArray(state.partyUnits)) state.partyUnits = [];
+  if (!Array.isArray(state.partyElectionHistory)) state.partyElectionHistory = [];
+
+  if (state.partyCreated && state.partyMemberRecords.length === 0) {
+    const total = Math.max(1, Number(state.partyMembers) || 1);
+    state.partyMemberRecords.push({ id: 'founder', name: state.playerName || 'Party Founder', role: 'Founder & National President', loyalty: 95, experience: 100, joined: 'Founding day', isFounder: true });
+    for (let i = 2; i <= total; i++) {
+      state.partyMemberRecords.push({ id: 'member-' + i, name: 'Party Member ' + String(i).padStart(3, '0'), role: 'General Member', loyalty: 55 + (i % 35), experience: i % 60, joined: 'Existing membership', isFounder: false });
+    }
+    state.partyLeadership['Founder & National President'] = 'founder';
+    saveState();
+  }
+}
+
+migratePartyManagementSave();
 
 const parties = [
   {
@@ -529,68 +554,106 @@ function joinedPartyPage() {
   `;
 }
 
-function createdPartyPage() {
+const leadershipPositions = [
+  'National Working President', 'National General Secretary',
+  'National Treasurer', 'State President', 'District President',
+  'Constituency President', 'Block President', 'Booth President'
+];
+
+function getPartyMember(id) {
+  return state.partyMemberRecords.find(member => member.id === id);
+}
+
+function partySectionTabs() {
+  return ['Overview', 'Leadership', 'Members', 'Organisation', 'Elections'].map(section => `
+    <button class="secondary-btn ${partySection === section ? 'active' : ''}" data-party-section="${section}">${section}</button>
+  `).join('');
+}
+
+function partyOverviewSection() {
   return `
-    <div class="page-heading">
-      <div>
-        <div class="eyebrow">FOUNDER & PARTY PRESIDENT</div>
-        <h1>Your political <em>movement</em></h1>
-        <p>You have established your own political organisation.</p>
-      </div>
+    <section class="panel">
+      <span class="eyebrow">PARTY PERFORMANCE</span>
+      <h3>Grow your organisation</h3>
+      <p class="panel-description">Run a recruitment campaign to expand membership and improve the party's public standing.</p>
+      <button class="primary-btn" data-action="recruit-members">ORGANISE MEMBERSHIP DRIVE · ₹1,000 →</button>
+    </section>
+    <div class="content-grid" style="margin-top:15px">
+      <section class="panel"><span class="eyebrow">LEADERSHIP</span><h3>${Object.keys(state.partyLeadership).length} appointments</h3><p class="panel-description">Build a leadership team from national to booth level.</p><button class="secondary-btn full" data-party-section="Leadership">MANAGE LEADERSHIP →</button></section>
+      <section class="panel"><span class="eyebrow">ORGANISATION</span><h3>${state.partyUnits.length} units</h3><p class="panel-description">Create state, district, constituency, block and booth units.</p><button class="secondary-btn full" data-party-section="Organisation">MANAGE UNITS →</button></section>
     </div>
+    <section class="panel" style="margin-top:15px"><span class="eyebrow">RECENT PARTY ACTIVITY</span>
+      ${state.partyHistory.length ? state.partyHistory.slice(0,6).map(item => `<div class="career-step"><b>${escapeHtml(item.event)}</b><small>${escapeHtml(item.date)}</small></div>`).join('') : '<p class="panel-description">Your party journey starts here.</p>'}
+    </section>`;
+}
 
-    <section class="panel party-headquarters">
-      <div class="party-large-emblem">
-        ${escapeHtml(state.partyAbbreviation.slice(0, 1))}
-      </div>
-      <span class="gold-tag">PARTY FOUNDER</span>
-      <h2>${escapeHtml(state.party)}</h2>
-      <p class="panel-description">${escapeHtml(state.partyIdeology)}</p>
-
-      <div class="party-stat-row">
-        <span>Your position</span>
-        <b>Founder & President</b>
-      </div>
-      <div class="party-stat-row">
-        <span>Membership</span>
-        <b>${state.partyMembers}</b>
-      </div>
-      <div class="party-stat-row">
-        <span>Popularity</span>
-        <b>${state.partyPopularity}/100</b>
-      </div>
-      <div class="party-stat-row">
-        <span>Party treasury</span>
-        <b>${money(state.partyFunds)}</b>
-      </div>
+function partyLeadershipSection() {
+  const appointments = Object.entries(state.partyLeadership);
+  return `
+    <section class="panel"><span class="eyebrow">PARTY COMMAND STRUCTURE</span><h2>Leadership appointments</h2>
+      <p class="panel-description">Appoint existing members to offices. A member can hold only one leadership position at a time.</p>
+      ${appointments.length ? appointments.map(([position, memberId]) => { const member = getPartyMember(memberId); return `<div class="career-step"><div><b>${escapeHtml(position)}</b><small>${escapeHtml(member?.name || 'Vacant')}</small></div>${position !== 'Founder & National President' ? `<button class="secondary-btn" data-remove-position="${escapeHtml(position)}">REMOVE</button>` : '<span class="current-label">FOUNDER</span>'}</div>`; }).join('') : '<p class="panel-description">No appointments yet.</p>'}
     </section>
+    <section class="panel" style="margin-top:15px"><span class="eyebrow">APPOINT A LEADER</span><h3>Fill an organisational position</h3>
+      <form id="appoint-leader-form" class="creator-grid">
+        <div class="creator-field"><label for="leadershipPosition">Position</label><select id="leadershipPosition" name="position">${leadershipPositions.map(position => `<option value="${escapeHtml(position)}">${escapeHtml(position)}</option>`).join('')}</select></div>
+        <div class="creator-field"><label for="leadershipMember">Party member</label><select id="leadershipMember" name="memberId">${state.partyMemberRecords.filter(member => !Object.values(state.partyLeadership).includes(member.id)).map(member => `<option value="${escapeHtml(member.id)}">${escapeHtml(member.name)} · Loyalty ${member.loyalty}</option>`).join('')}</select></div>
+        <button class="primary-btn" type="submit" ${state.partyMemberRecords.filter(member => !Object.values(state.partyLeadership).includes(member.id)).length === 0 ? 'disabled' : ''}>CONFIRM APPOINTMENT →</button>
+      </form>
+    </section>`;
+}
 
-    <div class="stats-grid" style="margin-top:15px">
-      ${statCard('MEMBERS', state.partyMembers, 'Your organisation', '♟')}
-      ${statCard('POPULARITY', state.partyPopularity + '/100', 'Party standing', '✦')}
-      ${statCard('TREASURY', money(state.partyFunds), 'Party funds', '₹')}
-      ${statCard('YOUR INFLUENCE', state.influence + '/100', 'Political influence', '♜')}
-    </div>
-
-    <section class="panel" style="margin-top:15px">
-      <span class="eyebrow">GROW YOUR ORGANISATION</span>
-      <h3>Organise a membership drive</h3>
-      <p class="panel-description">
-        Spend ₹1,000 to organise an initial recruitment campaign.
-        This increases your fictional party membership and popularity.
-      </p>
-      <button class="primary-btn" data-action="recruit-members">
-        ORGANISE MEMBERSHIP DRIVE · ₹1,000 →
-      </button>
+function partyMembersSection() {
+  const members = state.partyMemberRecords;
+  return `
+    <section class="stats-grid">${statCard('REGISTERED MEMBERS', members.length, 'Individual member profiles', '♟')}${statCard('AVERAGE LOYALTY', members.length ? Math.round(members.reduce((sum,m)=>sum+m.loyalty,0)/members.length) + '/100' : '0/100', 'Organisation loyalty', '✦')}</section>
+    <section class="panel" style="margin-top:15px"><span class="eyebrow">RECRUITMENT</span><h3>Add a new party member</h3>
+      <form id="add-member-form" class="creator-grid"><div class="creator-field"><label for="newMemberName">Member full name</label><input id="newMemberName" name="memberName" maxlength="40" placeholder="Enter member name" required></div><button class="primary-btn" type="submit">ADD MEMBER · ₹100 →</button></form>
     </section>
+    <section class="panel" style="margin-top:15px"><span class="eyebrow">MEMBER DIRECTORY</span><h3>Party members (${members.length})</h3>
+      <div class="creator-field"><label for="memberSearch">Search members</label><input id="memberSearch" placeholder="Search by name or position"></div>
+      <div id="member-directory">${members.slice(0,100).map(member => `<div class="career-step" data-member-row="${escapeHtml((member.name+' '+member.role).toLowerCase())}"><div><b>${escapeHtml(member.name)}</b><small>${escapeHtml(member.role)} · Loyalty ${member.loyalty}/100 · ${member.experience} XP</small></div>${member.isFounder ? '<span class="current-label">FOUNDER</span>' : `<button class="secondary-btn" data-remove-member="${escapeHtml(member.id)}">REMOVE</button>`}</div>`).join('')}</div>
+      ${members.length > 100 ? `<p class="panel-description">Showing first 100 of ${members.length} members. Search is available within the displayed directory.</p>` : ''}
+    </section>`;
+}
 
-    <section class="panel" style="margin-top:15px">
-      <span class="eyebrow">PARTY TREASURY</span>
-      <button class="secondary-btn" data-action="party-donate">
-        CONTRIBUTE ₹1,000 →
-      </button>
+function partyOrganisationSection() {
+  const types = ['State', 'District', 'Constituency', 'Block', 'Booth'];
+  return `
+    <section class="panel"><span class="eyebrow">GRASSROOTS STRUCTURE</span><h2>Organisation units</h2><p class="panel-description">Create local party units and expand your network step by step.</p>
+      <form id="party-unit-form" class="creator-grid"><div class="creator-field"><label for="unitType">Unit level</label><select id="unitType" name="unitType">${types.map(type=>`<option>${type}</option>`).join('')}</select></div><div class="creator-field"><label for="unitName">Unit name / area</label><input id="unitName" name="unitName" maxlength="55" placeholder="e.g. Brahmavara Booth 01" required></div><button class="primary-btn" type="submit">CREATE UNIT →</button></form>
     </section>
-  `;
+    <section class="panel" style="margin-top:15px"><span class="eyebrow">YOUR PARTY NETWORK</span><h3>${state.partyUnits.length} organisational units</h3>
+      ${state.partyUnits.length ? state.partyUnits.map(unit=>`<div class="career-step"><div><b>${escapeHtml(unit.name)}</b><small>${escapeHtml(unit.type)} Unit · ${escapeHtml(unit.created)}</small></div><button class="secondary-btn" data-remove-unit="${escapeHtml(unit.id)}">REMOVE</button></div>`).join('') : '<p class="panel-description">No units created yet. Start with your home state or local booth.</p>'}
+    </section>`;
+}
+
+function partyElectionsSection() {
+  return `
+    <section class="panel"><span class="eyebrow">INTERNAL DEMOCRACY</span><h2>Party internal elections</h2><p class="panel-description">Hold a simulated internal election for an available leadership position. The winner is selected from eligible party members using experience and loyalty.</p>
+      <form id="party-election-form" class="creator-grid"><div class="creator-field"><label for="electionPosition">Election position</label><select id="electionPosition" name="position">${leadershipPositions.filter(position=>position!=='National Working President' || !state.partyLeadership[position]).map(position=>`<option value="${escapeHtml(position)}">${escapeHtml(position)}</option>`).join('')}</select></div><button class="primary-btn" type="submit" ${state.partyMemberRecords.length < 2 ? 'disabled' : ''}>HOLD INTERNAL ELECTION →</button></form>
+    </section>
+    <section class="panel" style="margin-top:15px"><span class="eyebrow">ELECTION RECORD</span><h3>Previous results</h3>
+      ${state.partyElectionHistory.length ? state.partyElectionHistory.slice(0,10).map(result=>`<div class="career-step"><div><b>${escapeHtml(result.position)}</b><small>Winner: ${escapeHtml(result.winner)} · ${escapeHtml(result.date)}</small></div><span class="current-label">${result.score} PTS</span></div>`).join('') : '<p class="panel-description">No internal elections have been held.</p>'}
+    </section>`;
+}
+
+function createdPartyPage() {
+  let sectionContent = partyOverviewSection();
+  if (partySection === 'Leadership') sectionContent = partyLeadershipSection();
+  if (partySection === 'Members') sectionContent = partyMembersSection();
+  if (partySection === 'Organisation') sectionContent = partyOrganisationSection();
+  if (partySection === 'Elections') sectionContent = partyElectionsSection();
+  return `
+    <div class="page-heading"><div><div class="eyebrow">FOUNDER & PARTY PRESIDENT</div><h1>Your political <em>movement</em></h1><p>Manage your party, leadership and grassroots organisation.</p></div></div>
+    <section class="panel party-headquarters"><div class="party-large-emblem">${escapeHtml(state.partyAbbreviation.slice(0,1))}</div><span class="gold-tag">PARTY FOUNDER</span><h2>${escapeHtml(state.party)}</h2><p class="panel-description">${escapeHtml(state.partyIdeology)}</p>
+      <div class="party-stat-row"><span>Your position</span><b>Founder & President</b></div><div class="party-stat-row"><span>Membership</span><b>${state.partyMembers}</b></div><div class="party-stat-row"><span>Popularity</span><b>${state.partyPopularity}/100</b></div><div class="party-stat-row"><span>Party treasury</span><b>${money(state.partyFunds)}</b></div>
+    </section>
+    <div class="stats-grid" style="margin-top:15px">${statCard('MEMBERS', state.partyMembers, 'Your organisation', '♟')}${statCard('POPULARITY', state.partyPopularity+'/100', 'Party standing', '✦')}${statCard('TREASURY', money(state.partyFunds), 'Party funds', '₹')}${statCard('YOUR INFLUENCE', state.influence+'/100', 'Political influence', '♜')}</div>
+    <div class="section-heading" style="margin-top:22px"><div><span class="eyebrow">PARTY ADMINISTRATION</span><h2>Management centre</h2></div></div>
+    <div class="content-grid">${partySectionTabs()}</div>
+    <div style="margin-top:15px">${sectionContent}</div>
+    <section class="panel" style="margin-top:15px"><span class="eyebrow">PARTY TREASURY</span><p class="panel-description">Contribute personal funds to support party operations.</p><button class="secondary-btn" data-action="party-donate">CONTRIBUTE ₹1,000 →</button></section>`;
 }
 
 function createPartyPage() {
@@ -1005,6 +1068,10 @@ function establishParty(form) {
   state.partyFunds = 0;
   state.partyPopularity = 5;
   state.partyCreated = true;
+  state.partyMemberRecords = [{ id: 'founder', name: state.playerName, role: 'Founder & National President', loyalty: 95, experience: 100, joined: dateText(), isFounder: true }];
+  state.partyLeadership = { 'Founder & National President': 'founder' };
+  state.partyUnits = [];
+  state.partyElectionHistory = [];
 
   state.partyHistory.unshift({
     event: 'Founded ' + name,
@@ -1059,7 +1126,11 @@ function recruitMembers() {
   state.actionsUsed++;
   state.totalActions++;
 
-  state.partyMembers += 25;
+  for (let i = 1; i <= 25; i++) {
+    const number = state.partyMemberRecords.length + 1;
+    state.partyMemberRecords.push({ id: 'member-' + Date.now() + '-' + i, name: 'New Party Member ' + String(number).padStart(3, '0'), role: 'General Member', loyalty: 50 + (i % 30), experience: i % 10, joined: dateText(), isFounder: false });
+  }
+  state.partyMembers = state.partyMemberRecords.length;
   state.partyPopularity = Math.min(100, state.partyPopularity + 3);
   state.influence = Math.min(100, state.influence + 2);
   state.experience += 10;
@@ -1081,10 +1152,104 @@ function leaveParty() {
   state.partyFunds = 0;
   state.partyPopularity = 0;
   state.partyCreated = false;
+  state.partyMemberRecords = [];
+  state.partyLeadership = {};
+  state.partyUnits = [];
+  state.partyElectionHistory = [];
 
   saveState();
   render();
   toast('You are now an independent politician.');
+}
+
+function addPartyMember(form) {
+  const data = new FormData(form);
+  const name = String(data.get('memberName') || '').trim();
+  if (name.length < 2) return toast('Enter a valid member name.');
+  if (state.money < 100) return toast('You need ₹100 to register a member.');
+  if (state.partyMemberRecords.some(member => member.name.toLowerCase() === name.toLowerCase())) return toast('A member with this name already exists.');
+  state.money -= 100; state.totalExpenses += 100;
+  state.partyMemberRecords.push({ id: 'member-' + Date.now(), name, role: 'General Member', loyalty: 50, experience: 0, joined: dateText(), isFounder: false });
+  state.partyMembers = state.partyMemberRecords.length;
+  state.partyHistory.unshift({ event: name + ' joined the party', date: dateText() });
+  saveState(); render(); toast(name + ' added to the party.');
+}
+
+function appointPartyLeader(form) {
+  const data = new FormData(form);
+  const position = String(data.get('position') || '');
+  const memberId = String(data.get('memberId') || '');
+  const member = getPartyMember(memberId);
+  if (!member) return toast('Select a valid party member.');
+  if (member.isFounder || Object.values(state.partyLeadership).includes(memberId)) return toast('This member already holds a leadership role.');
+  state.partyLeadership[position] = memberId;
+  member.role = position;
+  member.experience = Math.min(100, member.experience + 10);
+  state.partyHistory.unshift({ event: member.name + ' appointed as ' + position, date: dateText() });
+  saveState(); render(); toast('Leadership appointment confirmed.');
+}
+
+function removeLeadershipPosition(position) {
+  const memberId = state.partyLeadership[position];
+  if (!memberId || position === 'Founder & National President') return;
+  const member = getPartyMember(memberId);
+  if (member) member.role = 'General Member';
+  delete state.partyLeadership[position];
+  state.partyHistory.unshift({ event: position + ' position made vacant', date: dateText() });
+  saveState(); render(); toast('Leadership position is now vacant.');
+}
+
+function removePartyMember(id) {
+  const member = getPartyMember(id);
+  if (!member || member.isFounder) return toast('The party founder cannot be removed.');
+  if (Object.values(state.partyLeadership).includes(id)) return toast('Remove this member from leadership before removing them.');
+  if (!confirm('Remove ' + member.name + ' from the party?')) return;
+  state.partyMemberRecords = state.partyMemberRecords.filter(item => item.id !== id);
+  state.partyMembers = state.partyMemberRecords.length;
+  state.partyHistory.unshift({ event: member.name + ' removed from party membership', date: dateText() });
+  saveState(); render(); toast('Member removed.');
+}
+
+function createPartyUnit(form) {
+  const data = new FormData(form);
+  const type = String(data.get('unitType') || '');
+  const name = String(data.get('unitName') || '').trim();
+  if (name.length < 2) return toast('Enter a valid unit name.');
+  if (state.partyUnits.some(unit => unit.name.toLowerCase() === name.toLowerCase() && unit.type === type)) return toast('This unit already exists.');
+  state.partyUnits.push({ id: 'unit-' + Date.now(), type, name, created: dateText() });
+  state.partyHistory.unshift({ event: type + ' unit created: ' + name, date: dateText() });
+  state.influence = Math.min(100, state.influence + 1);
+  saveState(); render(); toast(type + ' unit created.');
+}
+
+function removePartyUnit(id) {
+  const unit = state.partyUnits.find(item => item.id === id);
+  if (!unit || !confirm('Remove ' + unit.name + '?')) return;
+  state.partyUnits = state.partyUnits.filter(item => item.id !== id);
+  state.partyHistory.unshift({ event: unit.name + ' unit dissolved', date: dateText() });
+  saveState(); render(); toast('Organisation unit removed.');
+}
+
+function holdPartyElection(form) {
+  if (state.partyMemberRecords.length < 2) return toast('At least two members are required.');
+  const data = new FormData(form);
+  const position = String(data.get('position') || '');
+  const candidates = state.partyMemberRecords.filter(member => !member.isFounder && !Object.entries(state.partyLeadership).some(([role,id]) => id === member.id && role !== position));
+  if (!candidates.length) return toast('No eligible candidates for this election.');
+  candidates.sort((a,b) => (b.loyalty + b.experience) - (a.loyalty + a.experience));
+  const winner = candidates[0];
+  const previousId = state.partyLeadership[position];
+  const previous = getPartyMember(previousId);
+  if (previous && !previous.isFounder) previous.role = 'General Member';
+  state.partyLeadership[position] = winner.id;
+  winner.role = position;
+  winner.loyalty = Math.min(100, winner.loyalty + 5);
+  winner.experience = Math.min(100, winner.experience + 10);
+  const score = Math.min(99, Math.round((winner.loyalty + winner.experience) / 2));
+  state.partyElectionHistory.unshift({ position, winner: winner.name, date: dateText(), score });
+  state.partyHistory.unshift({ event: winner.name + ' elected as ' + position, date: dateText() });
+  state.experience += 15;
+  saveState(); render(); toast(winner.name + ' elected as ' + position + '!');
 }
 
 /* CAREER & PROFILE */
@@ -1244,6 +1409,16 @@ document.addEventListener('click', event => {
     return;
   }
 
+  const partyNav = event.target.closest('[data-party-section]');
+  if (partyNav) { partySection = partyNav.dataset.partySection; render(); return; }
+
+  const removePosition = event.target.closest('[data-remove-position]');
+  if (removePosition) { removeLeadershipPosition(removePosition.dataset.removePosition); return; }
+  const removeMember = event.target.closest('[data-remove-member]');
+  if (removeMember) { removePartyMember(removeMember.dataset.removeMember); return; }
+  const removeUnit = event.target.closest('[data-remove-unit]');
+  if (removeUnit) { removePartyUnit(removeUnit.dataset.removeUnit); return; }
+
   const join = event.target.closest('[data-join-party]');
   if (join) {
     joinParty(join.dataset.joinParty);
@@ -1286,7 +1461,19 @@ document.addEventListener('click', event => {
   }
 });
 
+document.addEventListener('input', event => {
+  if (event.target.id === 'memberSearch') {
+    const query = event.target.value.trim().toLowerCase();
+    document.querySelectorAll('[data-member-row]').forEach(row => { row.style.display = row.dataset.memberRow.includes(query) ? '' : 'none'; });
+  }
+});
+
 document.addEventListener('submit', event => {
+  if (event.target.id === 'appoint-leader-form') { event.preventDefault(); appointPartyLeader(event.target); }
+  if (event.target.id === 'add-member-form') { event.preventDefault(); addPartyMember(event.target); }
+  if (event.target.id === 'party-unit-form') { event.preventDefault(); createPartyUnit(event.target); }
+  if (event.target.id === 'party-election-form') { event.preventDefault(); holdPartyElection(event.target); }
+
   if (event.target.id === 'character-form') {
     event.preventDefault();
 
