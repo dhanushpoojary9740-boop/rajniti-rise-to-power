@@ -2643,13 +2643,15 @@ const indiaAtlas = [
     { name: 'Uttar Pradesh', districts: ['Lucknow', 'Varanasi', 'Kanpur Nagar', 'Prayagraj', 'Gorakhpur'] },
     { name: 'Delhi', districts: ['Central Delhi', 'East Delhi', 'New Delhi', 'South Delhi'] },
     { name: 'Chandigarh', districts: ['Chandigarh'] },
-    { name: 'Ladakh', districts: ['Leh', 'Kargil'] }
+    { name: 'Ladakh', districts: ['Leh', 'Kargil'] },
+    { name: 'Andaman and Nicobar Islands', districts: ['South Andaman', 'North and Middle Andaman', 'Nicobar'] }
   ]},
   { region: 'West', states: [
     { name: 'Rajasthan', districts: ['Jaipur', 'Jodhpur', 'Udaipur', 'Kota'] },
     { name: 'Gujarat', districts: ['Ahmedabad', 'Surat', 'Vadodara', 'Rajkot'] },
     { name: 'Maharashtra', districts: ['Mumbai City', 'Pune', 'Nagpur', 'Nashik'] },
     { name: 'Goa', districts: ['North Goa', 'South Goa'] },
+    { name: 'Lakshadweep', districts: ['Lakshadweep'] },
     { name: 'Dadra and Nagar Haveli and Daman and Diu', districts: ['Dadra and Nagar Haveli', 'Daman', 'Diu'] }
   ]},
   { region: 'Central', states: [
@@ -2737,11 +2739,11 @@ function indiaMapPage() {
       <div>
         <div class="eyebrow">NATIONAL POLITICAL GEOGRAPHY · OFFLINE SIMULATION</div>
         <h1>India <em>state atlas</em></h1>
-        <p>Select a state and district to inspect your political footprint and regional directory.</p>
+        <p>Browse all 28 states and 8 Union Territories, then inspect the available district entries.</p>
       </div>
       <div class="date-card">
         <span>ATLAS COVERAGE</span>
-        <b>${stateCount} regions</b>
+        <b>${stateCount} states / UTs</b>
         <small>States and Union Territories</small>
       </div>
     </div>
@@ -2752,7 +2754,7 @@ function indiaMapPage() {
           <div><span class="eyebrow">INDIA · REGIONAL SELECTOR</span><h2>Choose your state</h2></div>
           <span class="command-symbol">⌖</span>
         </div>
-        <p class="panel-description">Choose a state, then search its listed districts. This release improves district discovery; the directory remains a starter list, not yet a complete official register or boundary-accurate map.</p>
+        <p class="panel-description">All 28 states and 8 Union Territories are represented. District entries are starter samples and must not be treated as a complete official district register. Development indicators are simulated.</p>
         <div class="atlas-region-grid">
           ${indiaAtlas.map(region => `
             <section class="atlas-region">
