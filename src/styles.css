@@ -1989,3 +1989,10 @@ button {
 .task-detail-grid small { display:block; opacity:.7; font-size:10px; margin-bottom:5px; }
 .task-detail-grid b { font-size:13px; }
 .office-task-card .gov-budget-actions { display:flex; flex-wrap:wrap; gap:8px; margin-top:12px; }
+
+/* RAJNITI 1.2.9 — Monthly Executive Work Desk */
+.office-task-card { margin-top: 14px; }
+.office-task-card .task-detail-grid { margin: 14px 0; }
+.office-task-card .task-detail-grid > div { min-width: 0; }
+.office-task-card .task-detail-grid small { display: block; }
+.office-task-card .gov-budget-actions { display: flex; flex-wrap: wrap; gap: 8px; }

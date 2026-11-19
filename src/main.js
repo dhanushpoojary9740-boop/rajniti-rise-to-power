@@ -2734,27 +2734,88 @@ function executiveRoleScope() {
 function generateMonthlyOfficeTasks() {
   const office = state.executiveOffice;
   const scope = executiveRoleScope();
-  const history = new Set((office.taskHistory || []).slice(-18).map(item => typeof item === 'string' ? item : item.title));
-  const seed = Number(state.year || 1) * 17 + Number(state.month || 1) * 7 + (office.taskHistory || []).length;
-  const available = scope.pool.filter(item => !history.has(item[0]));
-  const pool = available.length >= 3 ? available : scope.pool;
-  for (let i = 0; i < Math.min(3, pool.length); i++) {
-    const item = pool[(seed + i * 3) % pool.length];
-    const budget = [0, 2500, 5000, 10000, 25000][(seed + i) % 5];
-    const duration = [2, 3, 4, 5][(seed + i * 2) % 4];
+  const history = new Set((office.taskHistory || []).slice(-24).map(item => typeof item === 'string' ? item : item.title));
+  const activeTitles = new Set(office.tasks.filter(t => t.status === 'Pending' || t.status === 'In progress').map(t => t.title));
+  const seed = Number(state.year || 1) * 17 + Number(state.month || 1) * 7 + (office.taskHistory || []).length + office.tasks.length;
+  const available = scope.pool.filter(item => !history.has(item[0]) && !activeTitles.has(item[0]));
+  const pool = available.length >= 2 ? available : scope.pool.filter(item => !activeTitles.has(item[0]));
+  const chosen = [];
+  for (let i = 0; i < Math.min(3, pool.length); i++) chosen.push(pool[(seed + i * 3) % pool.length]);
+  chosen.forEach((item, i) => {
+    const category = item[2];
+    const budgetBands = {
+      public: [1500, 3500, 6000], party: [2500, 5000, 9000],
+      infrastructure: [8000, 15000, 30000], water: [5000, 10000, 20000],
+      health: [5000, 12000, 25000], education: [4000, 10000, 18000],
+      employment: [3000, 7000, 15000], agriculture: [4000, 9000, 18000],
+      sanitation: [2500, 6000, 12000], budget: [0, 2500, 5000],
+      parliament: [1000, 2500, 5000], governance: [1500, 4000, 8000],
+      constituency: [1500, 4000, 7500]
+    };
+    const budgets = budgetBands[category] || [1500, 3500, 7000];
+    const budget = budgets[(seed + i) % budgets.length];
+    const duration = [1, 2, 3, 4][(seed + i * 2) % 4];
+    const impact = Math.max(1, Number(item[3]) || 1);
+    const resourceMap = {
+      infrastructure: 'Engineering staff, site inspection, contractor coordination, materials and transport',
+      water: 'Water-board engineers, testing kits, tanker or pipeline coordination and local representatives',
+      health: 'Health officers, facility staff, medical supply review and district health data',
+      education: 'School inspectors, education officers, facility audit and community consultation',
+      party: 'Party organisers, booth volunteers, meeting venue, communications and membership records',
+      public: 'Field staff, local representatives, public meeting venue and grievance register',
+      employment: 'Employment office, training partners, local employers and outreach material',
+      agriculture: 'Agriculture officers, farmer groups, field visit and scheme-delivery records',
+      sanitation: 'Municipal/panchayat sanitation team, equipment, route map and resident feedback',
+      parliament: 'Policy research brief, parliamentary staff and constituency evidence',
+      governance: 'Department heads, performance data, review meeting and follow-up orders',
+      budget: 'Finance officials, expenditure statements and department utilisation reports',
+      constituency: 'Local issue register, field coordinators and resident consultation'
+    };
+    const usesMap = {
+      infrastructure: 'Inspect the work, identify the bottleneck and issue a time-bound corrective plan.',
+      water: 'Identify affected localities, validate supply gaps and coordinate a practical service response.',
+      health: 'Prioritise service gaps and obtain a measurable improvement plan from health officials.',
+      education: 'Identify the facility or access gap and secure a responsible follow-up plan.',
+      party: 'Strengthen party organisation, improve volunteer coordination and expand local capacity.',
+      public: 'Hear residents, record actionable issues and ensure each issue reaches the responsible office.',
+      employment: 'Connect residents with training, vacancies or livelihood support and review outcomes.',
+      agriculture: 'Identify delivery gaps and coordinate farmer-facing support with agriculture officials.',
+      sanitation: 'Resolve a visible civic service gap and verify the improvement with residents.',
+      parliament: 'Prepare evidence, define the issue and use the appropriate parliamentary channel.',
+      governance: 'Review accountability, assign corrective action and monitor the responsible department.',
+      budget: 'Check spending against outcomes and recommend reallocation or corrective controls.',
+      constituency: 'Document the local issue, identify the responsible authority and follow through.'
+    };
+    const riskMap = {
+      infrastructure: 'Contractor delay, cost escalation or poor-quality work may reduce the result.',
+      water: 'Supply constraints or seasonal shortages may limit immediate improvement.',
+      health: 'Staff shortages or procurement delays may slow service improvements.',
+      education: 'Staffing and infrastructure constraints may delay implementation.',
+      party: 'Internal disagreement or weak volunteer participation may reduce organisational gains.',
+      public: 'Unresolved expectations or poor follow-up may reduce public confidence.',
+      employment: 'Limited vacancies or low training participation may reduce outcomes.',
+      agriculture: 'Weather, market prices or delayed scheme delivery may affect results.',
+      sanitation: 'Equipment failure or irregular collection may cause the issue to recur.',
+      parliament: 'The issue may require cross-party support or government response.',
+      governance: 'Inter-department coordination or weak accountability may delay action.',
+      budget: 'Incorrect estimates may create funding gaps or reduce programme delivery.',
+      constituency: 'The issue may fall partly outside your authority and require escalation.'
+    };
     office.tasks.push({
-      id: office.nextId++, title: item[0], detail: item[1], impactType: item[2], impact: item[3],
+      id: office.nextId++, title: item[0], detail: item[1], impactType: category, impact: impact,
       assignedBy: i === 0 ? 'Political Office' : 'Chief of Staff', level: scope.level,
-      status: 'Pending', due: `${dateText()} · ${duration} months`, createdAt: dateText(),
-      budgetRequired: budget, estimatedDuration: duration, monthsRemaining: duration,
-      resources: budget ? 'Official travel, staff coordination and field materials' : 'Personal time, local coordination and official briefings',
-      expectedUse: 'Use this assignment to address the stated issue within your current authority.',
-      expectedPartyImpact: item[2] === 'party' ? 3 : 1,
-      expectedReputationImpact: item[2] === 'public' || item[2] === 'governance' ? 2 : 1,
-      risk: 'Delays or incomplete follow-up may reduce public confidence.',
-      carryForwardCount: 0
+      status: 'Pending', due: `${dateText()} · review by month-end`, createdAt: dateText(),
+      assignedMonth: dateText(), budgetRequired: budget, estimatedDuration: duration, monthsRemaining: duration,
+      fundingSource: state.partyId !== 'independent' && category === 'party' ? 'Party organisation funds' : 'Personal / office allocation',
+      resources: resourceMap[category] || 'Relevant officers, field staff, records and coordination support',
+      expectedUse: usesMap[category] || 'Address the issue within your current authority and report measurable progress.',
+      expectedOutcome: `${category} indicator improves by approximately ${impact} game points if completed successfully.`,
+      expectedPartyImpact: category === 'party' ? 3 : (category === 'public' || category === 'constituency' ? 2 : 1),
+      expectedReputationImpact: category === 'public' || category === 'governance' || category === 'health' ? 2 : 1,
+      risk: riskMap[category] || 'Delays or incomplete follow-up may reduce public confidence.',
+      carryForwardCount: 0, monthsWorked: 0, progress: 0, decisionHistory: []
     });
-  }
+  });
 }
 
 function advanceOfficeMonth() {
@@ -2763,12 +2824,19 @@ function advanceOfficeMonth() {
     if (task.status === 'Pending' || task.status === 'In progress') {
       task.carryForwardCount = Number(task.carryForwardCount || 0) + 1;
       task.monthsRemaining = Math.max(0, Number(task.monthsRemaining || task.estimatedDuration || 1) - 1);
+      if (task.status === 'In progress') {
+        task.monthsWorked = Number(task.monthsWorked || 0) + 1;
+        task.progress = Math.min(90, Number(task.progress || 0) + Math.max(10, Math.round(100 / Math.max(1, Number(task.estimatedDuration || 1)))));
+      }
       task.due = `Carried forward · ${task.carryForwardCount} month(s)`;
+      task.lastReviewed = dateText();
+      task.decisionHistory = Array.isArray(task.decisionHistory) ? task.decisionHistory : [];
+      task.decisionHistory.push({ date: dateText(), decision: task.status === 'In progress' ? 'Continued in progress' : 'Kept pending' });
     }
   });
   office.tasks = office.tasks.filter(task => task.status !== 'Completed' && task.status !== 'Rejected');
   generateMonthlyOfficeTasks();
-  office.lastAiReport = `Monthly review: ${office.tasks.filter(task => task.carryForwardCount > 0).length} unfinished responsibilities carried forward. New assignments issued for ${dateText()}.`;
+  office.lastAiReport = `Monthly review: ${office.tasks.filter(task => task.carryForwardCount > 0).length} unfinished responsibilities carried forward. ${office.tasks.filter(task => task.createdAt === dateText()).length} new assignments issued for ${dateText()}.`;
 }
 
 function ensureExecutiveOffice() {
@@ -2787,6 +2855,10 @@ function ensureExecutiveOffice() {
   }).slice(-45);
   if (!Number.isFinite(Number(office.nextId))) office.nextId = office.tasks.reduce((max, task) => Math.max(max, Number(task.id) || 0), 0) + 1;
   if (!office.taskHistory || !Array.isArray(office.taskHistory)) office.taskHistory = office.tasks.filter(task => task.status === 'Completed').map(task => task.title);
+  if (!office.tasks.length && !office.initialMonthlyAssignmentsCreated) {
+    generateMonthlyOfficeTasks();
+    office.initialMonthlyAssignmentsCreated = true;
+  }
 
   if (!office.files.length && (/Chief Minister|State Minister|Prime Minister|Union Minister/.test(state.role || ''))) {
     office.files.push({ id: office.nextId++, title: 'Department performance and funding review', from: 'Chief Secretary', summary: 'Review the latest department report and proposed administrative priorities.', recommendation: 'Approve for implementation review', status: 'Pending' });
@@ -2802,8 +2874,8 @@ function executiveOfficePage() {
   return `
     <div class="page-heading"><div><div class="eyebrow">EXECUTIVE OFFICE · ${escapeHtml(scope.level.toUpperCase())} LEVEL</div><h1>My <em>office</em></h1><p>Work is assigned according to your current post. Officials and AI teams handle routine administration.</p></div><div class="date-card"><span>CURRENT POST</span><b>${escapeHtml(state.role || 'Political Volunteer')}</b><small>${escapeHtml(scope.authority)}</small></div></div>
     <section class="panel"><span class="eyebrow">YOUR RESPONSIBILITY</span><h2>What only you must handle</h2><p class="panel-description">Your authority is limited to: ${escapeHtml(scope.authority)}. You are not expected to manage every district or department personally.</p><div class="government-unlock-grid"><div><b>${tasks.filter(t=>t.status==='Pending'||t.status==='In progress').length}</b><small>Assigned tasks</small></div><div><b>${pending.length}</b><small>Files awaiting signature</small></div><div><b>AI</b><small>Routine administration</small></div></div></section>
-    <section class="panel"><div class="command-section-head"><div><span class="eyebrow">PERSONAL WORK QUEUE</span><h2>My assigned work</h2></div></div>${tasks.length ? tasks.map(t=>`<article class="panel office-task-card"><div class="command-section-head"><div><span class="gold-tag">${escapeHtml(t.level || scope.level)} · ${escapeHtml(t.status)}</span><h3>${escapeHtml(t.title)}</h3></div><b>${Number(t.carryForwardCount || 0) ? `Carried ${Number(t.carryForwardCount)}×` : 'New'}</b></div><p>${escapeHtml(t.detail || 'Assigned responsibility')}</p><div class="task-detail-grid"><div><small>FUNDS REQUIRED</small><b>${money(Number(t.budgetRequired || 0))}</b></div><div><small>TIME REQUIRED</small><b>${Number(t.estimatedDuration || 1)} months</b></div><div><small>TIME LEFT</small><b>${Number(t.monthsRemaining ?? t.estimatedDuration ?? 1)} months</b></div><div><small>ASSIGNED BY</small><b>${escapeHtml(t.assignedBy)}</b></div><div><small>PARTY IMPACT</small><b>+${Number(t.expectedPartyImpact || 1)}</b></div><div><small>REPUTATION IMPACT</small><b>+${Number(t.expectedReputationImpact || 1)}</b></div></div><p><b>Resources & use:</b> ${escapeHtml(t.resources || 'Staff coordination and field work')} · ${escapeHtml(t.expectedUse || '')}</p><p><b>Risk:</b> ${escapeHtml(t.risk || 'Delay may reduce public confidence.')}</p><small>Assigned ${escapeHtml(t.createdAt || dateText())} · ${escapeHtml(t.due || 'This month')}</small><div class="gov-budget-actions">${t.status==='Pending'?`<button class="primary-btn" data-office-task="${t.id}">TAKE RESPONSIBILITY</button>`:''}${t.status==='In progress'?`<button class="primary-btn" data-office-complete="${t.id}">COMPLETE & REPORT</button>`:''}<button class="secondary-btn" data-office-keep="${t.id}">KEEP PENDING</button><button class="secondary-btn" data-office-reject="${t.id}">REJECT TASK</button></div></article>`).join('') : '<p class="panel-description">No work is currently assigned.</p>'}</section>
-    <section class="panel"><span class="eyebrow">COMPLETED WORK ARCHIVE</span><h2>Completed and closed missions</h2>${office.taskHistory && office.taskHistory.length ? office.taskHistory.slice(-8).reverse().map(item=>`<div class="finance-history"><span><b>${escapeHtml(typeof item === 'string' ? item : item.title)}</b><small>${escapeHtml(typeof item === 'string' ? 'Legacy record' : (item.completedAt || item.rejectedAt || 'Archived'))}</small></span><small>${escapeHtml(typeof item === 'string' ? '' : (item.impactSummary || ''))}</small></div>`).join('') : '<p class="panel-description">Completed missions will appear here.</p>'}</section>
+    <section class="panel"><div class="command-section-head"><div><span class="eyebrow">PERSONAL WORK QUEUE</span><h2>My assigned work</h2><p class="panel-description">New assignments arrive monthly. You choose: take responsibility, keep pending for a later month, or reject. Unfinished work is carried forward; only your completion decision closes a mission.</p></div></div>${tasks.length ? tasks.map(t=>`<article class="panel office-task-card"><div class="command-section-head"><div><span class="gold-tag">${escapeHtml(t.level || scope.level)} · ${escapeHtml(t.status)}</span><h3>${escapeHtml(t.title)}</h3></div><b>${Number(t.carryForwardCount || 0) ? `Carried ${Number(t.carryForwardCount)}×` : 'New'}</b></div><p>${escapeHtml(t.detail || 'Assigned responsibility')}</p><div class="task-detail-grid"><div><small>FUNDS REQUIRED</small><b>${money(Number(t.budgetRequired || 0))}</b><small>${escapeHtml(t.fundingSource || 'Office allocation')}</small></div><div><small>TIME REQUIRED</small><b>${Number(t.estimatedDuration || 1)} months</b></div><div><small>TIME LEFT</small><b>${Number(t.monthsRemaining ?? t.estimatedDuration ?? 1)} months</b></div><div><small>ASSIGNED BY</small><b>${escapeHtml(t.assignedBy)}</b></div><div><small>PARTY IMPACT</small><b>+${Number(t.expectedPartyImpact || 1)}</b></div><div><small>REPUTATION IMPACT</small><b>+${Number(t.expectedReputationImpact || 1)}</b></div></div><p><b>Resources required:</b> ${escapeHtml(t.resources || 'Staff coordination and field work')}</p><p><b>How to use this assignment:</b> ${escapeHtml(t.expectedUse || '')}</p><p><b>Expected outcome:</b> ${escapeHtml(t.expectedOutcome || 'A measurable improvement in the relevant game system.')}</p><p><b>Risk:</b> ${escapeHtml(t.risk || 'Delay may reduce public confidence.')}</p><p><b>Progress:</b> ${Number(t.progress || 0)}% · ${Number(t.monthsWorked || 0)} month(s) worked</p><small>Assigned ${escapeHtml(t.createdAt || dateText())} · ${escapeHtml(t.due || 'This month')}</small><div class="gov-budget-actions">${t.status==='Pending'?`<button class="primary-btn" data-office-task="${t.id}">TAKE RESPONSIBILITY</button>`:''}${t.status==='In progress'?`<button class="primary-btn" data-office-complete="${t.id}">COMPLETE & REPORT</button>`:''}<button class="secondary-btn" data-office-keep="${t.id}">KEEP PENDING</button><button class="secondary-btn" data-office-reject="${t.id}">REJECT TASK</button></div></article>`).join('') : '<p class="panel-description">No work is currently assigned.</p>'}</section>
+    <section class="panel"><span class="eyebrow">COMPLETED WORK ARCHIVE</span><h2>Completed and closed missions</h2>${office.taskHistory && office.taskHistory.length ? office.taskHistory.slice(-8).reverse().map(item=>`<div class="finance-history"><span><b>${escapeHtml(typeof item === 'string' ? item : item.title)}</b><small>${escapeHtml(typeof item === 'string' ? 'Legacy record' : (item.completedAt ? `Completed · ${item.completedAt}` : item.rejectedAt ? `Rejected · ${item.rejectedAt}` : 'Archived'))}</small></span><small>${escapeHtml(typeof item === 'string' ? '' : (item.impactSummary || ''))}</small></div>`).join('') : '<p class="panel-description">Completed missions will appear here.</p>'}</section>
     <section class="panel"><div class="command-section-head"><div><span class="eyebrow">SIGNATURE DESK</span><h2>Pending for my approval</h2></div><b>${pending.length} pending</b></div>${pending.length ? pending.map(f=>`<article class="panel government-portfolio"><span class="gold-tag">OFFICIAL FILE · ${escapeHtml(f.from)}</span><h3>${escapeHtml(f.title)}</h3><p class="panel-description">${escapeHtml(f.summary)}</p><p><b>AI / officer recommendation:</b> ${escapeHtml(f.recommendation)}</p><div class="gov-budget-actions"><button class="primary-btn" data-office-decision="approve" data-office-file="${f.id}">APPROVE & SIGN</button><button class="secondary-btn" data-office-decision="return" data-office-file="${f.id}">RETURN FOR REVISION</button><button class="secondary-btn" data-office-decision="reject" data-office-file="${f.id}">REJECT</button></div></article>`).join('') : '<p class="panel-description">No important files require your signature right now. Routine work is being handled by the administration.</p>'}</section>
     <section class="panel"><span class="eyebrow">AI ADMINISTRATION REPORT</span><h2>Work handled automatically</h2><p class="panel-description">${escapeHtml(office.lastAiReport || 'Your administrative teams are monitoring routine operations.')}</p><p class="ci-disclaimer">AI decisions are simulated gameplay. Major decisions outside your authority are not sent to you for approval. Critical decisions within your authority appear on this signature desk.</p></section>
   `;
@@ -2881,7 +2953,7 @@ function updateOfficeTask(id, complete) {
     state.partyPopularity = Math.min(100, Number(state.partyPopularity || 0) + Number(task.expectedPartyImpact || 1));
     task.impactApplied = true;
     task.completedAt = dateText();
-    task.impactSummary = `${task.impactType} improved; party popularity and reputation updated`;
+    task.impactSummary = `${task.impactType} improved; party popularity +${Number(task.expectedPartyImpact || 1)} and reputation +${Number(task.expectedReputationImpact || 1)}; funds used ${money(cost)}`;
     office.taskHistory.push({ title: task.title, completedAt: dateText(), impactSummary: task.impactSummary });
     office.taskHistory = office.taskHistory.slice(-50);
   }
@@ -2896,7 +2968,7 @@ function rejectOfficeTask(id) {
   if (!task) return;
   task.status = 'Rejected';
   task.rejectedAt = dateText();
-  office.taskHistory.push({ title: task.title, rejectedAt: dateText(), impactSummary: 'Rejected by player' });
+  office.taskHistory.push({ title: task.title, rejectedAt: dateText(), impactSummary: `Rejected by player; reputation −1${state.partyId !== 'independent' ? ', party popularity −1' : ''}` });
   office.taskHistory = office.taskHistory.slice(-50);
   office.tasks = office.tasks.filter(item => item.id !== task.id);
   state.reputation = Math.max(0, Number(state.reputation || 0) - 1);
@@ -2916,9 +2988,9 @@ function decideOfficeFile(id, decision) {
 
 function runAiAdministration() {
   const office = ensureExecutiveOffice();
-  const completed = office.tasks.filter(t => t.status === 'In progress').length;
-  office.tasks.forEach(t => { if (t.status === 'In progress' && Math.random() < 0.22) t.status = 'Completed'; });
-  office.lastAiReport = `${completed} routine assignments were monitored by AI-managed officials. District and department teams continue their daily work; only decisions requiring your personal authority are escalated.`;
+  const pending = office.tasks.filter(task => task.status === 'Pending').length;
+  const active = office.tasks.filter(task => task.status === 'In progress').length;
+  office.lastAiReport = `AI administration monitored ${pending} pending player decisions and ${active} active assignments. Routine district and department operations continue automatically. Only you can mark your personal assignments complete, reject them or keep them pending.`;
 }
 
 function genericPage(name) {
@@ -3470,7 +3542,7 @@ document.addEventListener('click', event => {
   const officeKeep = event.target.closest('[data-office-keep]');
   if (officeKeep) {
     const task = ensureExecutiveOffice().tasks.find(item => item.id === Number(officeKeep.dataset.officeKeep));
-    if (task) { task.status = 'Pending'; saveState(); render(); toast('Task remains pending and will carry forward next month.'); }
+    if (task) { task.status = 'Pending'; task.lastPlayerDecision = dateText(); task.decisionHistory = Array.isArray(task.decisionHistory) ? task.decisionHistory : []; task.decisionHistory.push({ date: dateText(), decision: 'Kept pending by player' }); saveState(); render(); toast('Task remains pending. It will carry forward at the next monthly review.'); }
     return;
   }
   const officeReject = event.target.closest('[data-office-reject]');
@@ -3630,10 +3702,6 @@ if (!Array.isArray(state.media.history)) state.media.history = [];
   const budgetButton = event.target.closest('[data-gov-budget]');
   if (budgetButton) { allocateDepartment(budgetButton.dataset.govBudget, Number(budgetButton.dataset.delta)); return; }
 
-  const officeTask = event.target.closest('[data-office-task]');
-  if (officeTask) { updateOfficeTask(officeTask.dataset.officeTask, false); return; }
-  const officeComplete = event.target.closest('[data-office-complete]');
-  if (officeComplete) { updateOfficeTask(officeComplete.dataset.officeComplete, true); return; }
   const officeDecision = event.target.closest('[data-office-decision]');
   if (officeDecision) { decideOfficeFile(officeDecision.dataset.officeFile, officeDecision.dataset.officeDecision); return; }
 
