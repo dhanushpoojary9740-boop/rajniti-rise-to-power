@@ -2677,11 +2677,56 @@ function governmentPage() {
 
 function executiveRoleScope() {
   const role = String(state.role || 'Political Volunteer');
-  if (/Prime Minister|Union Minister|Member of Parliament/.test(role)) return { level: 'National', tasks: ['Review national policy brief', 'Attend parliamentary coordination', 'Review constituency or ministry performance'], authority: 'Union Government and Parliament' };
-  if (/Chief Minister|State Minister|MLA/.test(role)) return { level: 'State', tasks: ['Review constituency and public grievance report', 'Review department performance', 'Attend Assembly or cabinet coordination'], authority: role === 'Chief Minister' ? 'State-wide executive leadership' : role === 'State Minister' ? 'Assigned ministry portfolio' : 'Your elected constituency and Assembly' };
-  if (/Councillor|Panchayat/.test(role)) return { level: 'Local', tasks: ['Review ward or panchayat issues', 'Meet local residents', 'Monitor local civic works'], authority: 'Your local body and elected area' };
-  if (/Party Leader|Booth-level/.test(role)) return { level: 'Party', tasks: ['Review party unit report', 'Coordinate local party workers', 'Plan a public outreach activity'], authority: 'Your party organisation and assigned area' };
-  return { level: 'Grassroots', tasks: ['Complete assigned public outreach', 'Submit local issue report', 'Attend party or community meeting'], authority: 'Your assigned political area' };
+  if (/Prime Minister|Union Minister|Member of Parliament/.test(role)) return { level: 'National', authority: 'Union Government and Parliament', pool: [
+    ['Review national employment programme', 'Review programme outcomes with the Labour Ministry.', 'employment', 3],
+    ['Prepare parliamentary question brief', 'Identify a national policy gap and prepare a parliamentary brief.', 'parliament', 2],
+    ['Review railway connectivity proposal', 'Assess connectivity needs and project readiness.', 'infrastructure', 3],
+    ['Coordinate disaster-response review', 'Review preparedness with national and state agencies.', 'governance', 2],
+    ['Evaluate public healthcare mission', 'Review access, staffing and service delivery.', 'health', 3],
+    ['Hold constituency development consultation', 'Collect local priorities and send them to the relevant ministry.', 'constituency', 2],
+    ['Review national education outcomes', 'Examine school access and learning support.', 'education', 3],
+    ['Resolve inter-ministry coordination issue', 'Bring responsible ministries together around a stalled matter.', 'governance', 2]
+  ] };
+  if (/Chief Minister|State Minister|MLA/.test(role)) return { level: 'State', authority: role === 'Chief Minister' ? 'State-wide executive leadership' : role === 'State Minister' ? 'Assigned ministry portfolio' : 'Your elected constituency and Assembly', pool: [
+    ['Review district hospital staffing', 'Review vacancies and service pressure with the Health Department.', 'health', 3],
+    ['Inspect a delayed road project', 'Require a progress report and corrective timeline.', 'infrastructure', 3],
+    ['Resolve school facility shortage', 'Coordinate a targeted education response.', 'education', 3],
+    ['Review drinking water supply plan', 'Prioritise affected localities and monitor supply.', 'water', 3],
+    ['Hold district collector performance review', 'Review targets, delays and citizen grievances.', 'governance', 2],
+    ['Prepare Assembly question on unemployment', 'Use current employment concerns to prepare an oversight brief.', 'parliament', 2],
+    ['Review farmer support implementation', 'Check delivery gaps in agriculture support.', 'agriculture', 3],
+    ['Conduct public grievance hearing', 'Hear a set of citizen cases and direct follow-up.', 'public', 2],
+    ['Review state budget utilisation', 'Identify underused allocations and priority needs.', 'budget', 2],
+    ['Resolve inter-department project delay', 'Coordinate departments to unblock a stalled project.', 'governance', 3]
+  ] };
+  if (/Councillor|Panchayat/.test(role)) return { level: 'Local', authority: 'Your local body and elected area', pool: [
+    ['Inspect drainage blockage', 'Visit the affected ward and arrange a civic response.', 'sanitation', 3],
+    ['Resolve streetlight outage', 'Coordinate repair and confirm public safety coverage.', 'infrastructure', 2],
+    ['Hold drinking-water quality meeting', 'Review complaints and arrange testing or supply follow-up.', 'water', 3],
+    ['Review local waste collection route', 'Address missed collections and route gaps.', 'sanitation', 2],
+    ['Meet self-help group representatives', 'Collect livelihood and market-access priorities.', 'public', 2],
+    ['Inspect anganwadi facility', 'Review basic facilities and service needs.', 'health', 2],
+    ['Resolve local road safety concern', 'Escalate a dangerous crossing or damaged road section.', 'infrastructure', 3],
+    ['Review ward-level school needs', 'Identify urgent facility and access issues.', 'education', 2]
+  ] };
+  if (/Party Leader|Booth-level/.test(role)) return { level: 'Party', authority: 'Your party organisation and assigned area', pool: [
+    ['Recruit booth volunteers', 'Expand local volunteer capacity and voter outreach.', 'party', 3],
+    ['Resolve party unit coordination dispute', 'Meet unit representatives and restore coordination.', 'party', 2],
+    ['Prepare local membership drive', 'Plan a targeted recruitment activity.', 'party', 3],
+    ['Review booth-level public concerns', 'Collect issues and submit them to elected representatives.', 'public', 2],
+    ['Train new campaign volunteers', 'Improve local organisation and campaign readiness.', 'party', 2],
+    ['Organise policy discussion meeting', 'Explain party priorities and gather feedback.', 'party', 2],
+    ['Coordinate a community service activity', 'Build trust through a practical local initiative.', 'public', 2]
+  ] };
+  return { level: 'Grassroots', authority: 'Your assigned political area', pool: [
+    ['Conduct door-to-door listening visit', 'Record residents’ top concerns and submit a report.', 'public', 2],
+    ['Help a resident navigate a public service', 'Assist with a service issue and record the outcome.', 'public', 2],
+    ['Prepare a local issue evidence report', 'Document a specific problem with location and impact.', 'constituency', 2],
+    ['Organise a neighbourhood clean-up', 'Coordinate residents around a visible civic improvement.', 'sanitation', 2],
+    ['Support a youth employment awareness camp', 'Connect young residents with available opportunities.', 'employment', 2],
+    ['Attend a community association meeting', 'Bring local concerns to the party unit.', 'party', 1],
+    ['Map accessibility barriers', 'Identify public access issues for elderly and disabled residents.', 'infrastructure', 2]
+  ] };
 }
 
 function ensureExecutiveOffice() {
@@ -2689,9 +2734,27 @@ function ensureExecutiveOffice() {
   const office = state.executiveOffice;
   if (!Array.isArray(office.tasks)) office.tasks = [];
   if (!Array.isArray(office.files)) office.files = [];
-  if (!office.tasks.some(t => t.status === 'Pending' || t.status === 'In progress')) {
+  // Clean up duplicate legacy assignments from earlier versions while preserving unique task records.
+  const seenTaskTitles = new Set();
+  office.tasks = office.tasks.filter(task => {
+    const key = String(task.title || '').trim().toLowerCase();
+    if (!key) return false;
+    if (seenTaskTitles.has(key)) return false;
+    seenTaskTitles.add(key);
+    return true;
+  }).slice(-45);
+  if (!Number.isFinite(Number(office.nextId))) office.nextId = office.tasks.reduce((max, task) => Math.max(max, Number(task.id) || 0), 0) + 1;
+  if (!office.taskHistory || !Array.isArray(office.taskHistory)) office.taskHistory = office.tasks.filter(task => task.status === 'Completed').map(task => task.title);
+  if (!office.tasks.some(task => task.status === 'Pending' || task.status === 'In progress')) {
     const scope = executiveRoleScope();
-    scope.tasks.forEach((title, index) => office.tasks.push({ id: office.nextId++, title, assignedBy: index === 0 ? 'Political Office' : 'Chief of Staff', level: scope.level, status: 'Pending', due: `Day ${state.day + index + 2}`, detail: 'A responsibility matched to your current post.' }));
+    const history = new Set(office.taskHistory.slice(-18));
+    const rotation = Number(state.month || 1) + Number(state.year || 1) * 7 + office.taskHistory.length;
+    const available = scope.pool.filter(item => !history.has(item[0]));
+    const pool = available.length >= 3 ? available : scope.pool;
+    for (let index = 0; index < Math.min(3, pool.length); index++) {
+      const item = pool[(rotation + index * 3) % pool.length];
+      office.tasks.push({ id: office.nextId++, title: item[0], detail: item[1], impactType: item[2], impact: item[3], assignedBy: index === 0 ? 'Political Office' : 'Chief of Staff', level: scope.level, status: 'Pending', due: `${dateText()} · ${index + 1}`, createdAt: dateText() });
+    }
   }
   if (!office.files.length && (/Chief Minister|State Minister|Prime Minister|Union Minister/.test(state.role || ''))) {
     office.files.push({ id: office.nextId++, title: 'Department performance and funding review', from: 'Chief Secretary', summary: 'Review the latest department report and proposed administrative priorities.', recommendation: 'Approve for implementation review', status: 'Pending' });
@@ -2707,18 +2770,78 @@ function executiveOfficePage() {
   return `
     <div class="page-heading"><div><div class="eyebrow">EXECUTIVE OFFICE · ${escapeHtml(scope.level.toUpperCase())} LEVEL</div><h1>My <em>office</em></h1><p>Work is assigned according to your current post. Officials and AI teams handle routine administration.</p></div><div class="date-card"><span>CURRENT POST</span><b>${escapeHtml(state.role || 'Political Volunteer')}</b><small>${escapeHtml(scope.authority)}</small></div></div>
     <section class="panel"><span class="eyebrow">YOUR RESPONSIBILITY</span><h2>What only you must handle</h2><p class="panel-description">Your authority is limited to: ${escapeHtml(scope.authority)}. You are not expected to manage every district or department personally.</p><div class="government-unlock-grid"><div><b>${tasks.filter(t=>t.status==='Pending'||t.status==='In progress').length}</b><small>Assigned tasks</small></div><div><b>${pending.length}</b><small>Files awaiting signature</small></div><div><b>AI</b><small>Routine administration</small></div></div></section>
-    <section class="panel"><div class="command-section-head"><div><span class="eyebrow">PERSONAL WORK QUEUE</span><h2>My assigned work</h2></div></div>${tasks.length ? tasks.map(t=>`<div class="gov-scheme-row"><div><b>${escapeHtml(t.title)}</b><small>${escapeHtml(t.assignedBy)} · ${escapeHtml(t.due)} · ${escapeHtml(t.status)}</small></div>${t.status==='Pending'?`<button class="secondary-btn" data-office-task="${t.id}">MARK IN PROGRESS</button>`:t.status==='In progress'?`<button class="primary-btn" data-office-complete="${t.id}">COMPLETE</button>`:'<b>✓</b>'}</div>`).join('') : '<p class="panel-description">No work is currently assigned.</p>'}</section>
+    <section class="panel"><div class="command-section-head"><div><span class="eyebrow">PERSONAL WORK QUEUE</span><h2>My assigned work</h2></div></div>${tasks.length ? tasks.map(t=>`<div class="gov-scheme-row"><div><b>${escapeHtml(t.title)}</b><small>${escapeHtml(t.detail || 'Assigned responsibility')} · ${escapeHtml(t.assignedBy)} · ${escapeHtml(t.due)} · ${escapeHtml(t.status)}</small><small class="mission-impact">Impact: ${escapeHtml(t.impactType || 'political')} +${Number(t.impact || 1)} points when completed</small></div>${t.status==='Pending'?`<button class="secondary-btn" data-office-task="${t.id}">MARK IN PROGRESS</button>`:t.status==='In progress'?`<button class="primary-btn" data-office-complete="${t.id}">COMPLETE</button>`:'<b>✓</b>'}</div>`).join('') : '<p class="panel-description">No work is currently assigned.</p>'}</section>
     <section class="panel"><div class="command-section-head"><div><span class="eyebrow">SIGNATURE DESK</span><h2>Pending for my approval</h2></div><b>${pending.length} pending</b></div>${pending.length ? pending.map(f=>`<article class="panel government-portfolio"><span class="gold-tag">OFFICIAL FILE · ${escapeHtml(f.from)}</span><h3>${escapeHtml(f.title)}</h3><p class="panel-description">${escapeHtml(f.summary)}</p><p><b>AI / officer recommendation:</b> ${escapeHtml(f.recommendation)}</p><div class="gov-budget-actions"><button class="primary-btn" data-office-decision="approve" data-office-file="${f.id}">APPROVE & SIGN</button><button class="secondary-btn" data-office-decision="return" data-office-file="${f.id}">RETURN FOR REVISION</button><button class="secondary-btn" data-office-decision="reject" data-office-file="${f.id}">REJECT</button></div></article>`).join('') : '<p class="panel-description">No important files require your signature right now. Routine work is being handled by the administration.</p>'}</section>
     <section class="panel"><span class="eyebrow">AI ADMINISTRATION REPORT</span><h2>Work handled automatically</h2><p class="panel-description">${escapeHtml(office.lastAiReport || 'Your administrative teams are monitoring routine operations.')}</p><p class="ci-disclaimer">AI decisions are simulated gameplay. Major decisions outside your authority are not sent to you for approval. Critical decisions within your authority appear on this signature desk.</p></section>
   `;
 }
 
+function applyOfficeTaskImpact(task) {
+  const amount = Math.max(1, Number(task.impact) || 1);
+  const type = task.impactType || 'public';
+  const c = state.constituency || (state.constituency = { localities: [], projects: [], campaigns: [], resolvedIssues: [], totalVoters: 0 });
+  if (!Array.isArray(c.localities)) c.localities = [];
+  if (type === 'public') {
+    state.publicSupport = Math.min(100, Number(state.publicSupport || 0) + amount);
+    state.reputation = Math.min(100, Number(state.reputation || 0) + 1);
+    c.localities.forEach(item => item.support = Math.min(100, Number(item.support || 0) + 1));
+  } else if (type === 'party') {
+    state.partyPopularity = Math.min(100, Number(state.partyPopularity || 0) + amount);
+    state.influence = Math.min(100, Number(state.influence || 0) + 1);
+    state.partyMemberRecords = Array.isArray(state.partyMemberRecords) ? state.partyMemberRecords : [];
+  } else if (type === 'infrastructure') {
+    state.infrastructureScore = Math.min(100, Number(state.infrastructureScore || 40) + amount);
+    c.projects = Array.isArray(c.projects) ? c.projects : [];
+    const project = c.projects.find(item => /road|infrastructure|street/i.test(item.name || item.title || ''));
+    if (project) project.progress = Math.min(100, Number(project.progress || 0) + amount * 5);
+  } else if (type === 'water') {
+    state.waterScore = Math.min(100, Number(state.waterScore || 40) + amount);
+    c.localities.slice(0, 1).forEach(item => item.support = Math.min(100, Number(item.support || 0) + 2));
+  } else if (type === 'health') {
+    state.healthScore = Math.min(100, Number(state.healthScore || 40) + amount);
+    state.government.performance = Math.min(100, Number(state.government?.performance || 50) + 1);
+  } else if (type === 'education') {
+    state.educationScore = Math.min(100, Number(state.educationScore || 40) + amount);
+    state.government.performance = Math.min(100, Number(state.government?.performance || 50) + 1);
+  } else if (type === 'employment' || type === 'agriculture') {
+    state.livelihoodScore = Math.min(100, Number(state.livelihoodScore || 40) + amount);
+    state.publicSupport = Math.min(100, Number(state.publicSupport || 0) + 1);
+  } else if (type === 'sanitation') {
+    state.sanitationScore = Math.min(100, Number(state.sanitationScore || 40) + amount);
+    state.reputation = Math.min(100, Number(state.reputation || 0) + 1);
+  } else if (type === 'budget') {
+    state.government.performance = Math.min(100, Number(state.government?.performance || 50) + amount);
+  } else if (type === 'parliament' || type === 'governance') {
+    state.influence = Math.min(100, Number(state.influence || 0) + amount);
+    state.reputation = Math.min(100, Number(state.reputation || 0) + 1);
+  } else if (type === 'constituency') {
+    state.publicSupport = Math.min(100, Number(state.publicSupport || 0) + amount);
+    if (c.localities.length) c.localities[0].support = Math.min(100, Number(c.localities[0].support || 0) + amount);
+  }
+  task.impactApplied = true;
+  task.impactSummary = `${type} improved by ${amount} points`;
+  if (!Array.isArray(c.resolvedIssues)) c.resolvedIssues = [];
+  if (['water','sanitation','infrastructure','health','education'].includes(type)) {
+    c.resolvedIssues.push({ title: task.title, category: type, date: dateText(), impact: amount });
+    c.resolvedIssues = c.resolvedIssues.slice(-50);
+  }
+}
 function updateOfficeTask(id, complete) {
-  const office = ensureExecutiveOffice(); const task = office.tasks.find(t => t.id === Number(id));
+  const office = ensureExecutiveOffice();
+  const task = office.tasks.find(t => t.id === Number(id));
   if (!task) return;
   task.status = complete ? 'Completed' : 'In progress';
-  if (complete) { state.experience = Number(state.experience || 0) + 8; state.reputation = Math.min(100, Number(state.reputation || 0) + 1); }
-  saveState(); render(); toast(complete ? 'Assigned responsibility completed.' : 'Task moved to in progress.');
+  if (complete && !task.impactApplied) {
+    applyOfficeTaskImpact(task);
+    state.experience = Number(state.experience || 0) + 8;
+    state.reputation = Math.min(100, Number(state.reputation || 0) + 1);
+    office.taskHistory.push(task.title);
+    office.taskHistory = office.taskHistory.slice(-30);
+    task.completedAt = dateText();
+    task.impactSummary = task.impactSummary || 'Political influence improved';
+  }
+  saveState(); render();
+  toast(complete ? `Responsibility completed: ${task.impactSummary}.` : 'Task moved to in progress.');
 }
 
 function decideOfficeFile(id, decision) {

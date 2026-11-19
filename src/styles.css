@@ -1978,3 +1978,6 @@ button {
 .nomination-card { align-items: center; gap: 14px; flex-wrap: wrap; }
 .nomination-actions { display: flex; gap: 6px; flex-wrap: wrap; }
 .nomination-actions .secondary-btn { min-height: 34px; padding: 7px 10px; font-size: 11px; }
+
+/* RAJNITI 1.2.8 varied mission details and visible impact */
+.mission-impact { color: var(--gold, #d8bd78); font-size: 11px; display: block; margin-top: 4px; }
