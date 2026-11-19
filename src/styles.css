@@ -1908,3 +1908,51 @@ button {
 .atlas-district-search:focus{border-color:var(--gold,#c9a45c);box-shadow:0 0 0 2px rgba(201,164,92,.14)}
 .atlas-directory-meta{margin:7px 0 10px;color:var(--muted,#999);font-size:11px}
 .atlas-district-list [hidden]{display:none!important}
+
+
+/* RAJNITI 1.2.0 — ADAPTIVE PORTRAIT-FIRST LAYOUT */
+@media screen and (max-width: 620px) and (orientation: portrait) {
+  .mobile-nav {
+    display: flex;
+    position: fixed;
+    inset: auto 0 0;
+    z-index: 20;
+    min-height: 66px;
+    padding: 7px 5px calc(7px + env(safe-area-inset-bottom));
+    background: rgba(9, 18, 31, .97);
+    border-top: 1px solid #29384c;
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    scrollbar-width: none;
+  }
+  .mobile-nav::-webkit-scrollbar { display: none; }
+  .mobile-nav button {
+    flex: 0 0 68px;
+    min-width: 58px;
+    min-height: 48px;
+    padding: 5px 3px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    border: 0;
+    border-radius: 8px;
+    background: transparent;
+    color: #9ba9bc;
+  }
+  .mobile-nav button span { font-size: 17px; line-height: 1; }
+  .mobile-nav button small { font-size: 8px; white-space: nowrap; }
+  .mobile-nav button.active {
+    color: #f4d99e;
+    background: #c39e541c;
+  }
+  .main-area { padding-bottom: calc(82px + env(safe-area-inset-bottom)); }
+  .page { padding-left: 13px; padding-right: 13px; }
+}
+
+/* Keep the wide command-centre layout available after device rotation. */
+@media screen and (min-width: 621px) and (orientation: landscape) {
+  .sidebar { display: flex !important; }
+  .mobile-nav { display: none !important; }
+}
