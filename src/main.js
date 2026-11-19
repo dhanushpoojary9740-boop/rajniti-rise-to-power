@@ -342,7 +342,7 @@ function statCard(label, value, sub, symbol) {
 function shell(content) {
   const nav = [
     'Dashboard', 'Career', 'Activities', 'Party',
-    'Constituency', 'Constituency Intel', 'India Map', 'Elections', 'Government',
+    'Constituency', 'Constituency Intel', 'India Map', 'Elections', 'Government', 'Parliament',
     'Relationships', 'Intelligence', 'Public Opinion', 'Finance', 'News', 'Profile'
   ];
 
@@ -2895,6 +2895,54 @@ function constituencyIntelligencePage() {
   `;
 }
 
+
+function ensureParliamentState() {
+  if (!state.parliament || typeof state.parliament !== 'object') {
+    state.parliament = { seats: 224, rulingSeats: 0, oppositionSeats: 0, bills: [], sessions: 0, questions: 0, confidence: 'Not tested', alliances: [], history: [] };
+  }
+  const p = state.parliament;
+  for (const key of ['bills','alliances','history']) if (!Array.isArray(p[key])) p[key] = [];
+  p.seats = Number(p.seats) || 224;
+  p.rulingSeats = Math.max(0, Number(p.rulingSeats) || governmentMandateCount() || 0);
+  p.oppositionSeats = Math.max(0, Number(p.oppositionSeats) || Math.max(0, p.seats-p.rulingSeats));
+  return p;
+}
+function parliamentPage() {
+  const p = ensureParliamentState();
+  const majority = Math.floor(p.seats/2)+1;
+  const billRows = p.bills.length ? p.bills.slice().reverse().map(b => `<div class="history-row"><b>${escapeHtml(b.title)}</b><span>${escapeHtml(b.status)}</span><small>${escapeHtml(b.date)}</small></div>`).join('') : '<p class="muted">No bills introduced yet.</p>';
+  return `<section class="page-heading"><span class="eyebrow">LEGISLATIVE POLITICS</span><h1>Parliament & Legislature</h1><p>Run sessions, debate legislation and test the government's majority.</p></section>
+  <div class="stats-grid">${statCard('Total seats',p.seats,'Illustrative Assembly model','▤')}${statCard('Ruling seats',p.rulingSeats,`Majority needed: ${majority}`,'🏛')}${statCard('Opposition seats',p.oppositionSeats,'Opposition benches','⚑')}${statCard('Sessions held',p.sessions,'Legislative sessions','◷')}</div>
+  <div class="dashboard-grid"><section class="panel"><span class="eyebrow">LEGISLATIVE SESSION</span><h2>House Business</h2><p>Open a session to conduct Question Hour and legislative business.</p><button class="primary-btn" data-parliament-action="session">OPEN LEGISLATIVE SESSION</button><button class="secondary-btn" data-parliament-action="question">CONDUCT QUESTION HOUR</button><button class="secondary-btn" data-parliament-action="confidence">TEST CONFIDENCE</button><p><b>Government confidence:</b> ${escapeHtml(p.confidence)}</p></section>
+  <section class="panel"><span class="eyebrow">INTRODUCE LEGISLATION</span><h2>New Bill</h2><input id="parliamentBillTitle" class="text-input" maxlength="70" placeholder="Enter bill title"><select id="parliamentBillType" class="text-input"><option>Development Bill</option><option>Education Bill</option><option>Healthcare Bill</option><option>Infrastructure Bill</option><option>Finance Bill</option><option>Welfare Bill</option></select><button class="primary-btn" data-parliament-action="bill">INTRODUCE BILL</button></section></div>
+  <section class="panel"><span class="eyebrow">BILL REGISTER</span><h2>Legislative Records</h2>${billRows}</section>
+  <section class="panel"><span class="eyebrow">COALITION MANAGEMENT</span><h2>Alliance Partners</h2><button class="secondary-btn" data-parliament-action="alliance">NEGOTIATE ALLIANCE</button>${p.alliances.map(a=>`<div class="history-row"><b>${escapeHtml(a.name)}</b><span>+${a.seats} seats</span></div>`).join('')}</section>`;
+}
+function parliamentAction(action) {
+  const p = ensureParliamentState();
+  if (action === 'session') { p.sessions++; p.history.push({event:'Session opened',date:dateText()}); toast('Legislative session opened.'); }
+  if (action === 'question') { p.questions++; p.history.push({event:'Question Hour conducted',date:dateText()}); toast('Question Hour completed.'); }
+  if (action === 'confidence') { p.confidence = p.rulingSeats >= Math.floor(p.seats/2)+1 ? 'Majority maintained' : 'Government at risk'; toast(p.confidence); }
+  if (action === 'bill') {
+    const title = document.querySelector('#parliamentBillTitle')?.value.trim();
+    const type = document.querySelector('#parliamentBillType')?.value || 'Development Bill';
+    if (!title) { toast('Enter a bill title first.'); return; }
+    const passed = p.rulingSeats >= Math.floor(p.seats/2)+1;
+    p.bills.push({title, type, status: passed ? 'Passed by simulated house' : 'Introduced – majority not secured', date:dateText()});
+    toast(passed ? 'Bill passed in the simulation.' : 'Bill introduced; majority is not secured.');
+  }
+  if (action === 'alliance') {
+    const name = `Regional Alliance ${p.alliances.length+1}`;
+    const seats = 5;
+    p.alliances.push({name,seats});
+    p.rulingSeats += seats;
+    p.oppositionSeats = Math.max(0,p.oppositionSeats-seats);
+    toast(`${name} added: +${seats} simulated seats.`);
+  }
+  saveState(); render();
+}
+
+
 /* MAIN RENDER */
 
 function render() {
@@ -2948,6 +2996,9 @@ function render() {
       break;
     case 'Government':
       content = governmentPage();
+      break;
+    case 'Parliament':
+      content = parliamentPage();
       break;
     default:
       content = genericPage(activeTab);
@@ -3064,6 +3115,9 @@ if (!Array.isArray(state.media.history)) state.media.history = [];
     performActivity(activity.dataset.activity);
     return;
   }
+
+  const parliamentButton = event.target.closest('[data-parliament-action]');
+  if (parliamentButton) { parliamentAction(parliamentButton.dataset.parliamentAction); return; }
 
   const appointButton = event.target.closest('[data-gov-appoint]');
   if (appointButton) { appointMinister(appointButton.dataset.govAppoint); return; }

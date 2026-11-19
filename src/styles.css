@@ -1864,3 +1864,7 @@ button {
  .gov-budget-actions{grid-column:2;grid-row:1}
  .gov-budget-row>div:first-child{grid-column:1;grid-row:1}
 }
+
+/* RAJNITI 1.1.6 Parliament */
+.text-input{width:100%;margin:8px 0;padding:12px;border:1px solid var(--border,#39465a);border-radius:10px;background:var(--panel,#121b2a);color:inherit}
+.history-row{display:flex;gap:12px;align-items:center;justify-content:space-between;padding:12px 0;border-bottom:1px solid var(--border,#39465a);flex-wrap:wrap}
