@@ -32,6 +32,23 @@ const defaults = {
   partyUnits: [],
   partyElectionHistory: [],
 
+  constituency: {
+    state: 'Karnataka',
+    district: 'Udupi',
+    constituencyName: 'Brahmavara Rural Constituency',
+    selectedLocality: 'Brahmavara Town',
+    localities: [
+      { id: 'brahmavara', name: 'Brahmavara Town', type: 'Town', voters: 18500, support: 8, influence: 3, issue: 'Road maintenance' },
+      { id: 'kota', name: 'Kota', type: 'Village Cluster', voters: 12400, support: 6, influence: 2, issue: 'Drinking water supply' },
+      { id: 'saligrama', name: 'Saligrama', type: 'Town', voters: 9800, support: 9, influence: 3, issue: 'Public transport' },
+      { id: 'hangarakatte', name: 'Hangarakatte', type: 'Village', voters: 6200, support: 5, influence: 1, issue: 'Street lighting' }
+    ],
+    campaigns: [],
+    projects: [],
+    resolvedIssues: [],
+    totalVoters: 46900
+  },
+
   level: 1,
   experience: 0,
   money: 25000,
@@ -82,6 +99,25 @@ function migratePartyManagementSave() {
 }
 
 migratePartyManagementSave();
+
+// Migrate older saves safely into the ground-politics system.
+function migrateConstituencySave() {
+  const defaultsForConstituency = defaults.constituency;
+  if (!state.constituency || typeof state.constituency !== 'object') {
+    state.constituency = JSON.parse(JSON.stringify(defaultsForConstituency));
+  }
+  const c = state.constituency;
+  if (!Array.isArray(c.localities) || c.localities.length === 0) c.localities = JSON.parse(JSON.stringify(defaultsForConstituency.localities));
+  if (!Array.isArray(c.campaigns)) c.campaigns = [];
+  if (!Array.isArray(c.projects)) c.projects = [];
+  if (!Array.isArray(c.resolvedIssues)) c.resolvedIssues = [];
+  if (!c.state) c.state = state.stateName || 'Karnataka';
+  if (!c.district) c.district = c.state === 'Karnataka' ? 'Udupi' : 'Other District';
+  if (!c.constituencyName) c.constituencyName = (state.hometown || 'Local') + ' Constituency';
+  if (!c.selectedLocality || !c.localities.some(x => x.name === c.selectedLocality)) c.selectedLocality = c.localities[0].name;
+  if (!Number.isFinite(c.totalVoters)) c.totalVoters = c.localities.reduce((sum, x) => sum + (Number(x.voters) || 0), 0);
+}
+migrateConstituencySave();
 
 const parties = [
   {
@@ -1403,6 +1439,296 @@ function restoreSaveBackup() {
   }
 }
 
+
+/* CONSTITUENCY & GROUND POLITICS */
+
+const constituencyDistricts = {
+  Karnataka: ['Udupi', 'Dakshina Kannada', 'Uttara Kannada', 'Shivamogga', 'Chikkamagaluru', 'Hassan', 'Mysuru', 'Bengaluru Urban'],
+  Kerala: ['Kasaragod', 'Kannur', 'Wayanad', 'Kozhikode', 'Malappuram', 'Ernakulam', 'Thiruvananthapuram'],
+  'Tamil Nadu': ['Chennai', 'Coimbatore', 'Madurai', 'Salem', 'Thanjavur', 'Tiruchirappalli'],
+  'Andhra Pradesh': ['Visakhapatnam', 'Vijayawada', 'Guntur', 'Nellore', 'Kurnool'],
+  Telangana: ['Hyderabad', 'Warangal', 'Karimnagar', 'Nizamabad', 'Khammam'],
+  Maharashtra: ['Mumbai', 'Pune', 'Nashik', 'Nagpur', 'Kolhapur'],
+  Goa: ['North Goa', 'South Goa'],
+  Delhi: ['Central Delhi', 'East Delhi', 'New Delhi', 'South Delhi'],
+  'Uttar Pradesh': ['Lucknow', 'Varanasi', 'Kanpur Nagar', 'Prayagraj', 'Gorakhpur'],
+  Other: ['Other District']
+};
+
+const groundActions = [
+  { id: 'public-meeting', name: 'Hold public meeting', description: 'Listen to residents and discuss local priorities.', cost: 700, support: 2, influence: 2, reputation: 2, xp: 15 },
+  { id: 'doorstep', name: 'Door-to-door outreach', description: 'Meet households and record community concerns.', cost: 400, support: 2, influence: 1, reputation: 2, xp: 12 },
+  { id: 'volunteer-drive', name: 'Volunteer mobilisation', description: 'Organise volunteers for local civic activities.', cost: 900, support: 1, influence: 3, reputation: 2, xp: 16 },
+  { id: 'issue-survey', name: 'Local issue survey', description: 'Collect feedback about public services and infrastructure.', cost: 250, support: 1, influence: 2, reputation: 1, xp: 10 }
+];
+
+function constituencyPage() {
+  const c = state.constituency;
+  const districts = constituencyDistricts[c.state] || constituencyDistricts.Other;
+  const locality = c.localities.find(x => x.name === c.selectedLocality) || c.localities[0];
+  const support = Math.round(c.localities.reduce((sum, x) => sum + Number(x.support || 0), 0) / Math.max(1, c.localities.length));
+  const influence = Math.round(c.localities.reduce((sum, x) => sum + Number(x.influence || 0), 0) / Math.max(1, c.localities.length));
+  const remaining = Math.max(0, 2 - state.actionsUsed);
+
+  return `
+    <div class="page-heading">
+      <div>
+        <div class="eyebrow">GRASSROOTS POLITICS · INDIA</div>
+        <h1>Constituency <em>command centre</em></h1>
+        <p>Build public trust through local service, organisation and development.</p>
+      </div>
+      <div class="date-card">
+        <span>DAILY GROUND ACTIONS</span>
+        <b>${remaining} / 2</b>
+        <small>${dateText()}</small>
+      </div>
+    </div>
+
+    <section class="hero-panel ground-hero">
+      <div class="hero-copy">
+        <span class="gold-tag">YOUR POLITICAL FOUNDATION</span>
+        <h2>Win trust.<br><em>Serve the ground.</em></h2>
+        <p>Every neighbourhood has its own needs. Listen first, organise responsibly and track the results of your work.</p>
+      </div>
+      <div class="hero-art"><div class="orbit orbit-one"></div><div class="orbit orbit-two"></div><div class="parliament">⌖</div></div>
+    </section>
+
+    <section class="panel ground-panel">
+      <div class="section-heading">
+        <div><span class="eyebrow">YOUR ELECTORAL AREA</span><h2>Constituency setup</h2></div>
+        <span class="gold-tag">SIMULATION REGION</span>
+      </div>
+      <form id="constituency-setup-form" class="creator-grid">
+        <div class="creator-field">
+          <label for="groundState">State / Union Territory</label>
+          <select id="groundState" name="groundState">
+            ${Object.keys(constituencyDistricts).map(x => `<option value="${escapeHtml(x)}" ${x === c.state ? 'selected' : ''}>${escapeHtml(x)}</option>`).join('')}
+          </select>
+        </div>
+        <div class="creator-field">
+          <label for="groundDistrict">District</label>
+          <select id="groundDistrict" name="groundDistrict">
+            ${districts.map(x => `<option value="${escapeHtml(x)}" ${x === c.district ? 'selected' : ''}>${escapeHtml(x)}</option>`).join('')}
+          </select>
+        </div>
+        <div class="creator-field">
+          <label for="constituencyName">Constituency name</label>
+          <input id="constituencyName" name="constituencyName" maxlength="55" value="${escapeHtml(c.constituencyName)}" required>
+        </div>
+        <div class="creator-field creator-submit">
+          <label>&nbsp;</label>
+          <button class="secondary-btn full" type="submit">SAVE CONSTITUENCY →</button>
+        </div>
+      </form>
+      <p class="creator-note">This is a fictional gameplay constituency. Population and support figures are simulation values, not official election data or real constituency boundaries.</p>
+    </section>
+
+    <div class="stats-grid ground-stats">
+      ${statCard('ESTIMATED VOTERS', Number(c.totalVoters).toLocaleString('en-IN'), 'Fictional game population', '♟')}
+      ${statCard('AVERAGE LOCAL SUPPORT', support + '%', 'Across your localities', '♥')}
+      ${statCard('GROUND INFLUENCE', influence + '/100', 'Local organisational reach', '⚑')}
+      ${statCard('DEVELOPMENT PROJECTS', c.projects.length, 'Projects started', '⌂')}
+    </div>
+
+    <section class="panel ground-panel">
+      <div class="section-heading">
+        <div><span class="eyebrow">LOCAL POLITICAL MAP</span><h2>Villages, towns & wards</h2></div>
+        <span class="gold-tag">${c.localities.length} LOCAL AREAS</span>
+      </div>
+      <div class="locality-grid">
+        ${c.localities.map(x => `
+          <button class="locality-card ${x.name === c.selectedLocality ? 'selected' : ''}" data-select-locality="${escapeHtml(x.name)}">
+            <span class="locality-type">${escapeHtml(x.type)}</span>
+            <b>${escapeHtml(x.name)}</b>
+            <span>${Number(x.voters).toLocaleString('en-IN')} estimated voters</span>
+            <div class="mini-progress"><i style="width:${Math.max(0, Math.min(100, Number(x.support)))}%"></i></div>
+            <small>Public support <strong>${Number(x.support)}%</strong></small>
+          </button>
+        `).join('')}
+      </div>
+    </section>
+
+    <section class="panel ground-panel">
+      <span class="eyebrow">SELECTED LOCALITY</span>
+      <h2>${escapeHtml(locality.name)}</h2>
+      <p class="panel-description">${escapeHtml(locality.type)} · ${Number(locality.voters).toLocaleString('en-IN')} estimated voters</p>
+      <div class="ground-metrics">
+        <div><small>PUBLIC SUPPORT</small><b>${locality.support}%</b></div>
+        <div><small>LOCAL INFLUENCE</small><b>${locality.influence}/100</b></div>
+        <div><small>PRIORITY ISSUE</small><b>${escapeHtml(locality.issue)}</b></div>
+      </div>
+      <div class="issue-box">
+        <span class="gold-tag">COMMUNITY PRIORITY</span>
+        <h3>${escapeHtml(locality.issue)}</h3>
+        <p class="panel-description">Address this issue through a development project and transparent follow-up.</p>
+        <button class="secondary-btn" data-action="resolve-local-issue" ${remaining === 0 || state.money < 1500 ? 'disabled' : ''}>START ISSUE RESOLUTION · ₹1,500</button>
+      </div>
+    </section>
+
+    <section class="panel ground-panel">
+      <div class="section-heading">
+        <div><span class="eyebrow">GROUND OPERATIONS</span><h2>Choose your next move</h2></div>
+        <span class="gold-tag">${remaining} ACTIONS LEFT</span>
+      </div>
+      <div class="activity-grid">
+        ${groundActions.map(a => `
+          <article class="activity-card ground-action-card">
+            <span class="gold-tag">GROUND ACTIVITY</span>
+            <h3>${a.name}</h3>
+            <p class="panel-description">${a.description}</p>
+            <div class="party-stat-row"><span>Cost</span><b>${money(a.cost)}</b></div>
+            <div class="activity-rewards"><span>+${a.support} Support</span><span>+${a.influence} Influence</span><span>+${a.xp} XP</span></div>
+            <button class="secondary-btn full" data-ground-action="${a.id}" ${remaining === 0 || state.money < a.cost ? 'disabled' : ''}>TAKE ACTION →</button>
+          </article>
+        `).join('')}
+      </div>
+    </section>
+
+    <section class="panel ground-panel">
+      <div class="section-heading">
+        <div><span class="eyebrow">LOCAL DEVELOPMENT</span><h2>Development projects</h2></div>
+      </div>
+      <form id="development-project-form" class="creator-grid">
+        <div class="creator-field">
+          <label for="projectType">Project category</label>
+          <select id="projectType" name="projectType">
+            <option>Road repair proposal</option>
+            <option>Drinking water initiative</option>
+            <option>Street lighting proposal</option>
+            <option>Public transport improvement</option>
+            <option>School facility improvement</option>
+            <option>Waste management initiative</option>
+            <option>Public health camp</option>
+          </select>
+        </div>
+        <div class="creator-field">
+          <label for="projectName">Project title</label>
+          <input id="projectName" name="projectName" maxlength="60" placeholder="Enter project title" required>
+        </div>
+        <div class="creator-field">
+          <label for="projectCost">Estimated campaign cost</label>
+          <select id="projectCost" name="projectCost">
+            <option value="2000">₹2,000</option>
+            <option value="5000">₹5,000</option>
+            <option value="10000">₹10,000</option>
+          </select>
+        </div>
+        <div class="creator-field creator-submit">
+          <label>&nbsp;</label>
+          <button class="primary-btn full" type="submit">START DEVELOPMENT PROJECT →</button>
+        </div>
+      </form>
+      <p class="creator-note">These are simulated political campaign and planning expenses, not government procurement or public funds.</p>
+      ${c.projects.length ? c.projects.slice().reverse().map(p => `
+        <div class="career-step">
+          <div><b>${escapeHtml(p.name)}</b><small>${escapeHtml(p.category)} · ${escapeHtml(p.locality)}</small></div>
+          <span class="current-label">${escapeHtml(p.status)}</span>
+        </div>
+      `).join('') : '<p class="panel-description">No development projects started yet.</p>'}
+    </section>
+
+    <section class="panel ground-panel">
+      <span class="eyebrow">GROUND ACTIVITY RECORD</span>
+      <h2>Recent constituency work</h2>
+      ${c.campaigns.length ? c.campaigns.slice(0, 10).map(x => `
+        <div class="career-step">
+          <div><b>${escapeHtml(x.action)}</b><small>${escapeHtml(x.locality)} · ${escapeHtml(x.date)}</small></div>
+          <span class="current-label">+${x.support} support</span>
+        </div>
+      `).join('') : '<p class="panel-description">Your ground activities will appear here.</p>'}
+      <button class="secondary-btn" data-action="end-day">END DAY & REFRESH ACTIONS →</button>
+    </section>
+  `;
+}
+
+function saveConstituencySetup(form) {
+  const data = new FormData(form);
+  const nextState = String(data.get('groundState'));
+  const nextDistrict = String(data.get('groundDistrict'));
+  const name = String(data.get('constituencyName') || '').trim();
+  if (!name) return toast('Enter a constituency name.');
+  state.constituency.state = nextState;
+  state.constituency.district = nextDistrict;
+  state.constituency.constituencyName = name;
+  saveState();
+  render();
+  toast('Constituency details saved.');
+}
+
+function performGroundAction(id) {
+  if (!state.characterCreated) return toast('Create your politician first.');
+  if (state.actionsUsed >= 2) return toast('Daily action limit reached.');
+  const action = groundActions.find(x => x.id === id);
+  if (!action) return;
+  if (state.money < action.cost) return toast('Insufficient personal funds.');
+  const c = state.constituency;
+  const locality = c.localities.find(x => x.name === c.selectedLocality) || c.localities[0];
+  state.money -= action.cost;
+  state.totalExpenses += action.cost;
+  state.actionsUsed++;
+  state.totalActions++;
+  locality.support = Math.min(100, Number(locality.support) + action.support);
+  locality.influence = Math.min(100, Number(locality.influence) + action.influence);
+  state.publicSupport = Math.min(100, state.publicSupport + 1);
+  state.reputation = Math.min(100, state.reputation + action.reputation);
+  state.influence = Math.min(100, state.influence + action.influence);
+  state.experience += action.xp;
+  c.campaigns.unshift({ action: action.name, locality: locality.name, date: dateText(), support: action.support });
+  c.campaigns = c.campaigns.slice(0, 40);
+  saveState();
+  render();
+  toast(`${action.name} completed in ${locality.name}.`);
+}
+
+function resolveLocalIssue() {
+  if (!state.characterCreated) return toast('Create your politician first.');
+  if (state.actionsUsed >= 2) return toast('Daily action limit reached.');
+  if (state.money < 1500) return toast('You need ₹1,500.');
+  const c = state.constituency;
+  const locality = c.localities.find(x => x.name === c.selectedLocality) || c.localities[0];
+  state.money -= 1500;
+  state.totalExpenses += 1500;
+  state.actionsUsed++;
+  state.totalActions++;
+  locality.support = Math.min(100, locality.support + 4);
+  locality.influence = Math.min(100, locality.influence + 2);
+  state.reputation = Math.min(100, state.reputation + 3);
+  state.publicSupport = Math.min(100, state.publicSupport + 2);
+  state.experience += 20;
+  c.resolvedIssues.push({ locality: locality.name, issue: locality.issue, date: dateText() });
+  c.campaigns.unshift({ action: 'Issue resolution initiative: ' + locality.issue, locality: locality.name, date: dateText(), support: 4 });
+  locality.issue = ['Road maintenance', 'Drinking water supply', 'Public transport', 'Street lighting', 'Waste management'][c.resolvedIssues.length % 5];
+  saveState();
+  render();
+  toast('Issue resolution initiative started.');
+}
+
+function startDevelopmentProject(form) {
+  if (!state.characterCreated) return toast('Create your politician first.');
+  const data = new FormData(form);
+  const name = String(data.get('projectName') || '').trim();
+  const category = String(data.get('projectType') || '');
+  const cost = Number(data.get('projectCost'));
+  if (name.length < 4) return toast('Enter a project title with at least 4 characters.');
+  if (state.actionsUsed >= 2) return toast('Daily action limit reached.');
+  if (state.money < cost) return toast('Insufficient personal funds.');
+  const locality = state.constituency.localities.find(x => x.name === state.constituency.selectedLocality) || state.constituency.localities[0];
+  state.money -= cost;
+  state.totalExpenses += cost;
+  state.actionsUsed++;
+  state.totalActions++;
+  state.experience += 18;
+  state.reputation = Math.min(100, state.reputation + 3);
+  locality.support = Math.min(100, locality.support + 3);
+  state.constituency.projects.push({
+    name, category, cost, locality: locality.name,
+    status: 'Proposal initiated', date: dateText()
+  });
+  saveState();
+  render();
+  toast('Development proposal added to your record.');
+}
+
 function genericPage(name) {
   const descriptions = {
     Constituency: 'Understand your local community and constituency.',
@@ -1459,6 +1785,9 @@ function render() {
     case 'Profile':
       content = profilePage();
       break;
+    case 'Constituency':
+      content = constituencyPage();
+      break;
     default:
       content = genericPage(activeTab);
   }
@@ -1476,6 +1805,17 @@ document.addEventListener('click', event => {
     render();
     return;
   }
+
+  const selectedLocality = event.target.closest('[data-select-locality]');
+  if (selectedLocality) {
+    state.constituency.selectedLocality = selectedLocality.dataset.selectLocality;
+    saveState();
+    render();
+    return;
+  }
+
+  const groundAction = event.target.closest('[data-ground-action]');
+  if (groundAction) { performGroundAction(groundAction.dataset.groundAction); return; }
 
   const partyNav = event.target.closest('[data-party-section]');
   if (partyNav) { partySection = partyNav.dataset.partySection; render(); return; }
@@ -1535,6 +1875,20 @@ document.addEventListener('click', event => {
     case 'restore-save-backup':
       restoreSaveBackup();
       break;
+    case 'resolve-local-issue':
+      resolveLocalIssue();
+      break;
+  }
+});
+
+document.addEventListener('change', event => {
+  if (event.target.id === 'groundState') {
+    const stateName = event.target.value;
+    const districtSelect = document.querySelector('#groundDistrict');
+    const districts = constituencyDistricts[stateName] || constituencyDistricts.Other;
+    if (districtSelect) {
+      districtSelect.innerHTML = districts.map(name => `<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`).join('');
+    }
   }
 });
 
@@ -1550,6 +1904,8 @@ document.addEventListener('submit', event => {
   if (event.target.id === 'add-member-form') { event.preventDefault(); addPartyMember(event.target); }
   if (event.target.id === 'party-unit-form') { event.preventDefault(); createPartyUnit(event.target); }
   if (event.target.id === 'party-election-form') { event.preventDefault(); holdPartyElection(event.target); }
+  if (event.target.id === 'constituency-setup-form') { event.preventDefault(); saveConstituencySetup(event.target); }
+  if (event.target.id === 'development-project-form') { event.preventDefault(); startDevelopmentProject(event.target); }
 
   if (event.target.id === 'character-form') {
     event.preventDefault();

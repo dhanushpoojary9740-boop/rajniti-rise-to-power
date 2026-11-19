@@ -1111,3 +1111,39 @@ button {
     max-width: 100px;
   }
 }
+
+
+/* RAJNITI 1.0.5 — CONSTITUENCY & GROUND POLITICS */
+.ground-hero { margin-bottom: 18px; }
+.ground-panel { margin-top: 16px; }
+.ground-stats { margin-top: 16px; }
+.ground-panel .section-heading { margin-bottom: 17px; }
+.ground-panel .creator-grid { margin-top: 14px; }
+.creator-submit { display: flex; flex-direction: column; justify-content: flex-end; }
+.creator-note { color: var(--muted); font-size: 10px; line-height: 1.7; margin: 13px 0 0; padding: 12px; border-left: 2px solid var(--gold); background: #ffffff08; }
+.locality-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 11px; }
+.locality-card { min-width: 0; text-align: left; display: grid; gap: 8px; padding: 15px; border: 1px solid var(--line); border-radius: 10px; background: #0d1726; color: #edf1f7; }
+.locality-card.selected { border-color: var(--gold); background: linear-gradient(145deg, #1d2c40, #111c2b); box-shadow: 0 0 0 1px #d8b56b20; }
+.locality-card b { font-size: 14px; }
+.locality-card > span:not(.locality-type) { color: var(--muted); font-size: 10px; }
+.locality-type { color: var(--gold2); font-size: 8px; letter-spacing: 1.4px; text-transform: uppercase; }
+.locality-card small { display: flex; justify-content: space-between; color: var(--muted); font-size: 9px; }
+.locality-card small strong { color: var(--gold2); }
+.mini-progress { height: 5px; border-radius: 8px; background: #26364a; overflow: hidden; }
+.mini-progress i { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, #9e814b, #ecd18c); }
+.ground-metrics { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin: 18px 0; }
+.ground-metrics > div { border: 1px solid var(--line); background: #0d1726; border-radius: 9px; padding: 12px; min-width: 0; }
+.ground-metrics small { display: block; color: var(--muted); font-size: 8px; letter-spacing: 1px; margin-bottom: 7px; }
+.ground-metrics b { font-size: 13px; overflow-wrap: anywhere; }
+.issue-box { padding: 16px; border: 1px solid #8c744455; border-radius: 10px; background: #d8b56b0b; }
+.issue-box h3 { margin: 12px 0 6px; }
+.issue-box .secondary-btn { margin-top: 14px; }
+.ground-action-card { display: flex; flex-direction: column; align-items: stretch; }
+.ground-action-card .activity-rewards { margin-top: auto; padding: 12px 0; }
+.ground-action-card button { margin-top: 12px; }
+@media (max-width: 650px) {
+  .locality-grid { grid-template-columns: 1fr; }
+  .ground-metrics { grid-template-columns: 1fr 1fr; }
+  .ground-metrics > div:last-child { grid-column: 1 / -1; }
+  .ground-panel .creator-grid { grid-template-columns: 1fr; }
+}
