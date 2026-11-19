@@ -2860,8 +2860,13 @@ function ensureExecutiveOffice() {
     office.initialMonthlyAssignmentsCreated = true;
   }
 
+  if (!Array.isArray(office.projects)) office.projects = [];
+  if (!Array.isArray(office.crises)) office.crises = [];
+  if (!Array.isArray(office.decisionHistory)) office.decisionHistory = [];
+  if (!office.consequenceMetrics) office.consequenceMetrics = { approvals: 0, rejections: 0, returns: 0, delayedProjects: 0, completedProjects: 0 };
+  ['approvals','rejections','returns','delayedProjects','completedProjects'].forEach(key => { if (!Number.isFinite(Number(office.consequenceMetrics[key]))) office.consequenceMetrics[key] = 0; });
   if (!office.files.length && (/Chief Minister|State Minister|Prime Minister|Union Minister/.test(state.role || ''))) {
-    office.files.push({ id: office.nextId++, title: 'Department performance and funding review', from: 'Chief Secretary', summary: 'Review the latest department report and proposed administrative priorities.', recommendation: 'Approve for implementation review', status: 'Pending' });
+    office.files.push({ id: office.nextId++, title: 'Department performance and funding review', from: 'Chief Secretary', summary: 'Review the latest department report and proposed administrative priorities.', recommendation: 'Approve a monitored four-month implementation plan', status: 'Pending', department: 'General Administration', responsibleOfficer: 'Department Secretary', projectTitle: 'Priority Department Improvement Programme', budgetRequired: 40000, monthlyInstalment: 10000, durationMonths: 4, impact: { reputation: 2, publicSupport: 2, party: 1, rejectionReputation: 2, rejectionPublic: 2, rejectionParty: 1 } });
   }
   return office;
 }
@@ -2877,6 +2882,9 @@ function executiveOfficePage() {
     <section class="panel"><div class="command-section-head"><div><span class="eyebrow">PERSONAL WORK QUEUE</span><h2>My assigned work</h2><p class="panel-description">New assignments arrive monthly. You choose: take responsibility, keep pending for a later month, or reject. Unfinished work is carried forward; only your completion decision closes a mission.</p></div></div>${tasks.length ? tasks.map(t=>`<article class="panel office-task-card"><div class="command-section-head"><div><span class="gold-tag">${escapeHtml(t.level || scope.level)} · ${escapeHtml(t.status)}</span><h3>${escapeHtml(t.title)}</h3></div><b>${Number(t.carryForwardCount || 0) ? `Carried ${Number(t.carryForwardCount)}×` : 'New'}</b></div><p>${escapeHtml(t.detail || 'Assigned responsibility')}</p><div class="task-detail-grid"><div><small>FUNDS REQUIRED</small><b>${money(Number(t.budgetRequired || 0))}</b><small>${escapeHtml(t.fundingSource || 'Office allocation')}</small></div><div><small>TIME REQUIRED</small><b>${Number(t.estimatedDuration || 1)} months</b></div><div><small>TIME LEFT</small><b>${Number(t.monthsRemaining ?? t.estimatedDuration ?? 1)} months</b></div><div><small>ASSIGNED BY</small><b>${escapeHtml(t.assignedBy)}</b></div><div><small>PARTY IMPACT</small><b>+${Number(t.expectedPartyImpact || 1)}</b></div><div><small>REPUTATION IMPACT</small><b>+${Number(t.expectedReputationImpact || 1)}</b></div></div><p><b>Resources required:</b> ${escapeHtml(t.resources || 'Staff coordination and field work')}</p><p><b>How to use this assignment:</b> ${escapeHtml(t.expectedUse || '')}</p><p><b>Expected outcome:</b> ${escapeHtml(t.expectedOutcome || 'A measurable improvement in the relevant game system.')}</p><p><b>Risk:</b> ${escapeHtml(t.risk || 'Delay may reduce public confidence.')}</p><p><b>Progress:</b> ${Number(t.progress || 0)}% · ${Number(t.monthsWorked || 0)} month(s) worked</p><small>Assigned ${escapeHtml(t.createdAt || dateText())} · ${escapeHtml(t.due || 'This month')}</small><div class="gov-budget-actions">${t.status==='Pending'?`<button class="primary-btn" data-office-task="${t.id}">TAKE RESPONSIBILITY</button>`:''}${t.status==='In progress'?`<button class="primary-btn" data-office-complete="${t.id}">COMPLETE & REPORT</button>`:''}<button class="secondary-btn" data-office-keep="${t.id}">KEEP PENDING</button><button class="secondary-btn" data-office-reject="${t.id}">REJECT TASK</button></div></article>`).join('') : '<p class="panel-description">No work is currently assigned.</p>'}</section>
     <section class="panel"><span class="eyebrow">COMPLETED WORK ARCHIVE</span><h2>Completed and closed missions</h2>${office.taskHistory && office.taskHistory.length ? office.taskHistory.slice(-8).reverse().map(item=>`<div class="finance-history"><span><b>${escapeHtml(typeof item === 'string' ? item : item.title)}</b><small>${escapeHtml(typeof item === 'string' ? 'Legacy record' : (item.completedAt ? `Completed · ${item.completedAt}` : item.rejectedAt ? `Rejected · ${item.rejectedAt}` : 'Archived'))}</small></span><small>${escapeHtml(typeof item === 'string' ? '' : (item.impactSummary || ''))}</small></div>`).join('') : '<p class="panel-description">Completed missions will appear here.</p>'}</section>
     <section class="panel"><div class="command-section-head"><div><span class="eyebrow">SIGNATURE DESK</span><h2>Pending for my approval</h2></div><b>${pending.length} pending</b></div>${pending.length ? pending.map(f=>`<article class="panel government-portfolio"><span class="gold-tag">OFFICIAL FILE · ${escapeHtml(f.from)}</span><h3>${escapeHtml(f.title)}</h3><p class="panel-description">${escapeHtml(f.summary)}</p><p><b>AI / officer recommendation:</b> ${escapeHtml(f.recommendation)}</p><div class="gov-budget-actions"><button class="primary-btn" data-office-decision="approve" data-office-file="${f.id}">APPROVE & SIGN</button><button class="secondary-btn" data-office-decision="return" data-office-file="${f.id}">RETURN FOR REVISION</button><button class="secondary-btn" data-office-decision="reject" data-office-file="${f.id}">REJECT</button></div></article>`).join('') : '<p class="panel-description">No important files require your signature right now. Routine work is being handled by the administration.</p>'}</section>
+    <section class="panel"><span class="eyebrow">MONTHLY PROJECT OVERSIGHT</span><h2>Approved projects & instalments</h2>${office.projects.length ? office.projects.slice(-8).reverse().map(project=>`<article class="panel government-portfolio"><div class="command-section-head"><h3>${escapeHtml(project.title)}</h3><b>${escapeHtml(project.status)}</b></div><p>${escapeHtml(project.department)} · Officer: ${escapeHtml(project.officer)}</p><div class="task-detail-grid"><div><small>TOTAL BUDGET</small><b>${money(project.totalBudget)}</b></div><div><small>SPENT</small><b>${money(project.spent)}</b></div><div><small>PROGRESS</small><b>${Number(project.progress)}%</b></div><div><small>MONTHS LEFT</small><b>${Number(project.monthsRemaining)}</b></div></div><p>${escapeHtml(project.lastReport || '')}</p></article>`).join('') : '<p class="panel-description">Approved projects will appear here with budgets and monthly officer reports.</p>'}</section>
+    <section class="panel"><span class="eyebrow">URGENT POLITICAL & ADMINISTRATIVE MATTERS</span><h2>Situation desk</h2>${office.crises.filter(item=>item.status==='Pending').length ? office.crises.filter(item=>item.status==='Pending').map(item=>`<article class="panel government-portfolio"><span class="gold-tag">${escapeHtml(item.category)}</span><h3>${escapeHtml(item.title)}</h3><p>${escapeHtml(item.detail)}</p><div class="gov-budget-actions"><button class="primary-btn" data-office-crisis="respond" data-crisis-id="${item.id}">ISSUE RESPONSE</button><button class="secondary-btn" data-office-crisis="delegate" data-crisis-id="${item.id}">DELEGATE TO AI</button></div></article>`).join('') : '<p class="panel-description">No urgent matters are awaiting your decision.</p>'}</section>
+    <section class="panel"><span class="eyebrow">DECISION CONSEQUENCES</span><h2>Your leadership record</h2><div class="government-unlock-grid"><div><b>${office.consequenceMetrics.approvals}</b><small>Approved</small></div><div><b>${office.consequenceMetrics.rejections}</b><small>Rejected</small></div><div><b>${office.consequenceMetrics.delayedProjects}</b><small>Delayed instalments</small></div><div><b>${office.consequenceMetrics.completedProjects}</b><small>Projects completed</small></div></div>${office.decisionHistory.slice(0,5).map(item=>`<div class="finance-history"><span><b>${escapeHtml(item.title)}</b><small>${escapeHtml(item.date)} · ${escapeHtml(item.decision)}</small></span><small>Reputation ${item.reputation} · Party ${item.partyPopularity}</small></div>`).join('')}</section>
     <section class="panel"><span class="eyebrow">AI ADMINISTRATION REPORT</span><h2>Work handled automatically</h2><p class="panel-description">${escapeHtml(office.lastAiReport || 'Your administrative teams are monitoring routine operations.')}</p><p class="ci-disclaimer">AI decisions are simulated gameplay. Major decisions outside your authority are not sent to you for approval. Critical decisions within your authority appear on this signature desk.</p></section>
   `;
 }
@@ -2977,12 +2985,45 @@ function rejectOfficeTask(id) {
 }
 
 function decideOfficeFile(id, decision) {
-  const office = ensureExecutiveOffice(); const file = office.files.find(f => f.id === Number(id) && f.status === 'Pending');
+  const office = ensureExecutiveOffice();
+  const file = office.files.find(f => f.id === Number(id) && f.status === 'Pending');
   if (!file) return;
+  const impact = file.impact || {};
+  const amount = Math.max(1, Number(impact.reputation || 1));
   file.status = decision === 'approve' ? 'Approved & signed' : decision === 'reject' ? 'Rejected' : 'Returned for revision';
   file.decidedOn = dateText();
-  if (decision === 'approve') { state.reputation = Math.min(100, Number(state.reputation || 0) + 2); office.lastAiReport = `Your approval of “${file.title}” has been sent to the responsible officials for execution.`; }
-  else office.lastAiReport = `The file “${file.title}” was ${decision === 'reject' ? 'rejected' : 'returned to the submitting officer'} by your office.`;
+  file.decisionBy = state.characterName || 'Player';
+  if (decision === 'approve') {
+    office.consequenceMetrics.approvals++;
+    state.reputation = Math.min(100, Number(state.reputation || 0) + amount);
+    state.publicSupport = Math.min(100, Number(state.publicSupport || 0) + Number(impact.publicSupport || 1));
+    if (state.partyId !== 'independent') state.partyPopularity = Math.min(100, Number(state.partyPopularity || 0) + Number(impact.party || 1));
+    if (file.budgetRequired) {
+      const project = {
+        id: office.nextId++, title: file.projectTitle || file.title, department: file.department || file.from,
+        totalBudget: Number(file.budgetRequired), spent: 0, instalment: Number(file.monthlyInstalment || Math.max(1, Math.ceil(Number(file.budgetRequired) / 4))),
+        progress: 0, duration: Number(file.durationMonths || 4), monthsRemaining: Number(file.durationMonths || 4),
+        status: 'Ongoing', officer: file.responsibleOfficer || file.from, createdAt: dateText(), lastReport: 'Approved; awaiting first monthly officer report.'
+      };
+      office.projects.push(project);
+    }
+    office.lastAiReport = `You approved “${file.title}”. The responsible office has been instructed to execute it and submit monthly progress reports.`;
+  } else if (decision === 'reject') {
+    office.consequenceMetrics.rejections++;
+    state.reputation = Math.max(0, Number(state.reputation || 0) - Number(impact.rejectionReputation || 1));
+    if (state.partyId !== 'independent') state.partyPopularity = Math.max(0, Number(state.partyPopularity || 0) - Number(impact.rejectionParty || 1));
+    state.publicSupport = Math.max(0, Number(state.publicSupport || 0) - Number(impact.rejectionPublic || 1));
+    office.lastAiReport = `You rejected “${file.title}”. The department has been notified; affected stakeholders may react negatively.`;
+  } else {
+    office.consequenceMetrics.returns++;
+    state.reputation = Math.max(0, Number(state.reputation || 0) - 1);
+    file.status = 'Returned for revision';
+    file.revisionRequested = true;
+    office.lastAiReport = `You returned “${file.title}” for revision. The submitting officer must provide revised costings and evidence next month.`;
+  }
+  const record = { title: file.title, decision, date: dateText(), summary: decision === 'approve' ? 'Approved; execution and monthly reporting required.' : decision === 'reject' ? 'Rejected; stakeholder confidence may be affected.' : 'Returned for revised information.', reputation: Number(state.reputation || 0), partyPopularity: Number(state.partyPopularity || 0) };
+  office.decisionHistory.unshift(record);
+  office.decisionHistory = office.decisionHistory.slice(0, 40);
   saveState(); render(); toast(`File ${file.status.toLowerCase()}.`);
 }
 
@@ -2990,7 +3031,42 @@ function runAiAdministration() {
   const office = ensureExecutiveOffice();
   const pending = office.tasks.filter(task => task.status === 'Pending').length;
   const active = office.tasks.filter(task => task.status === 'In progress').length;
-  office.lastAiReport = `AI administration monitored ${pending} pending player decisions and ${active} active assignments. Routine district and department operations continue automatically. Only you can mark your personal assignments complete, reject them or keep them pending.`;
+  const reports = [];
+  office.projects.forEach(project => {
+    if (project.status !== 'Ongoing') return;
+    const due = Math.min(Number(project.instalment || 0), Math.max(0, Number(project.totalBudget || 0) - Number(project.spent || 0)));
+    if (due > 0 && Number(state.government?.treasury || 0) >= due) {
+      state.government.treasury -= due;
+      project.spent += due;
+      project.progress = Math.min(100, Number(project.progress || 0) + Math.ceil(100 / Math.max(1, Number(project.duration || 4))));
+      project.monthsRemaining = Math.max(0, Number(project.monthsRemaining || 1) - 1);
+      project.lastReport = `${project.officer} reports ${project.progress}% completion; ${money(due)} instalment released.`;
+      reports.push(project.lastReport);
+      if (project.progress >= 100 || project.spent >= project.totalBudget) {
+        project.status = 'Completed'; project.progress = 100; office.consequenceMetrics.completedProjects++;
+        state.reputation = Math.min(100, Number(state.reputation || 0) + 2);
+        state.publicSupport = Math.min(100, Number(state.publicSupport || 0) + 2);
+      }
+    } else {
+      project.monthsRemaining = Math.max(0, Number(project.monthsRemaining || 1) - 1);
+      project.lastReport = `Funding instalment delayed for ${project.officer}; project progress is on hold.`;
+      office.consequenceMetrics.delayedProjects++;
+      reports.push(project.lastReport);
+    }
+  });
+  if (office.crises.filter(item => item.status === 'Pending').length < 2 && Math.random() < 0.28) {
+    const crisisPool = [
+      ['Unexpected price rise in essential goods','Public','Public support may fall if no response is announced.'],
+      ['Opposition questions a delayed public project','Political','Party reputation may be affected by the response.'],
+      ['Department faces staff shortage','Administration','Service delivery may deteriorate without intervention.'],
+      ['Local water supply disruption','Public service','Affected locality satisfaction may decline.'],
+      ['Party unit reports internal disagreement','Party','Member loyalty and party unity may weaken.']
+    ];
+    const item = crisisPool[Math.floor(Math.random() * crisisPool.length)];
+    office.crises.unshift({ id: office.nextId++, title: item[0], category: item[1], detail: item[2], status: 'Pending', createdAt: dateText() });
+    office.crises = office.crises.slice(0, 20);
+  }
+  office.lastAiReport = `AI administration monitored ${pending} pending assignments and ${active} active assignments. ${reports.slice(0, 2).join(' ')} Routine district operations continue automatically.`;
 }
 
 function genericPage(name) {
@@ -3551,6 +3627,27 @@ document.addEventListener('click', event => {
   if (officeStart) { updateOfficeTask(officeStart.dataset.officeTask, false); return; }
   const officeComplete = event.target.closest('[data-office-complete]');
   if (officeComplete) { updateOfficeTask(officeComplete.dataset.officeComplete, true); return; }
+
+  const crisisButton = event.target.closest('[data-office-crisis]');
+  if (crisisButton) {
+    const office = ensureExecutiveOffice();
+    const crisis = office.crises.find(item => item.id === Number(crisisButton.dataset.crisisId) && item.status === 'Pending');
+    if (!crisis) return;
+    if (crisisButton.dataset.officeCrisis === 'respond') {
+      crisis.status = 'Resolved by player';
+      state.reputation = Math.min(100, Number(state.reputation || 0) + 2);
+      state.publicSupport = Math.min(100, Number(state.publicSupport || 0) + 2);
+      if (state.partyId !== 'independent') state.partyPopularity = Math.min(100, Number(state.partyPopularity || 0) + 1);
+      crisis.outcome = 'Player issued a response; public confidence improved.';
+    } else {
+      crisis.status = 'Delegated to AI';
+      crisis.outcome = 'AI administration assigned the matter to the responsible officials.';
+      state.reputation = Math.min(100, Number(state.reputation || 0) + 1);
+    }
+    crisis.decidedAt = dateText();
+    saveState(); render(); toast(crisis.outcome);
+    return;
+  }
 
   const mapStateButton = event.target.closest('[data-map-state]');
   if (mapStateButton) {

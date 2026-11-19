@@ -1996,3 +1996,9 @@ button {
 .office-task-card .task-detail-grid > div { min-width: 0; }
 .office-task-card .task-detail-grid small { display: block; }
 .office-task-card .gov-budget-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+
+/* RAJNITI 1.3.0 — decision consequences, projects and crisis desk */
+.office-task-card .task-detail-grid,
+.government-portfolio .task-detail-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; }
+.government-portfolio .task-detail-grid > div { padding:10px; border:1px solid var(--border,rgba(255,255,255,.1)); border-radius:10px; }
+.government-portfolio .task-detail-grid b { display:block; margin-top:4px; }
