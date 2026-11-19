@@ -84,6 +84,14 @@ const defaults = {
   completed: [],
   activityHistory: [],
   reviewedNews: [],
+  media: {
+    approval: 42,
+    trust: 45,
+    reach: 18,
+    controversies: [],
+    history: [],
+    lastBriefingDay: 0
+  },
   mapState: 'Karnataka',
   mapDistrict: 'Udupi',
   activeTab: 'Dashboard'
@@ -102,6 +110,16 @@ let state = loadState();
 let activeTab = 'Dashboard';
 let partySection = 'Overview';
 if (!Array.isArray(state.reviewedNews)) state.reviewedNews = [];
+if (!state.media || typeof state.media !== 'object') state.media = JSON.parse(JSON.stringify(defaults.media));
+for (const key of ['approval', 'trust', 'reach']) {
+  if (!Number.isFinite(Number(state.media[key]))) state.media[key] = defaults.media[key];
+}
+state.media.approval = Math.max(0, Math.min(100, Number(state.media.approval)));
+state.media.trust = Math.max(0, Math.min(100, Number(state.media.trust)));
+state.media.reach = Math.max(0, Math.min(100, Number(state.media.reach)));
+if (!Array.isArray(state.media.controversies)) state.media.controversies = [];
+if (!Array.isArray(state.media.history)) state.media.history = [];
+
 
 // Upgrade older saves without changing the existing party, wealth or career data.
 function migratePartyManagementSave() {
@@ -270,6 +288,7 @@ function icon(name) {
     Finance: '₹',
     News: '▣',
     Intelligence: '◈',
+    'Public Opinion': '♥',
     'India Map': '⌖',
     'Constituency Intel': '▦',
     Profile: '◉'
@@ -314,7 +333,7 @@ function shell(content) {
   const nav = [
     'Dashboard', 'Career', 'Activities', 'Party',
     'Constituency', 'Constituency Intel', 'India Map', 'Elections', 'Government',
-    'Relationships', 'Intelligence', 'Finance', 'News', 'Profile'
+    'Relationships', 'Intelligence', 'Public Opinion', 'Finance', 'News', 'Profile'
   ];
 
   return `
@@ -372,7 +391,7 @@ function shell(content) {
       </main>
 
       <nav class="mobile-nav">
-        ${['Dashboard', 'Career', 'Party', 'Constituency', 'Constituency Intel', 'India Map', 'Elections', 'Intelligence', 'Finance', 'News', 'Activities', 'Profile']
+        ${['Dashboard', 'Career', 'Party', 'Constituency', 'Constituency Intel', 'India Map', 'Elections', 'Intelligence', 'Public Opinion', 'Finance', 'News', 'Activities', 'Profile']
           .map(name => `
             <button class="${activeTab === name ? 'active' : ''}"
               data-tab="${name}">
@@ -565,6 +584,132 @@ function intelligencePage() {
     </div>
     <section class="panel intelligence-method"><span class="eyebrow">STRATEGIC NOTE</span><h3>Build your organisation before chasing headline numbers</h3><p class="panel-description">Use constituency outreach, issue surveys, volunteer mobilisation and party-building activities to improve your standing over time.</p><button class="primary-btn" data-tab="Activities">PLAN POLITICAL ACTIVITIES →</button></section>
   `;
+}
+
+
+/* RAJNITI 1.1.4 — PUBLIC OPINION & MEDIA INFLUENCE */
+function publicOpinionPage() {
+  const media = state.media;
+  const active = media.controversies.filter(item => !item.resolved);
+  const localSupport = Math.max(0, Math.min(100, Number(state.publicSupport || 8)));
+  const issueMood = [
+    { label: 'Development', score: Math.min(95, 42 + Number(state.constituency?.projects?.length || 0) * 7), note: 'Roads, water and local infrastructure' },
+    { label: 'Employment', score: Math.max(18, Math.min(90, 48 + (state.occupation !== 'Unemployed' ? 10 : 0))), note: 'Jobs and livelihood opportunities' },
+    { label: 'Governance', score: Math.max(20, Math.min(90, 38 + Number(state.reputation || 0) * .35)), note: 'Trust in leadership and administration' },
+    { label: 'Public services', score: Math.max(20, Math.min(90, 45 + Number(state.constituency?.resolvedIssues?.length || 0) * 5)), note: 'Healthcare, education and civic services' }
+  ];
+  const approval = Math.max(0, Math.min(100, Math.round((Number(media.approval) * .55) + (localSupport * .25) + (Number(state.reputation || 0) * .20))));
+  const regionNames = [...new Set([state.stateName || 'Karnataka', 'Kerala', 'Tamil Nadu', 'Maharashtra', 'Delhi'])];
+  const regional = regionNames.map((name, index) => ({
+    name,
+    value: Math.max(5, Math.min(95, approval + (index === 0 ? 0 : [0, -5, 3, -8, 6][index])))
+  }));
+  return `
+    <div class="page-heading">
+      <div><div class="eyebrow">PUBLIC SENTIMENT & COMMUNICATIONS BUREAU</div><h1>Public <em>opinion</em></h1>
+      <p>Track approval, media reach, public mood and political communication.</p></div>
+      <div class="date-card"><span>OPINION BRIEFING</span><b>DAY ${state.day}</b><small>${dateText()}</small></div>
+    </div>
+    <section class="panel po-disclaimer"><span class="gold-tag">OFFLINE GAME SIMULATION</span><b>All ratings, media stories and public mood indicators are fictional gameplay estimates.</b><small>They are not real surveys, news reports or public opinion measurements.</small></section>
+    <div class="stats-grid po-stats">
+      ${statCard('PUBLIC APPROVAL', approval + '%', 'Overall leadership approval estimate', '♥')}
+      ${statCard('PUBLIC TRUST', media.trust + '/100', 'Confidence in your communication', '✦')}
+      ${statCard('MEDIA REACH', media.reach + '/100', 'How widely your message travels', '▤')}
+      ${statCard('LOCAL SUPPORT', localSupport + '%', 'Current career support indicator', '♟')}
+    </div>
+    <div class="po-grid">
+      <section class="panel">
+        <div class="command-section-head"><div><span class="eyebrow">PUBLIC MOOD TRACKER</span><h2>Issue-by-issue sentiment</h2></div><span class="command-symbol">◉</span></div>
+        ${issueMood.map(item => `<div class="po-mood-row"><div><span>${item.label}</span><b>${Math.round(item.score)}/100</b></div><i><em style="width:${item.score}%"></em></i><small>${item.note}</small></div>`).join('')}
+      </section>
+      <section class="panel">
+        <div class="command-section-head"><div><span class="eyebrow">MEDIA STRATEGY</span><h2>Choose your response</h2></div><span class="command-symbol">▤</span></div>
+        <p class="panel-description">Press conferences cost money and use one daily action. Choose a clear, accountable message.</p>
+        <div class="po-action-card"><div><b>Hold a press conference</b><small>Cost ₹1,000 · +trust · +reach</small></div><button class="primary-btn" data-action="media-press">HOLD BRIEFING</button></div>
+        <div class="po-action-card"><div><b>Community listening session</b><small>Cost ₹500 · improve public trust</small></div><button class="secondary-btn" data-action="media-listen">LISTEN TO CITIZENS</button></div>
+        <div class="po-action-card"><div><b>Publish policy explainer</b><small>Cost ₹750 · expand media reach</small></div><button class="secondary-btn" data-action="media-policy">PUBLISH EXPLAINER</button></div>
+      </section>
+      <section class="panel">
+        <div class="command-section-head"><div><span class="eyebrow">REGIONAL OPINION</span><h2>State-wise approval</h2></div><span class="command-symbol">⌖</span></div>
+        ${regional.map(item => `<div class="po-region-row"><span>${escapeHtml(item.name)}</span><b>${item.value}%</b><i><em style="width:${item.value}%"></em></i></div>`).join('')}
+        <small class="po-footnote">Regional values are generated estimates based on your current career approval.</small>
+      </section>
+      <section class="panel">
+        <div class="command-section-head"><div><span class="eyebrow">CRISIS MANAGEMENT</span><h2>Public controversies</h2></div><span class="command-symbol">⚑</span></div>
+        ${active.length ? active.map(item => `<div class="po-crisis"><b>${escapeHtml(item.title)}</b><p>${escapeHtml(item.description)}</p><button class="secondary-btn" data-media-resolve="${escapeHtml(item.id)}">ISSUE PUBLIC RESPONSE</button></div>`).join('') : '<p class="panel-description">No active controversy. Your communications desk is clear.</p>'}
+        <div class="po-footnote">New fictional political situations may arise as the in-game calendar advances.</div>
+      </section>
+    </div>
+    <section class="panel po-history"><div class="command-section-head"><div><span class="eyebrow">COMMUNICATION LOG</span><h2>Recent media activity</h2></div></div>
+      ${media.history.length ? media.history.slice(0,6).map(item => `<div class="po-log-row"><span>${escapeHtml(item.event)}</span><small>${escapeHtml(item.date)}</small></div>`).join('') : '<p class="panel-description">No media activity recorded yet. Hold a briefing or publish a policy explainer to begin.</p>'}
+    </section>
+  `;
+}
+
+function recordMediaEvent(event) {
+  state.media.history.unshift({ event, date: dateText() });
+  state.media.history = state.media.history.slice(0, 30);
+}
+
+function mediaAction(type) {
+  if (!state.characterCreated) return toast('Create your politician first.');
+  if (state.actionsUsed >= 2) return toast('No daily actions remaining.');
+  const actions = {
+    press: { cost: 1000, trust: 7, reach: 9, approval: 3, label: 'Press conference held' },
+    listen: { cost: 500, trust: 9, reach: 2, approval: 2, label: 'Community listening session completed' },
+    policy: { cost: 750, trust: 3, reach: 10, approval: 2, label: 'Policy explainer published' }
+  };
+  const action = actions[type];
+  if (!action) return;
+  if (state.money < action.cost) return toast(`You need ${money(action.cost)}.`);
+  state.money -= action.cost;
+  state.totalExpenses = Number(state.totalExpenses || 0) + action.cost;
+  state.actionsUsed++;
+  state.totalActions = Number(state.totalActions || 0) + 1;
+  state.media.trust = Math.min(100, state.media.trust + action.trust);
+  state.media.reach = Math.min(100, state.media.reach + action.reach);
+  state.media.approval = Math.min(100, state.media.approval + action.approval);
+  state.reputation = Math.min(100, Number(state.reputation || 0) + 1);
+  recordMediaEvent(action.label);
+  saveState();
+  render();
+  toast(`${action.label}. Public confidence improved.`);
+}
+
+function resolveMediaControversy(id) {
+  const item = state.media.controversies.find(entry => entry.id === id && !entry.resolved);
+  if (!item) return;
+  if (state.actionsUsed >= 2) return toast('No daily actions remaining.');
+  if (state.money < 1200) return toast('You need ₹1,200 for a response team.');
+  state.money -= 1200;
+  state.totalExpenses = Number(state.totalExpenses || 0) + 1200;
+  state.actionsUsed++;
+  item.resolved = true;
+  state.media.trust = Math.min(100, state.media.trust + 8);
+  state.media.approval = Math.min(100, state.media.approval + 4);
+  state.reputation = Math.min(100, Number(state.reputation || 0) + 2);
+  recordMediaEvent('Public response issued: ' + item.title);
+  saveState();
+  render();
+  toast('Crisis response issued. Trust is recovering.');
+}
+
+function advanceMediaCycle() {
+  if (!state.media || !Array.isArray(state.media.controversies)) return;
+  // A rare, fictional event creates a gameplay decision; it never uses real news.
+  if (Math.random() < 0.22 && state.media.controversies.filter(item => !item.resolved).length < 2) {
+    const events = [
+      { title: 'Questions over a delayed local project', description: 'A fictional news panel is asking why a community project has moved slowly.' },
+      { title: 'Opposition questions your public statement', description: 'A rival spokesperson challenges the clarity of a recent policy announcement.' },
+      { title: 'Residents demand clearer service updates', description: 'A local discussion highlights gaps in public communication and follow-up.' }
+    ];
+    const event = events[Math.floor(Math.random() * events.length)];
+    const id = 'media-' + state.year + '-' + state.month + '-' + state.day + '-' + state.media.controversies.length;
+    state.media.controversies.unshift({ id, ...event, resolved: false });
+    state.media.approval = Math.max(0, state.media.approval - 3);
+    state.media.trust = Math.max(0, state.media.trust - 2);
+    recordMediaEvent('Public controversy reported: ' + event.title);
+  }
 }
 
 function newsPage() {
@@ -1372,6 +1517,7 @@ function endDay() {
       state.age++;
     }
 
+    advanceMediaCycle();
     const report = processMonthlyFinances();
     const totalIncome = report.salary + report.businessIncome + report.investmentIncome;
     message = `New month! Income ${money(totalIncome)} · Living expenses ${money(report.expenses)} · Net ${report.net >= 0 ? '+' : '−'}${money(Math.abs(report.net))}`;
@@ -2684,6 +2830,9 @@ function render() {
     case 'Intelligence':
       content = intelligencePage();
       break;
+    case 'Public Opinion':
+      content = publicOpinionPage();
+      break;
     case 'News':
       content = newsPage();
       break;
@@ -2742,12 +2891,25 @@ document.addEventListener('click', event => {
   if (reviewButton) {
     const index = Number(reviewButton.dataset.reviewNews);
     if (!Array.isArray(state.reviewedNews)) state.reviewedNews = [];
+if (!state.media || typeof state.media !== 'object') state.media = JSON.parse(JSON.stringify(defaults.media));
+for (const key of ['approval', 'trust', 'reach']) {
+  if (!Number.isFinite(Number(state.media[key]))) state.media[key] = defaults.media[key];
+}
+state.media.approval = Math.max(0, Math.min(100, Number(state.media.approval)));
+state.media.trust = Math.max(0, Math.min(100, Number(state.media.trust)));
+state.media.reach = Math.max(0, Math.min(100, Number(state.media.reach)));
+if (!Array.isArray(state.media.controversies)) state.media.controversies = [];
+if (!Array.isArray(state.media.history)) state.media.history = [];
+
     if (!state.reviewedNews.includes(index)) state.reviewedNews.push(index);
     saveState();
     render();
     toast('News briefing marked as reviewed.');
     return;
   }
+
+  const mediaResolve = event.target.closest('[data-media-resolve]');
+  if (mediaResolve) { resolveMediaControversy(mediaResolve.dataset.mediaResolve); return; }
 
   const tab = event.target.closest('[data-tab]');
 
@@ -2807,6 +2969,15 @@ document.addEventListener('click', event => {
       break;
     case 'end-day':
       endDay();
+      break;
+    case 'media-press':
+      mediaAction('press');
+      break;
+    case 'media-listen':
+      mediaAction('listen');
+      break;
+    case 'media-policy':
+      mediaAction('policy');
       break;
     case 'party-meeting':
       partyMeeting();

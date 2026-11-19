@@ -1801,3 +1801,39 @@ button {
 .ci-disclaimer{margin:12px 2px 0}
 @media(max-width:760px){.ci-grid{grid-template-columns:1fr}.ci-overview{align-items:flex-start;flex-direction:column}.ci-overview-score{width:100%}}
 @media screen and (orientation:landscape) and (min-width:600px){.ci-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.ci-demographic-grid{grid-template-columns:repeat(3,minmax(0,1fr))}}
+
+
+/* RAJNITI 1.1.4 — PUBLIC OPINION & MEDIA INFLUENCE */
+.po-disclaimer { display:flex; flex-direction:column; gap:9px; margin-bottom:20px; }
+.po-disclaimer b { font-size:13px; color:#e9edf5; }
+.po-disclaimer small,.po-footnote { color:var(--muted); font-size:10px; line-height:1.6; }
+.po-stats { margin-bottom:22px; }
+.po-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:18px; }
+.po-grid > .panel { min-width:0; }
+.po-mood-row { margin:18px 0; }
+.po-mood-row > div { display:flex; justify-content:space-between; gap:12px; font-size:12px; }
+.po-mood-row > div b { color:var(--gold2); }
+.po-mood-row > i,.po-region-row > i { display:block; height:7px; background:#253348; border-radius:9px; overflow:hidden; margin:9px 0 5px; }
+.po-mood-row > i em,.po-region-row > i em { display:block; height:100%; background:linear-gradient(90deg,#98763c,#e5c77e); border-radius:9px; }
+.po-mood-row small { color:var(--muted); font-size:10px; }
+.po-action-card { display:flex; align-items:center; justify-content:space-between; gap:14px; padding:14px 0; border-bottom:1px solid var(--line); }
+.po-action-card:last-child { border-bottom:0; }
+.po-action-card b,.po-action-card small { display:block; }
+.po-action-card b { font-size:12px; }
+.po-action-card small { color:var(--muted); font-size:10px; margin-top:5px; }
+.po-action-card button { white-space:nowrap; font-size:9px; padding:10px 12px; }
+.po-region-row { display:grid; grid-template-columns:1fr auto; align-items:center; gap:8px 12px; margin:15px 0; font-size:12px; }
+.po-region-row b { color:var(--gold2); }
+.po-region-row > i { grid-column:1 / -1; margin:0; }
+.po-crisis { padding:13px 0; border-bottom:1px solid var(--line); }
+.po-crisis b { font-size:12px; }
+.po-crisis p { color:var(--muted); font-size:10px; line-height:1.6; }
+.po-crisis button { font-size:9px; padding:9px 12px; }
+.po-log-row { display:flex; justify-content:space-between; gap:14px; padding:12px 0; border-bottom:1px solid var(--line); font-size:11px; }
+.po-log-row small { color:var(--muted); white-space:nowrap; }
+.po-history { margin-top:18px; }
+@media (max-width:900px) { .po-grid { grid-template-columns:1fr; } }
+@media (max-width:600px) {
+  .po-action-card { align-items:flex-start; flex-direction:column; }
+  .po-log-row { flex-direction:column; gap:4px; }
+}
