@@ -70,6 +70,7 @@ const defaults = {
   level: 1,
   experience: 0,
   money: 25000,
+  wealthGrant108Claimed: false,
   reputation: 12,
   influence: 3,
   publicSupport: 8,
@@ -160,6 +161,26 @@ function migrateFinanceSave() {
   }
 }
 migrateFinanceSave();
+
+// RAJNITI 1.0.8: one-time personal wealth grant.
+// The flag is saved with the career, so reopening the app or installing later
+// updates will never credit this grant a second time.
+function applyVersion108WealthGrant() {
+  if (state.wealthGrant108Claimed) return;
+
+  const grant = 200000;
+  state.money = Math.max(0, Number(state.money) || 0) + grant;
+  state.wealthGrant108Claimed = true;
+
+  if (!Array.isArray(state.activityHistory)) state.activityHistory = [];
+  state.activityHistory.unshift({
+    event: 'One-time personal wealth grant credited: ₹2,00,000',
+    date: dateText()
+  });
+  state.activityHistory = state.activityHistory.slice(0, 50);
+  saveState();
+}
+applyVersion108WealthGrant();
 
 const parties = [
   {
@@ -438,10 +459,12 @@ function dashboard() {
       <span class="eyebrow">SIMULATION CALENDAR</span>
       <h3>${dateText()}</h3>
       <p class="panel-description">
-        Available actions: ${Math.max(0, 2 - state.actionsUsed)} / 2
+        Available actions: ${Math.max(0, 2 - state.actionsUsed)} / 2.
+        Each tap advances one in-game day. Monthly salary, business income,
+        fixed-deposit interest and living expenses are processed when a new month begins.
       </p>
       <button class="secondary-btn" data-action="end-day">
-        END DAY →
+        ADVANCE ONE DAY →
       </button>
     </section>
   `;
@@ -1160,6 +1183,12 @@ function financePage() {
       ${statCard('MONTHLY EXPENSES', money(monthlyExpenses()), 'Based on lifestyle', '↘')}
       ${statCard('FIXED DEPOSITS', money(state.finance.fixedDeposits), 'Invested principal', '▣')}
     </div>
+    <section class="panel finance-panel">
+      <span class="eyebrow">CAREER STARTER GRANT</span>
+      <h2>Personal wealth bonus</h2>
+      <div class="finance-line"><span>One-time grant</span><b class="finance-positive">+₹2,00,000</b></div>
+      <p class="panel-description">${state.wealthGrant108Claimed ? 'The one-time grant has been credited to your personal wealth. It will not be credited again in future updates.' : 'The one-time grant is pending.'}</p>
+    </section>
     <section class="panel finance-panel">
       <span class="eyebrow">EMPLOYMENT & SALARY</span><h2>Your employment</h2>
       <div class="finance-line"><span>Current occupation</span><b>${escapeHtml(currentJob)}</b></div>
