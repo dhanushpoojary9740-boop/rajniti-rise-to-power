@@ -57,6 +57,16 @@ const defaults = {
     totalLost: 0
   },
 
+  finance: {
+    businesses: [],
+    fixedDeposits: 0,
+    totalSalaryEarned: 0,
+    totalBusinessIncome: 0,
+    totalInvestmentIncome: 0,
+    lastMonthlyReport: null,
+    history: []
+  },
+
   level: 1,
   experience: 0,
   money: 25000,
@@ -139,6 +149,17 @@ function migrateElectionSave() {
   if (state.elections.active && !Array.isArray(state.elections.active.activities)) state.elections.active.activities = [];
 }
 migrateElectionSave();
+
+// Add the personal economy to existing saves without changing wealth or occupation.
+function migrateFinanceSave() {
+  if (!state.finance || typeof state.finance !== 'object') state.finance = JSON.parse(JSON.stringify(defaults.finance));
+  if (!Array.isArray(state.finance.businesses)) state.finance.businesses = [];
+  if (!Array.isArray(state.finance.history)) state.finance.history = [];
+  for (const key of ['fixedDeposits', 'totalSalaryEarned', 'totalBusinessIncome', 'totalInvestmentIncome']) {
+    if (!Number.isFinite(state.finance[key])) state.finance[key] = 0;
+  }
+}
+migrateFinanceSave();
 
 const parties = [
   {
@@ -323,7 +344,7 @@ function shell(content) {
       </main>
 
       <nav class="mobile-nav">
-        ${['Dashboard', 'Career', 'Party', 'Constituency', 'Elections', 'Activities', 'Profile']
+        ${['Dashboard', 'Career', 'Party', 'Constituency', 'Elections', 'Finance', 'Activities', 'Profile']
           .map(name => `
             <button class="${activeTab === name ? 'active' : ''}"
               data-tab="${name}">
@@ -1034,6 +1055,148 @@ function monthlyExpenses() {
   }[state.financialBackground] || 3000;
 }
 
+const employmentOptions = [
+  { id: 'office-assistant', title: 'Office Assistant', occupation: 'Private Employee', salary: 12000, education: 'School Student', description: 'Entry-level administrative work. No degree required.' },
+  { id: 'sales-associate', title: 'Sales Associate', occupation: 'Private Employee', salary: 14000, education: 'School Student', description: 'Retail and customer service work.' },
+  { id: 'private-employee', title: 'Private Company Employee', occupation: 'Private Employee', salary: 15000, education: 'High School Graduate', description: 'A regular private-sector position.' },
+  { id: 'teacher', title: 'School Teacher', occupation: 'Teacher', salary: 18000, education: 'Graduate', description: 'Teaching and education services.' },
+  { id: 'government-employee', title: 'Government Employee', occupation: 'Government Employee', salary: 25000, education: 'Graduate', description: 'A stable public-service career.' },
+  { id: 'lawyer', title: 'Junior Advocate', occupation: 'Lawyer', salary: 30000, education: 'Professional Degree', description: 'Legal practice and client representation.' }
+];
+
+const businessOptions = [
+  { id: 'food-stall', name: 'Food Stall', cost: 8000, monthlyProfit: 1800, description: 'A small local food business.' },
+  { id: 'kirana-shop', name: 'Kirana Shop', cost: 15000, monthlyProfit: 3500, description: 'A neighbourhood grocery shop.' },
+  { id: 'service-agency', name: 'Service Agency', cost: 30000, monthlyProfit: 6500, description: 'A small local services company.' }
+];
+
+function monthlySalary() {
+  const occupation = String(state.occupation || 'Unemployed');
+  const salaryMap = {
+    'Private Employee': 15000,
+    'Government Employee': 25000,
+    Teacher: 18000,
+    Lawyer: 30000
+  };
+  return salaryMap[occupation] || 0;
+}
+
+function monthlyBusinessIncome() {
+  return state.finance.businesses.reduce((sum, business) => sum + (Number(business.monthlyProfit) || 0), 0);
+}
+
+function applyForJob(form) {
+  const data = new FormData(form);
+  const job = employmentOptions.find(item => item.id === data.get('job'));
+  if (!job) return toast('Choose a valid job.');
+  const educationRank = ['School Student', 'High School Graduate', 'Diploma', 'Graduate', 'Postgraduate', 'Doctorate', 'Professional Degree'];
+  if (educationRank.indexOf(state.education) < educationRank.indexOf(job.education)) {
+    return toast(`This job requires ${job.education} education.`);
+  }
+  state.occupation = job.occupation;
+  state.finance.currentJob = job.title;
+  saveState();
+  render();
+  toast(`${job.title} secured. Monthly salary: ${money(job.salary)}.`);
+}
+
+function startBusiness(form) {
+  const data = new FormData(form);
+  const option = businessOptions.find(item => item.id === data.get('business'));
+  const name = String(data.get('businessName') || '').trim();
+  if (!option) return toast('Choose a business type.');
+  if (name.length < 3) return toast('Enter a business name with at least 3 characters.');
+  if (state.money < option.cost) return toast(`You need ${money(option.cost)} to start this business.`);
+  state.money -= option.cost;
+  state.totalExpenses += option.cost;
+  state.finance.businesses.push({ id: 'biz-' + Date.now(), name, type: option.name, monthlyProfit: option.monthlyProfit, founded: dateText(), status: 'Operating' });
+  saveState();
+  render();
+  toast(`${name} opened. Expected monthly profit: ${money(option.monthlyProfit)}.`);
+}
+
+function investFixedDeposit(form) {
+  const data = new FormData(form);
+  const amount = Math.floor(Number(data.get('amount')));
+  if (!Number.isFinite(amount) || amount < 1000) return toast('Minimum fixed deposit is ₹1,000.');
+  if (amount > state.money) return toast('Insufficient personal wealth.');
+  state.money -= amount;
+  state.finance.fixedDeposits += amount;
+  state.totalExpenses += amount;
+  saveState();
+  render();
+  toast(`${money(amount)} invested in fixed deposit.`);
+}
+
+function processMonthlyFinances() {
+  const salary = monthlySalary();
+  const businessIncome = monthlyBusinessIncome();
+  const investmentIncome = Math.floor(state.finance.fixedDeposits * 0.005);
+  const expenses = monthlyExpenses();
+  const income = salary + businessIncome + investmentIncome;
+  state.money += income;
+  state.money = Math.max(0, state.money - expenses);
+  state.totalExpenses += expenses;
+  state.finance.totalSalaryEarned += salary;
+  state.finance.totalBusinessIncome += businessIncome;
+  state.finance.totalInvestmentIncome += investmentIncome;
+  state.finance.lastMonthlyReport = { salary, businessIncome, investmentIncome, expenses, net: income - expenses, date: dateText() };
+  state.finance.history.unshift(state.finance.lastMonthlyReport);
+  state.finance.history = state.finance.history.slice(0, 24);
+  return state.finance.lastMonthlyReport;
+}
+
+function financePage() {
+  const salary = monthlySalary();
+  const businessIncome = monthlyBusinessIncome();
+  const investmentIncome = Math.floor(state.finance.fixedDeposits * 0.005);
+  const totalIncome = salary + businessIncome + investmentIncome;
+  const currentJob = state.finance.currentJob || (salary ? state.occupation : 'Unemployed');
+  return `
+    <div class="page-heading"><div><div class="eyebrow">PERSONAL ECONOMY</div><h1>Wealth & <em>finances</em></h1><p>Earn, save, invest and build financial independence alongside your political career.</p></div></div>
+    <div class="stats-grid finance-stats">
+      ${statCard('PERSONAL WEALTH', money(state.money), 'Available cash', '₹')}
+      ${statCard('MONTHLY INCOME', money(totalIncome), 'Salary + business + interest', '↗')}
+      ${statCard('MONTHLY EXPENSES', money(monthlyExpenses()), 'Based on lifestyle', '↘')}
+      ${statCard('FIXED DEPOSITS', money(state.finance.fixedDeposits), 'Invested principal', '▣')}
+    </div>
+    <section class="panel finance-panel">
+      <span class="eyebrow">EMPLOYMENT & SALARY</span><h2>Your employment</h2>
+      <div class="finance-line"><span>Current occupation</span><b>${escapeHtml(currentJob)}</b></div>
+      <div class="finance-line"><span>Monthly salary</span><b class="finance-positive">${money(salary)}</b></div>
+      <p class="panel-description">Salary is credited automatically at the start of each new in-game month.</p>
+      <form id="job-application-form" class="finance-form">
+        <label for="jobChoice">Apply for a job</label>
+        <select id="jobChoice" name="job" required>${employmentOptions.map(job => `<option value="${job.id}">${job.title} · ${money(job.salary)}/month · ${job.education}+</option>`).join('')}</select>
+        <p class="finance-hint">${employmentOptions.map(job => `<span>${job.title}: ${job.description}</span>`).join(' · ')}</p>
+        <button class="secondary-btn full" type="submit">APPLY FOR SELECTED JOB →</button>
+      </form>
+    </section>
+    <section class="panel finance-panel">
+      <span class="eyebrow">BUSINESS OWNERSHIP</span><h2>Your businesses</h2>
+      ${state.finance.businesses.length ? state.finance.businesses.map(b => `<div class="finance-business"><div><b>${escapeHtml(b.name)}</b><small>${escapeHtml(b.type)} · ${escapeHtml(b.status || 'Operating')}</small></div><strong class="finance-positive">${money(b.monthlyProfit)}/mo</strong></div>`).join('') : '<p class="panel-description">You do not own a business yet. Build savings from employment and start one when you can afford it.</p>'}
+      <form id="business-form" class="finance-form">
+        <label for="businessName">Business name</label><input id="businessName" name="businessName" maxlength="35" placeholder="Example: Dhanush Foods" required>
+        <label for="businessChoice">Business type</label>
+        <select id="businessChoice" name="business" required>${businessOptions.map(b => `<option value="${b.id}">${b.name} · Setup ${money(b.cost)} · ${money(b.monthlyProfit)}/month</option>`).join('')}</select>
+        <button class="secondary-btn full" type="submit">OPEN BUSINESS →</button>
+      </form>
+    </section>
+    <section class="panel finance-panel">
+      <span class="eyebrow">SAVINGS & INVESTMENTS</span><h2>Fixed deposit</h2>
+      <div class="finance-line"><span>Invested principal</span><b>${money(state.finance.fixedDeposits)}</b></div>
+      <div class="finance-line"><span>Estimated monthly interest</span><b class="finance-positive">${money(investmentIncome)}</b></div>
+      <p class="panel-description">Simulation rate: 0.5% per in-game month. Interest is credited monthly. Minimum deposit ₹1,000.</p>
+      <form id="fixed-deposit-form" class="finance-form"><label for="fdAmount">Deposit amount</label><input id="fdAmount" name="amount" type="number" min="1000" step="500" placeholder="1000" required><button class="primary-btn full" type="submit">INVEST IN FIXED DEPOSIT →</button></form>
+    </section>
+    <section class="panel finance-panel">
+      <span class="eyebrow">MONTHLY CASH FLOW</span><h2>Last monthly statement</h2>
+      ${state.finance.lastMonthlyReport ? `<div class="finance-line"><span>Salary received</span><b class="finance-positive">+${money(state.finance.lastMonthlyReport.salary)}</b></div><div class="finance-line"><span>Business profit</span><b class="finance-positive">+${money(state.finance.lastMonthlyReport.businessIncome)}</b></div><div class="finance-line"><span>Investment interest</span><b class="finance-positive">+${money(state.finance.lastMonthlyReport.investmentIncome)}</b></div><div class="finance-line"><span>Living expenses</span><b class="finance-negative">−${money(state.finance.lastMonthlyReport.expenses)}</b></div><div class="finance-line finance-total"><span>Net monthly change</span><b class="${state.finance.lastMonthlyReport.net >= 0 ? 'finance-positive' : 'finance-negative'}">${state.finance.lastMonthlyReport.net >= 0 ? '+' : '−'}${money(Math.abs(state.finance.lastMonthlyReport.net))}</b></div>` : '<p class="panel-description">Your first monthly statement will appear after the next month begins.</p>'}
+      ${state.finance.history.slice(0, 6).map(report => `<div class="finance-history"><span>${escapeHtml(report.date)}</span><b class="${report.net >= 0 ? 'finance-positive' : 'finance-negative'}">${report.net >= 0 ? '+' : '−'}${money(Math.abs(report.net))}</b></div>`).join('')}
+    </section>
+  `;
+}
+
 function endDay() {
   if (!state.characterCreated) {
     return toast('Create your politician first.');
@@ -1054,11 +1217,9 @@ function endDay() {
       state.age++;
     }
 
-    const expense = monthlyExpenses();
-    state.money = Math.max(0, state.money - expense);
-    state.totalExpenses += expense;
-
-    message = `New month! Living expenses: ${money(expense)}`;
+    const report = processMonthlyFinances();
+    const totalIncome = report.salary + report.businessIncome + report.investmentIncome;
+    message = `New month! Income ${money(totalIncome)} · Living expenses ${money(report.expenses)} · Net ${report.net >= 0 ? '+' : '−'}${money(Math.abs(report.net))}`;
   }
 
   saveState();
@@ -2070,6 +2231,9 @@ function render() {
     case 'Elections':
       content = electionPage();
       break;
+    case 'Finance':
+      content = financePage();
+      break;
     default:
       content = genericPage(activeTab);
   }
@@ -2200,6 +2364,9 @@ document.addEventListener('submit', event => {
   if (event.target.id === 'constituency-setup-form') { event.preventDefault(); saveConstituencySetup(event.target); }
   if (event.target.id === 'development-project-form') { event.preventDefault(); startDevelopmentProject(event.target); }
   if (event.target.id === 'start-election-form') { event.preventDefault(); startElection(event.target); }
+  if (event.target.id === 'job-application-form') { event.preventDefault(); applyForJob(event.target); }
+  if (event.target.id === 'business-form') { event.preventDefault(); startBusiness(event.target); }
+  if (event.target.id === 'fixed-deposit-form') { event.preventDefault(); investFixedDeposit(event.target); }
 
   if (event.target.id === 'character-form') {
     event.preventDefault();
