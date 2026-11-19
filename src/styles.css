@@ -1837,3 +1837,30 @@ button {
   .po-action-card { align-items:flex-start; flex-direction:column; }
   .po-log-row { flex-direction:column; gap:4px; }
 }
+
+
+/* RAJNITI 1.1.5 — GOVERNMENT & ADMINISTRATION */
+.gov-budget-panel,.gov-scheme-panel{margin-top:22px}
+.gov-budget-row{display:grid;grid-template-columns:minmax(130px,1fr) 2fr auto;gap:14px;align-items:center;padding:13px 0;border-bottom:1px solid var(--line)}
+.gov-budget-row>div:first-child{display:flex;justify-content:space-between;gap:8px;font-size:12px}
+.gov-budget-row strong{color:var(--gold2);font-size:12px}
+.gov-budget-track{height:8px;background:#26354a;border-radius:20px;overflow:hidden}
+.gov-budget-track i{display:block;height:100%;background:linear-gradient(90deg,#b18b45,#f0d69a);border-radius:20px}
+.gov-budget-actions{display:flex;gap:6px}
+.gov-budget-actions button{border:1px solid var(--line);background:#172438;color:#e8edf5;border-radius:6px;padding:6px 9px;font-size:10px}
+.gov-budget-actions button:disabled,.government-portfolio button:disabled,.government-hero button:disabled,.gov-scheme-panel button:disabled{opacity:.4;cursor:not-allowed}
+.government-portfolio{display:flex;flex-direction:column;gap:10px}
+.government-portfolio h3{margin:0;font-size:17px}
+.government-portfolio>b{color:var(--gold2);font-size:13px;min-height:18px}
+.government-portfolio .secondary-btn{margin-top:auto}
+.gov-scheme-row{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:13px 0;border-bottom:1px solid var(--line)}
+.gov-scheme-row>div{display:grid;gap:4px}
+.gov-scheme-row small{font-size:10px;color:var(--muted)}
+.gov-scheme-row strong{color:var(--gold2);font-size:12px;white-space:nowrap}
+.gov-scheme-row>b{font-size:12px}
+@media(max-width:700px){
+ .gov-budget-row{grid-template-columns:1fr auto;gap:9px}
+ .gov-budget-track{grid-column:1/-1;grid-row:2}
+ .gov-budget-actions{grid-column:2;grid-row:1}
+ .gov-budget-row>div:first-child{grid-column:1;grid-row:1}
+}

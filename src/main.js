@@ -84,6 +84,16 @@ const defaults = {
   completed: [],
   activityHistory: [],
   reviewedNews: [],
+  government: {
+    formed: false,
+    chiefMinister: '',
+    ministers: {},
+    treasury: 50000000,
+    departments: { Finance: 20, Home: 15, Education: 20, Health: 20, Infrastructure: 25 },
+    schemes: [],
+    history: [],
+    performance: 50
+  },
   media: {
     approval: 42,
     trust: 45,
@@ -2470,23 +2480,123 @@ function showElectionResult(result) {
   document.body.appendChild(overlay);
 }
 
-function governmentPage() {
-  const assemblyWins = (state.elections?.history || []).filter(item => item.result === 'Won' && String(item.typeName || '').toLowerCase().includes('assembly')).length;
-  const hasGovernmentMandate = assemblyWins > 0;
-  const cabinet = [
-    ['Chief Minister', hasGovernmentMandate ? state.playerName : 'Vacant'],
-    ['Finance Minister', hasGovernmentMandate ? 'Appointment pending' : 'Locked'],
-    ['Home Minister', hasGovernmentMandate ? 'Appointment pending' : 'Locked'],
-    ['Rural Development', hasGovernmentMandate ? 'Appointment pending' : 'Locked'],
-    ['Education', hasGovernmentMandate ? 'Appointment pending' : 'Locked'],
-    ['Health & Family Welfare', hasGovernmentMandate ? 'Appointment pending' : 'Locked']
+const governmentPortfolios = [
+  'Finance', 'Home Affairs', 'Education', 'Health & Family Welfare',
+  'Rural Development', 'Infrastructure', 'Agriculture'
+];
+
+function governmentMandateCount() {
+  return (state.elections?.history || []).filter(item =>
+    item.result === 'Won' && String(item.typeName || item.type || '').toLowerCase().includes('assembly')
+  ).length;
+}
+
+function ensureGovernmentState() {
+  if (!state.government || typeof state.government !== 'object') {
+    state.government = JSON.parse(JSON.stringify(defaults.government));
+  }
+  const g = state.government;
+  if (!g.ministers) g.ministers = {};
+  if (!g.departments) g.departments = JSON.parse(JSON.stringify(defaults.government.departments));
+  if (!Array.isArray(g.schemes)) g.schemes = [];
+  if (!Array.isArray(g.history)) g.history = [];
+  if (!Number.isFinite(Number(g.treasury))) g.treasury = 50000000;
+  if (!Number.isFinite(Number(g.performance))) g.performance = 50;
+  return g;
+}
+
+function formGovernment() {
+  const g = ensureGovernmentState();
+  if (governmentMandateCount() < 1) return toast('Win a State Assembly election before forming a government.');
+  if (g.formed) return toast('Your state government is already formed.');
+  g.formed = true;
+  g.chiefMinister = state.playerName;
+  g.history.unshift({ day: state.day, month: state.month, year: state.year, event: 'State government formed' });
+  saveState(); render(); toast('Your state government has been formed!');
+}
+
+function appointMinister(portfolio) {
+  const g = ensureGovernmentState();
+  if (!g.formed) return toast('Form your government first.');
+  if (!governmentPortfolios.includes(portfolio)) return;
+  const candidates = ['Ananya Rao', 'Vikram Shetty', 'Meera Nair', 'Arjun Deshmukh', 'Kavita Sharma', 'Rahul Menon', 'Sanjay Patil'];
+  const used = Object.values(g.ministers);
+  const candidate = candidates.find(name => !used.includes(name)) || 'Independent Expert';
+  g.ministers[portfolio] = candidate;
+  g.history.unshift({ day: state.day, month: state.month, year: state.year, event: `${portfolio} Minister appointed` });
+  saveState(); render(); toast(`${candidate} appointed to ${portfolio}.`);
+}
+
+function allocateDepartment(department, delta) {
+  const g = ensureGovernmentState();
+  if (!g.formed) return toast('Form your government first.');
+  const current = Number(g.departments[department] || 0);
+  const next = Math.max(5, Math.min(50, current + delta));
+  const total = Object.entries(g.departments).reduce((sum, [key, value]) => sum + (key === department ? next : Number(value || 0)), 0);
+  if (total > 100) return toast('Department allocations cannot exceed 100%. Reduce another department first.');
+  g.departments[department] = next;
+  saveState(); render();
+}
+
+function launchGovernmentScheme() {
+  const g = ensureGovernmentState();
+  if (!g.formed) return toast('Form your government first.');
+  const cost = 5000000;
+  if (g.treasury < cost) return toast('Insufficient government treasury for this programme.');
+  const schemes = [
+    ['Rural Road Improvement', 'Infrastructure'],
+    ['School Modernisation Mission', 'Education'],
+    ['Primary Health Centre Upgrade', 'Health'],
+    ['Village Drinking Water Programme', 'Rural Development'],
+    ['Farmer Support and Irrigation Plan', 'Agriculture']
   ];
+  const available = schemes.find(([name]) => !g.schemes.some(item => item.name === name));
+  if (!available) return toast('All available starter programmes have already been launched.');
+  g.treasury -= cost;
+  g.schemes.unshift({ name: available[0], department: available[1], cost, status: 'In progress', day: state.day, month: state.month, year: state.year });
+  g.performance = Math.min(100, Number(g.performance) + 4);
+  state.reputation = Math.min(100, Number(state.reputation || 0) + 2);
+  if (state.media) state.media.approval = Math.min(100, Number(state.media.approval || 0) + 2);
+  g.history.unshift({ day: state.day, month: state.month, year: state.year, event: `${available[0]} launched` });
+  saveState(); render(); toast(`${available[0]} launched. ₹50 lakh allocated.`);
+}
+
+function governmentPage() {
+  const g = ensureGovernmentState();
+  const wins = governmentMandateCount();
+  const formed = !!g.formed;
+  const totalAllocation = Object.values(g.departments).reduce((sum, value) => sum + Number(value || 0), 0);
+  const ministries = governmentPortfolios.map(portfolio => `
+    <article class="panel government-portfolio">
+      <span class="eyebrow">MINISTRY PORTFOLIO</span><h3>${escapeHtml(portfolio)}</h3>
+      <b>${escapeHtml(g.ministers[portfolio] || (portfolio === 'Finance' && formed ? 'Appointment pending' : 'Vacant'))}</b>
+      <button class="secondary-btn" data-gov-appoint="${escapeHtml(portfolio)}" ${!formed ? 'disabled' : ''}>${g.ministers[portfolio] ? 'REPLACE MINISTER' : 'APPOINT MINISTER'}</button>
+    </article>`).join('');
+  const departments = Object.entries(g.departments).map(([name, value]) => `
+    <div class="gov-budget-row"><div><b>${escapeHtml(name)}</b><strong>${Number(value)}%</strong></div>
+      <div class="gov-budget-track"><i style="width:${Math.max(0,Math.min(100,Number(value)))}%"></i></div>
+      <div class="gov-budget-actions"><button data-gov-budget="${escapeHtml(name)}" data-delta="-5" ${!formed || value <= 5 ? 'disabled' : ''}>−5%</button><button data-gov-budget="${escapeHtml(name)}" data-delta="5" ${!formed || totalAllocation >= 100 ? 'disabled' : ''}>+5%</button></div>
+    </div>`).join('');
   return `
-    <div class="page-heading"><div><div class="eyebrow">PUBLIC ADMINISTRATION</div><h1>Government <em>command</em></h1><p>Track your route from elected representative to state leadership.</p></div><div class="date-card"><span>GOVERNMENT STATUS</span><b>${hasGovernmentMandate ? 'MANDATE WON' : 'NOT FORMED'}</b><small>State administration</small></div></div>
-    <section class="panel government-hero"><span class="gold-tag">STATE GOVERNMENT</span><h2>${hasGovernmentMandate ? 'Your government mandate' : 'The path to government'}</h2><p class="panel-description">${hasGovernmentMandate ? 'You have recorded an Assembly election victory. Cabinet formation is the next stage of government management.' : 'Win a State Assembly election to unlock government formation, ministerial appointments, department budgets and public programmes.'}</p><div class="government-unlock-grid"><div><b>${assemblyWins}</b><small>Assembly victories</small></div><div><b>${hasGovernmentMandate ? 'Unlocked' : 'Locked'}</b><small>Cabinet formation</small></div><div><b>${hasGovernmentMandate ? 'Pending' : 'Locked'}</b><small>State budget</small></div></div><button class="primary-btn" data-tab="Elections">${hasGovernmentMandate ? 'REVIEW ELECTION RECORD →' : 'PREPARE FOR ELECTIONS →'}</button></section>
-    <div class="command-section-head"><div><span class="eyebrow">CABINET STRUCTURE</span><h2>Government portfolios</h2></div></div>
-    <div class="government-cabinet-grid">${cabinet.map(([role, holder]) => `<article class="panel government-portfolio"><span class="eyebrow">MINISTRY PORTFOLIO</span><h3>${role}</h3><b class="${holder === 'Locked' ? 'government-locked' : ''}">${escapeHtml(holder)}</b><small>${hasGovernmentMandate ? 'Portfolio setup available in a future government expansion.' : 'Unlock by winning a State Assembly election.'}</small></article>`).join('')}</div>
-    <section class="panel government-note"><span class="eyebrow">ADMINISTRATION TRACKER</span><h3>What becomes available after forming a government?</h3><ul><li>Appoint ministers and assign portfolios.</li><li>Prepare a state budget and allocate department funds.</li><li>Launch education, healthcare and infrastructure schemes.</li><li>Monitor delivery, public satisfaction and government approval.</li></ul></section>
+    <div class="page-heading"><div><div class="eyebrow">PUBLIC ADMINISTRATION</div><h1>Government <em>command</em></h1><p>Form a cabinet, manage public funds and deliver state programmes.</p></div><div class="date-card"><span>GOVERNMENT STATUS</span><b>${formed ? 'GOVERNMENT FORMED' : wins ? 'MANDATE AVAILABLE' : 'NOT FORMED'}</b><small>${wins} Assembly victory/victories</small></div></div>
+    <section class="panel government-hero"><span class="gold-tag">STATE ADMINISTRATION</span><h2>${formed ? 'Your state government' : wins ? 'You have an Assembly mandate' : 'The path to government'}</h2>
+      <p class="panel-description">${formed ? `Chief Minister: ${escapeHtml(g.chiefMinister || state.playerName)}. Build your cabinet and deliver programmes.` : 'Win a State Assembly election to unlock government formation, ministerial appointments and administration.'}</p>
+      <div class="government-unlock-grid"><div><b>${money(g.treasury)}</b><small>Government treasury</small></div><div><b>${Number(g.performance)}%</b><small>Administration performance</small></div><div><b>${Object.keys(g.ministers).length}/${governmentPortfolios.length}</b><small>Ministers appointed</small></div></div>
+      <button class="primary-btn" data-action="gov-form" ${!wins || formed ? 'disabled' : ''}>${formed ? 'GOVERNMENT FORMED' : 'FORM STATE GOVERNMENT'}</button>
+    </section>
+    <div class="command-section-head"><div><span class="eyebrow">COUNCIL OF MINISTERS</span><h2>Cabinet formation</h2></div></div>
+    <div class="government-cabinet-grid">${ministries}</div>
+    <section class="panel gov-budget-panel"><div class="command-section-head"><div><span class="eyebrow">PUBLIC FINANCE</span><h2>Department allocations</h2></div><b>${totalAllocation}% allocated</b></div>
+      <p class="panel-description">Adjust each department in 5% steps. Total allocation cannot exceed 100%.</p>${departments}
+    </section>
+    <section class="panel gov-scheme-panel"><div class="command-section-head"><div><span class="eyebrow">PUBLIC DELIVERY</span><h2>Government programmes</h2></div><b>${g.schemes.length} launched</b></div>
+      <p class="panel-description">Launch a state programme using ₹50 lakh from the government treasury.</p><button class="primary-btn" data-action="gov-scheme" ${!formed ? 'disabled' : ''}>LAUNCH NEXT PUBLIC PROGRAMME</button>
+      ${g.schemes.length ? g.schemes.map(item => `<div class="gov-scheme-row"><div><b>${escapeHtml(item.name)}</b><small>${escapeHtml(item.department)} · ${escapeHtml(item.status)}</small></div><strong>${money(item.cost)}</strong></div>`).join('') : '<p class="panel-description">No programmes launched yet.</p>'}
+    </section>
+    <section class="panel government-note"><span class="eyebrow">RECENT GOVERNMENT ACTIVITY</span><h3>Administration record</h3>
+      ${g.history.length ? g.history.slice(0,8).map(item => `<div class="gov-scheme-row"><b>${escapeHtml(item.event)}</b><small>Year ${item.year}, Month ${item.month}, Day ${item.day}</small></div>`).join('') : '<p class="panel-description">Government decisions will appear here.</p>'}
+    </section>
+    <p class="ci-disclaimer">Government treasury, cabinet candidates and programme outcomes are fictional gameplay simulations. They do not represent real government budgets or officials.</p>
   `;
 }
 
@@ -2955,6 +3065,11 @@ if (!Array.isArray(state.media.history)) state.media.history = [];
     return;
   }
 
+  const appointButton = event.target.closest('[data-gov-appoint]');
+  if (appointButton) { appointMinister(appointButton.dataset.govAppoint); return; }
+  const budgetButton = event.target.closest('[data-gov-budget]');
+  if (budgetButton) { allocateDepartment(budgetButton.dataset.govBudget, Number(budgetButton.dataset.delta)); return; }
+
   const action = event.target.closest('[data-action]')?.dataset.action;
 
   switch (action) {
@@ -2969,6 +3084,12 @@ if (!Array.isArray(state.media.history)) state.media.history = [];
       break;
     case 'end-day':
       endDay();
+      break;
+    case 'gov-form':
+      formGovernment();
+      break;
+    case 'gov-scheme':
+      launchGovernmentScheme();
       break;
     case 'media-press':
       mediaAction('press');
