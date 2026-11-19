@@ -84,6 +84,7 @@ const defaults = {
   completed: [],
   activityHistory: [],
   reviewedNews: [],
+  executiveOffice: { tasks: [], files: [], nextId: 1, lastAiReport: 'Your administrative team is standing by.' },
   government: {
     formed: false,
     chiefMinister: '',
@@ -342,7 +343,7 @@ function statCard(label, value, sub, symbol) {
 function shell(content) {
   const nav = [
     'Dashboard', 'Career', 'Activities', 'Party',
-    'Constituency', 'Constituency Intel', 'India Map', 'Elections', 'Government', 'Parliament', 'Alliances',
+    'Constituency', 'Constituency Intel', 'India Map', 'Elections', 'Executive Office', 'Government', 'Parliament', 'Alliances',
     'Relationships', 'Intelligence', 'Public Opinion', 'Finance', 'News', 'Profile'
   ];
 
@@ -401,7 +402,7 @@ function shell(content) {
       </main>
 
       <nav class="mobile-nav">
-        ${['Dashboard', 'Career', 'Party', 'Constituency', 'Constituency Intel', 'India Map', 'Elections', 'Intelligence', 'Public Opinion', 'Finance', 'News', 'Activities', 'Profile']
+        ${['Dashboard', 'Career', 'Party', 'Constituency', 'Constituency Intel', 'India Map', 'Elections', 'Executive Office', 'Intelligence', 'Public Opinion', 'Finance', 'News', 'Activities', 'Profile']
           .map(name => `
             <button class="${activeTab === name ? 'active' : ''}"
               data-tab="${name}">
@@ -1514,6 +1515,7 @@ function endDay() {
 
   state.day++;
   state.actionsUsed = 0;
+  runAiAdministration();
 
   let message = 'New day started. Daily actions refreshed.';
 
@@ -2600,6 +2602,69 @@ function governmentPage() {
   `;
 }
 
+function executiveRoleScope() {
+  const role = String(state.role || 'Political Volunteer');
+  if (/Prime Minister|Union Minister|Member of Parliament/.test(role)) return { level: 'National', tasks: ['Review national policy brief', 'Attend parliamentary coordination', 'Review constituency or ministry performance'], authority: 'Union Government and Parliament' };
+  if (/Chief Minister|State Minister|MLA/.test(role)) return { level: 'State', tasks: ['Review constituency and public grievance report', 'Review department performance', 'Attend Assembly or cabinet coordination'], authority: role === 'Chief Minister' ? 'State-wide executive leadership' : role === 'State Minister' ? 'Assigned ministry portfolio' : 'Your elected constituency and Assembly' };
+  if (/Councillor|Panchayat/.test(role)) return { level: 'Local', tasks: ['Review ward or panchayat issues', 'Meet local residents', 'Monitor local civic works'], authority: 'Your local body and elected area' };
+  if (/Party Leader|Booth-level/.test(role)) return { level: 'Party', tasks: ['Review party unit report', 'Coordinate local party workers', 'Plan a public outreach activity'], authority: 'Your party organisation and assigned area' };
+  return { level: 'Grassroots', tasks: ['Complete assigned public outreach', 'Submit local issue report', 'Attend party or community meeting'], authority: 'Your assigned political area' };
+}
+
+function ensureExecutiveOffice() {
+  if (!state.executiveOffice) state.executiveOffice = { tasks: [], files: [], nextId: 1, lastAiReport: 'Administrative teams are ready.' };
+  const office = state.executiveOffice;
+  if (!Array.isArray(office.tasks)) office.tasks = [];
+  if (!Array.isArray(office.files)) office.files = [];
+  if (!office.tasks.some(t => t.status === 'Pending' || t.status === 'In progress')) {
+    const scope = executiveRoleScope();
+    scope.tasks.forEach((title, index) => office.tasks.push({ id: office.nextId++, title, assignedBy: index === 0 ? 'Political Office' : 'Chief of Staff', level: scope.level, status: 'Pending', due: `Day ${state.day + index + 2}`, detail: 'A responsibility matched to your current post.' }));
+  }
+  if (!office.files.length && (/Chief Minister|State Minister|Prime Minister|Union Minister/.test(state.role || ''))) {
+    office.files.push({ id: office.nextId++, title: 'Department performance and funding review', from: 'Chief Secretary', summary: 'Review the latest department report and proposed administrative priorities.', recommendation: 'Approve for implementation review', status: 'Pending' });
+  }
+  return office;
+}
+
+function executiveOfficePage() {
+  const office = ensureExecutiveOffice();
+  const scope = executiveRoleScope();
+  const pending = office.files.filter(f => f.status === 'Pending');
+  const tasks = office.tasks;
+  return `
+    <div class="page-heading"><div><div class="eyebrow">EXECUTIVE OFFICE · ${escapeHtml(scope.level.toUpperCase())} LEVEL</div><h1>My <em>office</em></h1><p>Work is assigned according to your current post. Officials and AI teams handle routine administration.</p></div><div class="date-card"><span>CURRENT POST</span><b>${escapeHtml(state.role || 'Political Volunteer')}</b><small>${escapeHtml(scope.authority)}</small></div></div>
+    <section class="panel"><span class="eyebrow">YOUR RESPONSIBILITY</span><h2>What only you must handle</h2><p class="panel-description">Your authority is limited to: ${escapeHtml(scope.authority)}. You are not expected to manage every district or department personally.</p><div class="government-unlock-grid"><div><b>${tasks.filter(t=>t.status==='Pending'||t.status==='In progress').length}</b><small>Assigned tasks</small></div><div><b>${pending.length}</b><small>Files awaiting signature</small></div><div><b>AI</b><small>Routine administration</small></div></div></section>
+    <section class="panel"><div class="command-section-head"><div><span class="eyebrow">PERSONAL WORK QUEUE</span><h2>My assigned work</h2></div></div>${tasks.length ? tasks.map(t=>`<div class="gov-scheme-row"><div><b>${escapeHtml(t.title)}</b><small>${escapeHtml(t.assignedBy)} · ${escapeHtml(t.due)} · ${escapeHtml(t.status)}</small></div>${t.status==='Pending'?`<button class="secondary-btn" data-office-task="${t.id}">MARK IN PROGRESS</button>`:t.status==='In progress'?`<button class="primary-btn" data-office-complete="${t.id}">COMPLETE</button>`:'<b>✓</b>'}</div>`).join('') : '<p class="panel-description">No work is currently assigned.</p>'}</section>
+    <section class="panel"><div class="command-section-head"><div><span class="eyebrow">SIGNATURE DESK</span><h2>Pending for my approval</h2></div><b>${pending.length} pending</b></div>${pending.length ? pending.map(f=>`<article class="panel government-portfolio"><span class="gold-tag">OFFICIAL FILE · ${escapeHtml(f.from)}</span><h3>${escapeHtml(f.title)}</h3><p class="panel-description">${escapeHtml(f.summary)}</p><p><b>AI / officer recommendation:</b> ${escapeHtml(f.recommendation)}</p><div class="gov-budget-actions"><button class="primary-btn" data-office-decision="approve" data-office-file="${f.id}">APPROVE & SIGN</button><button class="secondary-btn" data-office-decision="return" data-office-file="${f.id}">RETURN FOR REVISION</button><button class="secondary-btn" data-office-decision="reject" data-office-file="${f.id}">REJECT</button></div></article>`).join('') : '<p class="panel-description">No important files require your signature right now. Routine work is being handled by the administration.</p>'}</section>
+    <section class="panel"><span class="eyebrow">AI ADMINISTRATION REPORT</span><h2>Work handled automatically</h2><p class="panel-description">${escapeHtml(office.lastAiReport || 'Your administrative teams are monitoring routine operations.')}</p><p class="ci-disclaimer">AI decisions are simulated gameplay. Major decisions outside your authority are not sent to you for approval. Critical decisions within your authority appear on this signature desk.</p></section>
+  `;
+}
+
+function updateOfficeTask(id, complete) {
+  const office = ensureExecutiveOffice(); const task = office.tasks.find(t => t.id === Number(id));
+  if (!task) return;
+  task.status = complete ? 'Completed' : 'In progress';
+  if (complete) { state.experience = Number(state.experience || 0) + 8; state.reputation = Math.min(100, Number(state.reputation || 0) + 1); }
+  saveState(); render(); toast(complete ? 'Assigned responsibility completed.' : 'Task moved to in progress.');
+}
+
+function decideOfficeFile(id, decision) {
+  const office = ensureExecutiveOffice(); const file = office.files.find(f => f.id === Number(id) && f.status === 'Pending');
+  if (!file) return;
+  file.status = decision === 'approve' ? 'Approved & signed' : decision === 'reject' ? 'Rejected' : 'Returned for revision';
+  file.decidedOn = dateText();
+  if (decision === 'approve') { state.reputation = Math.min(100, Number(state.reputation || 0) + 2); office.lastAiReport = `Your approval of “${file.title}” has been sent to the responsible officials for execution.`; }
+  else office.lastAiReport = `The file “${file.title}” was ${decision === 'reject' ? 'rejected' : 'returned to the submitting officer'} by your office.`;
+  saveState(); render(); toast(`File ${file.status.toLowerCase()}.`);
+}
+
+function runAiAdministration() {
+  const office = ensureExecutiveOffice();
+  const completed = office.tasks.filter(t => t.status === 'In progress').length;
+  office.tasks.forEach(t => { if (t.status === 'In progress' && Math.random() < 0.22) t.status = 'Completed'; });
+  office.lastAiReport = `${completed} routine assignments were monitored by AI-managed officials. District and department teams continue their daily work; only decisions requiring your personal authority are escalated.`;
+}
+
 function genericPage(name) {
   const descriptions = {
     Constituency: 'Understand your local community and constituency.',
@@ -2630,7 +2695,7 @@ function genericPage(name) {
 }
 
 
-/* INDIA POLITICAL & DEVELOPMENT ATLAS — RAJNITI 1.2.3
+/* INDIA POLITICAL & DEVELOPMENT ATLAS — RAJNITI 1.2.2
    District names and LGD codes are loaded from the user-supplied LGD extract
    dated 12 October 2026. Simulated development indicators remain fictional. */
 import indiaDistrictData from './data/india-districts.json';
@@ -2660,12 +2725,6 @@ function atlasDistrictProfile(stateName, districtName) {
     education: score(11),
     healthcare: score(14),
     water: score(17),
-    agriculture: score(20),
-    roads: score(23),
-    electricity: score(26),
-    sanitation: score(29),
-    populationEstimate: 250000 + ((hash >>> 4) % 1750000),
-    householdEstimate: 50000 + ((hash >>> 7) % 350000),
     priorities: [
       ['Roads & transport', score(3)],
       ['Healthcare access', score(6)],
@@ -2685,11 +2744,6 @@ function indiaMapPage() {
   const districtProjects = Array.isArray(state.atlasProjects)
     ? state.atlasProjects.filter(item => item.state === selectedState.name && item.district === selectedDistrict)
     : [];
-  const compareDistrict = selectedState.districts.includes(state.atlasCompareDistrict)
-    && state.atlasCompareDistrict !== selectedDistrict
-    ? state.atlasCompareDistrict
-    : (selectedState.districts.find(name => name !== selectedDistrict) || selectedDistrict);
-  const compareProfile = atlasDistrictProfile(selectedState.name, compareDistrict);
   const currentFocus = state.constituency?.state === selectedState.name
     && state.constituency?.district === selectedDistrict;
   const trackedVoters = currentFocus
@@ -2788,41 +2842,6 @@ function indiaMapPage() {
             `).join('')}
           </div>
           <p class="atlas-data-note">These are fictional, deterministic gameplay indicators for each district, not official government statistics.</p>
-        </section>
-
-        <section class="panel atlas-sector-panel">
-          <div class="command-section-head compact">
-            <div><span class="eyebrow">SECTOR SCORECARD</span><h2>Development indicators</h2></div>
-            <span class="command-symbol">▥</span>
-          </div>
-          <p class="panel-description">Illustrative game indicators. These are not official district statistics.</p>
-          <div class="atlas-indicator-grid">
-            ${[['Agriculture & livelihoods',profile.agriculture],['Road connectivity',profile.roads],['Electricity access',profile.electricity],['Sanitation',profile.sanitation]].map(([label,value]) => `
-              <div class="atlas-indicator"><div><span>${label}</span><b>${value}/100</b></div><div class="atlas-meter"><i style="width:${value}%"></i></div></div>
-            `).join('')}
-          </div>
-          <div class="atlas-estimate-grid">
-            <div><small>SIMULATED POPULATION</small><b>${profile.populationEstimate.toLocaleString('en-IN')}</b></div>
-            <div><small>SIMULATED HOUSEHOLDS</small><b>${profile.householdEstimate.toLocaleString('en-IN')}</b></div>
-          </div>
-        </section>
-
-        <section class="panel atlas-comparison-panel">
-          <div class="command-section-head compact">
-            <div><span class="eyebrow">DISTRICT COMPARISON</span><h2>Compare development</h2></div>
-            <span class="command-symbol">⇄</span>
-          </div>
-          <label class="atlas-search-label" for="atlasCompareDistrict">COMPARE WITH ANOTHER DISTRICT IN ${escapeHtml(selectedState.name.toUpperCase())}</label>
-          <select id="atlasCompareDistrict" class="atlas-district-search">
-            ${selectedState.districts.filter(name => name !== selectedDistrict).map(name => `<option value="${escapeHtml(name)}" ${name === compareDistrict ? 'selected' : ''}>${escapeHtml(name)}</option>`).join('')}
-          </select>
-          <div class="atlas-compare-table">
-            ${[['Development',profile.development,compareProfile.development],['Employment',profile.employment,compareProfile.employment],['Infrastructure',profile.infrastructure,compareProfile.infrastructure],['Education',profile.education,compareProfile.education],['Healthcare',profile.healthcare,compareProfile.healthcare],['Water & sanitation',profile.water,compareProfile.water],['Agriculture',profile.agriculture,compareProfile.agriculture]].map(([label,a,b]) => `
-              <div class="atlas-compare-row"><span>${label}</span><b>${a}</b><div class="atlas-compare-bars"><i style="width:${a}%"></i></div><b>${b}</b><div class="atlas-compare-bars secondary"><i style="width:${b}%"></i></div></div>
-            `).join('')}
-          </div>
-          <div class="atlas-compare-legend"><span>${escapeHtml(selectedDistrict)}</span><span>${escapeHtml(compareDistrict)}</span></div>
-          <p class="atlas-data-note">Scores are generated by the game's deterministic simulation and do not describe real-world performance.</p>
         </section>
 
         <section class="panel atlas-priority-panel">
@@ -3124,6 +3143,9 @@ function render() {
     case 'News':
       content = newsPage();
       break;
+    case 'Executive Office':
+      content = executiveOfficePage();
+      break;
     case 'Government':
       content = governmentPage();
       break;
@@ -3148,14 +3170,6 @@ document.addEventListener('input', event => {
     document.querySelectorAll('#atlasDistrictList [data-map-district]').forEach(button => {
       button.hidden = !button.dataset.mapDistrict.toLocaleLowerCase('en-IN').includes(query);
     });
-  }
-});
-
-document.addEventListener('change', event => {
-  if (event.target && event.target.id === 'atlasCompareDistrict') {
-    state.atlasCompareDistrict = event.target.value;
-    saveState();
-    render();
   }
 });
 
@@ -3309,6 +3323,13 @@ if (!Array.isArray(state.media.history)) state.media.history = [];
   if (appointButton) { appointMinister(appointButton.dataset.govAppoint); return; }
   const budgetButton = event.target.closest('[data-gov-budget]');
   if (budgetButton) { allocateDepartment(budgetButton.dataset.govBudget, Number(budgetButton.dataset.delta)); return; }
+
+  const officeTask = event.target.closest('[data-office-task]');
+  if (officeTask) { updateOfficeTask(officeTask.dataset.officeTask, false); return; }
+  const officeComplete = event.target.closest('[data-office-complete]');
+  if (officeComplete) { updateOfficeTask(officeComplete.dataset.officeComplete, true); return; }
+  const officeDecision = event.target.closest('[data-office-decision]');
+  if (officeDecision) { decideOfficeFile(officeDecision.dataset.officeFile, officeDecision.dataset.officeDecision); return; }
 
   const action = event.target.closest('[data-action]')?.dataset.action;
 
