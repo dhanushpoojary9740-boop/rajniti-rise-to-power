@@ -1451,10 +1451,20 @@ function investFixedDeposit(form) {
 function processMonthlyFinances() {
   if (state.partyId && state.partyId !== 'independent') {
     const members = Math.max(1, Number(state.partyMembers) || 1);
-    const membershipIncome = Math.min(50000, members * 25);
-    const publicContributions = Math.floor(Math.max(0, Number(state.partyPopularity) || 0) * 20);
-    if (membershipIncome > 0) addPartyLedgerEntry('Income', membershipIncome, 'Monthly party membership contributions');
-    if (publicContributions > 0) addPartyLedgerEntry('Income', publicContributions, 'Monthly voluntary public contributions');
+    const popularity = Math.max(0, Math.min(100, Number(state.partyPopularity) || 0));
+    // Annual member subscription model, recognised monthly in the game ledger.
+    const membershipIncome = Math.round(members * 100 / 12);
+    // Simulated small-donor contributions scale with organisation size and public support.
+    const publicContributions = Math.round((members * 5) + (popularity * 1000));
+    const monthlyAdminCost = Math.round(5000 + (members * 5) + (popularity * 250));
+    if (membershipIncome > 0) addPartyLedgerEntry('Income', membershipIncome, 'Monthly accrual of annual membership subscriptions (₹100 per member/year)');
+    if (publicContributions > 0) addPartyLedgerEntry('Income', publicContributions, 'Simulated voluntary small-donor contributions');
+    if (monthlyAdminCost > 0 && Number(state.partyFunds) >= monthlyAdminCost) {
+      addPartyLedgerEntry('Expense', monthlyAdminCost, 'Monthly party administration, offices and organisation');
+    } else if (monthlyAdminCost > 0) {
+      if (!state.partyTreasury) state.partyTreasury = { incomeTotal: 0, expenseTotal: 0, ledger: [] };
+      state.partyTreasury.lastUnpaidOperatingCost = monthlyAdminCost;
+    }
   }
 
   const salary = monthlySalary();
@@ -1708,32 +1718,76 @@ function addPartyLedgerEntry(type, amount, note) {
 function partyTreasurySection() {
   const treasury = state.partyTreasury || { incomeTotal: 0, expenseTotal: 0, ledger: [] };
   const ledger = Array.isArray(treasury.ledger) ? treasury.ledger : [];
+  const members = Math.max(1, Number(state.partyMembers) || 1);
+  const popularity = Math.max(0, Math.min(100, Number(state.partyPopularity) || 0));
+  const monthlyDues = Math.round(members * 100 / 12);
+  const monthlyDonations = Math.round((members * 5) + (popularity * 1000));
+  const monthlyOverhead = Math.round(5000 + (members * 5) + (popularity * 250));
   return `
     <section class="panel">
-      <span class="eyebrow">INDEPENDENT PARTY FINANCES</span><h3>Party treasury</h3>
+      <span class="eyebrow">PARTY FINANCE & COMPLIANCE</span><h3>Independent party treasury</h3>
       <div class="party-stat-row"><span>Available party funds</span><b>${money(state.partyFunds)}</b></div>
-      <div class="party-stat-row"><span>Total party income</span><b>${money(treasury.incomeTotal || 0)}</b></div>
-      <div class="party-stat-row"><span>Total party expenses</span><b>${money(treasury.expenseTotal || 0)}</b></div>
-      <p class="panel-description">This account is separate from your personal wealth. No personal money is transferred automatically.</p>
+      <div class="party-stat-row"><span>Lifetime party income</span><b>${money(treasury.incomeTotal || 0)}</b></div>
+      <div class="party-stat-row"><span>Lifetime party expenditure</span><b>${money(treasury.expenseTotal || 0)}</b></div>
+      <p class="panel-description">This is a separate organisational account. Your personal wealth is never used automatically. All simulated income and expenditure is entered in the party ledger.</p>
     </section>
     <section class="panel" style="margin-top:15px">
-      <span class="eyebrow">FUNDRAISING</span><h3>Organise a party fundraising event</h3>
-      <p class="panel-description">Use ₹2,000 from the party treasury for event administration. The simulation records ₹5,000 in public contributions. This does not use your personal wealth.</p>
-      <button class="primary-btn" data-action="party-fundraiser">ORGANISE FUNDRAISER · ₹2,000 PARTY FUNDS →</button>
+      <span class="eyebrow">MONTHLY FINANCIAL FORECAST</span><h3>Estimated recurring finances</h3>
+      <div class="party-stat-row"><span>Membership subscriptions · ₹100/member/year</span><b class="finance-positive">+${money(monthlyDues)}</b></div>
+      <div class="party-stat-row"><span>Simulated small-donor contributions</span><b class="finance-positive">+${money(monthlyDonations)}</b></div>
+      <div class="party-stat-row"><span>Office and organisation overhead</span><b>-${money(monthlyOverhead)}</b></div>
+      <p class="panel-description">Forecast only. Actual monthly transactions are posted when you advance the game month. Donations are simulated and are not guaranteed.</p>
+    </section>
+    <section class="panel" style="margin-top:15px">
+      <span class="eyebrow">FUNDRAISING</span><h3>Organise a formal fundraising event</h3>
+      <p class="panel-description">Estimated event administration cost: ₹5 lakh. Simulated gross contributions vary from ₹10 lakh to ₹50 lakh depending on party membership and popularity. The event can proceed only if the party treasury can cover its cost.</p>
+      <button class="primary-btn" data-action="party-fundraiser">ORGANISE FUNDRAISING EVENT · ₹5 LAKH →</button>
+    </section>
+    <section class="panel" style="margin-top:15px">
+      <span class="eyebrow">PARTY-WIDE CAMPAIGN ALLOCATIONS</span><h3>Election campaign expenditure</h3>
+      <p class="panel-description">These are illustrative party-wide campaign budgets, not candidate expenditure limits. Candidate expenditure is tracked separately under the applicable election rules.</p>
+      <div class="party-stat-row"><span>Local-body campaign organisation</span><b>₹10 lakh</b></div>
+      <button class="secondary-btn full" data-party-campaign="local">AUTHORISE LOCAL CAMPAIGN · ₹10 LAKH</button>
+      <div class="party-stat-row"><span>Assembly-wide party campaign</span><b>₹2 crore</b></div>
+      <button class="secondary-btn full" data-party-campaign="assembly">AUTHORISE ASSEMBLY CAMPAIGN · ₹2 CRORE</button>
+      <div class="party-stat-row"><span>Lok Sabha state campaign allocation</span><b>₹10 crore</b></div>
+      <button class="secondary-btn full" data-party-campaign="lok-sabha">AUTHORISE LOK SABHA CAMPAIGN · ₹10 CRORE</button>
+      <div class="party-stat-row"><span>Karnataka candidate limit · Assembly</span><b>₹40 lakh</b></div>
+      <div class="party-stat-row"><span>Karnataka candidate limit · Lok Sabha</span><b>₹95 lakh</b></div>
+      <small>Candidate ceilings are statutory limits and are separate from party-wide expenditure. Applicable rules may change and differ by state.</small>
     </section>
     <section class="panel" style="margin-top:15px">
       <span class="eyebrow">TRANSACTION HISTORY</span><h3>Party ledger</h3>
-      ${ledger.length ? ledger.slice(0,12).map(item => `<div class="party-stat-row"><span>${escapeHtml(item.note)}<small style="display:block;color:var(--muted)">${escapeHtml(item.date || '')}</small></span><b class="${item.type === 'Income' ? 'finance-positive' : ''}">${item.type === 'Income' ? '+' : '-'}${money(item.amount)}</b></div>`).join('') : '<p class="panel-description">No party transactions recorded yet. Membership income will appear after monthly turns.</p>'}
+      ${ledger.length ? ledger.slice(0,15).map(item => `<div class="party-stat-row"><span>${escapeHtml(item.note)}<small style="display:block;color:var(--muted)">${escapeHtml(item.date || '')}</small></span><b class="${item.type === 'Income' ? 'finance-positive' : ''}">${item.type === 'Income' ? '+' : '-'}${money(item.amount)}</b></div>`).join('') : '<p class="panel-description">No party transactions recorded yet. Income and operating costs will appear after monthly turns.</p>'}
     </section>`;
 }
 
 function organisePartyFundraiser() {
   if (state.partyId === 'independent') return toast('Join or establish a party first.');
-  if (Number(state.partyFunds) < 2000) return toast('The party treasury needs ₹2,000 for this event. Your personal wealth cannot be used.');
-  addPartyLedgerEntry('Expense', 2000, 'Fundraising event operating cost');
-  addPartyLedgerEntry('Income', 5000, 'Public contributions from fundraising event');
+  const cost = 500000;
+  if (Number(state.partyFunds) < cost) return toast('The party treasury needs ₹5 lakh. Personal wealth cannot be used.');
+  const members = Math.max(1, Number(state.partyMembers) || 1);
+  const popularity = Math.max(0, Math.min(100, Number(state.partyPopularity) || 0));
+  const gross = Math.max(1000000, Math.min(5000000, Math.round(1000000 + members * 100 + popularity * 30000)));
+  addPartyLedgerEntry('Expense', cost, 'Formal fundraising event administration and venue costs');
+  addPartyLedgerEntry('Income', gross, 'Voluntary contributions recorded from fundraising event');
   saveState(); render();
-  toast('Fundraiser completed. Net party treasury increase: ₹3,000.');
+  toast(`Fundraising event recorded. Gross contributions ${money(gross)}; net treasury change ${money(gross - cost)}.`);
+}
+
+function authorisePartyCampaign(type) {
+  if (!state.partyId || state.partyId === 'independent') return toast('Join or establish a party first.');
+  const budgets = { local: 1000000, assembly: 20000000, 'lok-sabha': 100000000 };
+  const labels = { local: 'Local-body party campaign', assembly: 'Assembly-wide party campaign', 'lok-sabha': 'Lok Sabha state-level party campaign' };
+  const amount = budgets[type];
+  if (!amount) return;
+  if (Number(state.partyFunds) < amount) return toast(`Insufficient party treasury. ${money(amount)} is required; personal wealth cannot cover it.`);
+  addPartyLedgerEntry('Expense', amount, `${labels[type]} allocation`);
+  if (!Array.isArray(state.partyTreasury.campaigns)) state.partyTreasury.campaigns = [];
+  state.partyTreasury.campaigns.unshift({ type, amount, date: dateText(), status: 'Authorised' });
+  state.partyTreasury.campaigns = state.partyTreasury.campaigns.slice(0, 20);
+  saveState(); render();
+  toast(`${labels[type]} expenditure authorised and recorded.`);
 }
 
 function recruitMembers() {
@@ -3855,6 +3909,9 @@ if (!Array.isArray(state.media.history)) state.media.history = [];
 
   const mediaResolve = event.target.closest('[data-media-resolve]');
   if (mediaResolve) { resolveMediaControversy(mediaResolve.dataset.mediaResolve); return; }
+
+  const partyCampaignButton = event.target.closest('[data-party-campaign]');
+  if (partyCampaignButton) { authorisePartyCampaign(partyCampaignButton.dataset.partyCampaign); return; }
 
   const tab = event.target.closest('[data-tab]');
 
