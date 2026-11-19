@@ -32,6 +32,7 @@ const defaults = {
   partyLeadership: {},
   partyUnits: [],
   partyElectionHistory: [],
+  partyDisputes: [],
 
   constituency: {
     state: 'Karnataka',
@@ -151,6 +152,7 @@ function migratePartyManagementSave() {
   if (!state.partyLeadership || typeof state.partyLeadership !== 'object') state.partyLeadership = {};
   if (!Array.isArray(state.partyUnits)) state.partyUnits = [];
   if (!Array.isArray(state.partyElectionHistory)) state.partyElectionHistory = [];
+  if (!Array.isArray(state.partyDisputes)) state.partyDisputes = [];
 
   if (state.partyCreated && state.partyMemberRecords.length === 0) {
     const total = Math.max(1, Number(state.partyMembers) || 1);
@@ -953,7 +955,9 @@ function joinedPartyPage() {
 
 const leadershipPositions = [
   'National Working President', 'National General Secretary',
-  'National Treasurer', 'State President', 'District President',
+  'National Treasurer', 'National Organising Secretary',
+  'National Spokesperson', 'State President', 'State General Secretary',
+  'District President', 'District General Secretary',
   'Constituency President', 'Block President', 'Booth President'
 ];
 
@@ -979,6 +983,9 @@ function partyOverviewSection() {
       <section class="panel"><span class="eyebrow">LEADERSHIP</span><h3>${Object.keys(state.partyLeadership).length} appointments</h3><p class="panel-description">Build a leadership team from national to booth level.</p><button class="secondary-btn full" data-party-section="Leadership">MANAGE LEADERSHIP →</button></section>
       <section class="panel"><span class="eyebrow">ORGANISATION</span><h3>${state.partyUnits.length} units</h3><p class="panel-description">Create state, district, constituency, block and booth units.</p><button class="secondary-btn full" data-party-section="Organisation">MANAGE UNITS →</button></section>
     </div>
+    <section class="panel" style="margin-top:15px"><span class="eyebrow">INTERNAL PARTY GOVERNANCE</span><h3>Dispute resolution</h3><p class="panel-description">Record organisational disagreements and resolve them through a documented party process.</p><form id="party-dispute-form" class="creator-grid"><div class="creator-field"><label for="disputeTitle">Issue</label><input id="disputeTitle" name="title" maxlength="90" placeholder="Describe the internal disagreement" required></div><div class="creator-field"><label for="disputeLevel">Committee level</label><select id="disputeLevel" name="level"><option>National</option><option>State</option><option>District</option><option>Constituency</option><option>Block</option><option>Booth</option></select></div><button class="primary-btn" type="submit">REGISTER DISPUTE →</button></form>
+      ${state.partyDisputes.length ? state.partyDisputes.slice(0,8).map(d=>`<div class="career-step"><div><b>${escapeHtml(d.title)}</b><small>${escapeHtml(d.level)} Committee · ${escapeHtml(d.date)} · ${escapeHtml(d.status)}</small></div>${d.status==='Open'?`<button class="secondary-btn" data-resolve-party-dispute="${escapeHtml(d.id)}">RESOLVE</button>`:'<span class="current-label">CLOSED</span>'}</div>`).join('') : '<p class="panel-description">No disputes recorded.</p>'}
+    </section>
     <section class="panel" style="margin-top:15px"><span class="eyebrow">RECENT PARTY ACTIVITY</span>
       ${state.partyHistory.length ? state.partyHistory.slice(0,6).map(item => `<div class="career-step"><b>${escapeHtml(item.event)}</b><small>${escapeHtml(item.date)}</small></div>`).join('') : '<p class="panel-description">Your party journey starts here.</p>'}
     </section>`;
@@ -1017,7 +1024,13 @@ function partyMembersSection() {
 function partyOrganisationSection() {
   const types = ['State', 'District', 'Constituency', 'Block', 'Booth'];
   return `
-    <section class="panel"><span class="eyebrow">GRASSROOTS STRUCTURE</span><h2>Organisation units</h2><p class="panel-description">Create local party units and expand your network step by step.</p>
+    <section class="panel"><span class="eyebrow">PARTY ORGANISATION CHART</span><h2>Committee hierarchy</h2><p class="panel-description">National leadership coordinates state committees; state committees oversee district units, followed by constituency, block and booth teams.</p>
+      <div class="career-step"><b>National Committee</b><small>${Object.keys(state.partyLeadership).filter(k=>k.startsWith('National')||k==='Founder & National President').length} appointed office-bearers</small></div>
+      <div class="career-step"><b>State Committees</b><small>${state.partyUnits.filter(u=>u.type==='State').length} state units</small></div>
+      <div class="career-step"><b>District Committees</b><small>${state.partyUnits.filter(u=>u.type==='District').length} district units</small></div>
+      <div class="career-step"><b>Constituency, Block & Booth</b><small>${state.partyUnits.filter(u=>['Constituency','Block','Booth'].includes(u.type)).length} local units</small></div>
+    </section>
+    <section class="panel" style="margin-top:15px"><span class="eyebrow">GRASSROOTS STRUCTURE</span><h2>Organisation units</h2><p class="panel-description">Create local party units and expand your network step by step.</p>
       <form id="party-unit-form" class="creator-grid"><div class="creator-field"><label for="unitType">Unit level</label><select id="unitType" name="unitType">${types.map(type=>`<option>${type}</option>`).join('')}</select></div><div class="creator-field"><label for="unitName">Unit name / area</label><input id="unitName" name="unitName" maxlength="55" placeholder="e.g. Brahmavara Booth 01" required></div><button class="primary-btn" type="submit">CREATE UNIT →</button></form>
     </section>
     <section class="panel" style="margin-top:15px"><span class="eyebrow">YOUR PARTY NETWORK</span><h3>${state.partyUnits.length} organisational units</h3>
@@ -1026,9 +1039,16 @@ function partyOrganisationSection() {
 }
 
 function partyElectionsSection() {
+  const availablePositions = leadershipPositions.filter(position => position !== 'National Working President' || !state.partyLeadership[position]);
+  const eligible = state.partyMemberRecords.filter(member => !member.isFounder);
+  const candidates = eligible.filter(member => !Object.values(state.partyLeadership).includes(member.id));
   return `
-    <section class="panel"><span class="eyebrow">INTERNAL DEMOCRACY</span><h2>Party internal elections</h2><p class="panel-description">Hold a simulated internal election for an available leadership position. The winner is selected from eligible party members using experience and loyalty.</p>
-      <form id="party-election-form" class="creator-grid"><div class="creator-field"><label for="electionPosition">Election position</label><select id="electionPosition" name="position">${leadershipPositions.filter(position=>position!=='National Working President' || !state.partyLeadership[position]).map(position=>`<option value="${escapeHtml(position)}">${escapeHtml(position)}</option>`).join('')}</select></div><button class="primary-btn" type="submit" ${state.partyMemberRecords.length < 2 ? 'disabled' : ''}>HOLD INTERNAL ELECTION →</button></form>
+    <section class="panel"><span class="eyebrow">INTERNAL DEMOCRACY</span><h2>Party internal elections</h2><p class="panel-description">Choose an office and nominate an eligible member. The simulated vote uses member loyalty, experience and a turnout factor; results are recorded in the election history.</p>
+      <form id="party-election-form" class="creator-grid">
+        <div class="creator-field"><label for="electionPosition">Election position</label><select id="electionPosition" name="position">${availablePositions.map(position=>`<option value="${escapeHtml(position)}">${escapeHtml(position)}</option>`).join('')}</select></div>
+        <div class="creator-field"><label for="electionCandidate">Candidate</label><select id="electionCandidate" name="candidateId">${candidates.map(member=>`<option value="${escapeHtml(member.id)}">${escapeHtml(member.name)} · Loyalty ${member.loyalty} · Experience ${member.experience}</option>`).join('')}</select></div>
+        <button class="primary-btn" type="submit" ${candidates.length===0?'disabled':''}>CONDUCT INTERNAL VOTE →</button>
+      </form>
     </section>
     <section class="panel" style="margin-top:15px"><span class="eyebrow">ELECTION RECORD</span><h3>Previous results</h3>
       ${state.partyElectionHistory.length ? state.partyElectionHistory.slice(0,10).map(result=>`<div class="career-step"><div><b>${escapeHtml(result.position)}</b><small>Winner: ${escapeHtml(result.winner)} · ${escapeHtml(result.date)}</small></div><span class="current-label">${result.score} PTS</span></div>`).join('') : '<p class="panel-description">No internal elections have been held.</p>'}
@@ -1668,6 +1688,7 @@ function establishParty(form) {
   state.partyLeadership = { 'Founder & National President': 'founder' };
   state.partyUnits = [];
   state.partyElectionHistory = [];
+  state.partyDisputes = [];
 
   state.partyHistory.unshift({
     event: 'Founded ' + name,
@@ -1831,6 +1852,7 @@ function leaveParty() {
   state.partyLeadership = {};
   state.partyUnits = [];
   state.partyElectionHistory = [];
+  state.partyDisputes = [];
 
   saveState();
   render();
@@ -1909,23 +1931,43 @@ function holdPartyElection(form) {
   if (state.partyMemberRecords.length < 2) return toast('At least two members are required.');
   const data = new FormData(form);
   const position = String(data.get('position') || '');
-  const candidates = state.partyMemberRecords.filter(member => !member.isFounder && !Object.entries(state.partyLeadership).some(([role,id]) => id === member.id && role !== position));
-  if (!candidates.length) return toast('No eligible candidates for this election.');
-  candidates.sort((a,b) => (b.loyalty + b.experience) - (a.loyalty + a.experience));
-  const winner = candidates[0];
+  const candidateId = String(data.get('candidateId') || '');
+  const winner = getPartyMember(candidateId);
+  if (!winner || winner.isFounder || Object.values(state.partyLeadership).includes(winner.id)) return toast('Select an eligible candidate.');
   const previousId = state.partyLeadership[position];
   const previous = getPartyMember(previousId);
   if (previous && !previous.isFounder) previous.role = 'General Member';
+  const turnout = 55 + Math.floor(Math.random() * 36);
+  const score = Math.max(1, Math.min(99, Math.round((winner.loyalty * 0.55 + winner.experience * 0.45) * (0.85 + turnout / 300))));
   state.partyLeadership[position] = winner.id;
   winner.role = position;
-  winner.loyalty = Math.min(100, winner.loyalty + 5);
-  winner.experience = Math.min(100, winner.experience + 10);
-  const score = Math.min(99, Math.round((winner.loyalty + winner.experience) / 2));
-  state.partyElectionHistory.unshift({ position, winner: winner.name, date: dateText(), score });
-  state.partyHistory.unshift({ event: winner.name + ' elected as ' + position, date: dateText() });
-  state.experience += 15;
-  saveState(); render(); toast(winner.name + ' elected as ' + position + '!');
+  winner.loyalty = Math.min(100, winner.loyalty + 3);
+  winner.experience = Math.min(100, winner.experience + 8);
+  state.partyElectionHistory.unshift({ position, winner: winner.name, date: dateText(), score, turnout, candidateId });
+  state.partyHistory.unshift({ event: winner.name + ' elected as ' + position + ' in an internal party vote', date: dateText() });
+  state.experience += 10;
+  saveState(); render(); toast(winner.name + ' elected as ' + position + '.');
 }
+
+function registerPartyDispute(form) {
+  const data = new FormData(form);
+  const title = String(data.get('title') || '').trim();
+  const level = String(data.get('level') || 'National');
+  if (title.length < 5) return toast('Describe the issue in at least five characters.');
+  state.partyDisputes.unshift({ id: 'dispute-' + Date.now(), title, level, date: dateText(), status: 'Open' });
+  state.partyHistory.unshift({ event: level + ' committee dispute registered: ' + title, date: dateText() });
+  saveState(); render(); toast('Dispute registered for party review.');
+}
+function resolvePartyDispute(id) {
+  const dispute = state.partyDisputes.find(item => item.id === id);
+  if (!dispute || dispute.status !== 'Open') return;
+  dispute.status = 'Resolved';
+  dispute.resolved = dateText();
+  state.partyHistory.unshift({ event: dispute.level + ' committee dispute resolved: ' + dispute.title, date: dateText() });
+  state.partyPopularity = Math.min(100, state.partyPopularity + 1);
+  saveState(); render(); toast('Party dispute marked as resolved.');
+}
+
 
 /* CAREER & PROFILE */
 
@@ -3938,6 +3980,9 @@ if (!Array.isArray(state.media.history)) state.media.history = [];
   const partyNav = event.target.closest('[data-party-section]');
   if (partyNav) { partySection = partyNav.dataset.partySection; render(); return; }
 
+  const resolveDispute = event.target.closest('[data-resolve-party-dispute]');
+  if (resolveDispute) { resolvePartyDispute(resolveDispute.dataset.resolvePartyDispute); return; }
+
   const removePosition = event.target.closest('[data-remove-position]');
   if (removePosition) { removeLeadershipPosition(removePosition.dataset.removePosition); return; }
   const removeMember = event.target.closest('[data-remove-member]');
@@ -4066,6 +4111,7 @@ document.addEventListener('submit', event => {
   if (event.target.id === 'add-member-form') { event.preventDefault(); addPartyMember(event.target); }
   if (event.target.id === 'party-unit-form') { event.preventDefault(); createPartyUnit(event.target); }
   if (event.target.id === 'party-election-form') { event.preventDefault(); holdPartyElection(event.target); }
+  if (event.target.id === 'party-dispute-form') { event.preventDefault(); registerPartyDispute(event.target); }
   if (event.target.id === 'constituency-setup-form') { event.preventDefault(); saveConstituencySetup(event.target); }
   if (event.target.id === 'development-project-form') { event.preventDefault(); startDevelopmentProject(event.target); }
   if (event.target.id === 'start-election-form') { event.preventDefault(); startElection(event.target); }
