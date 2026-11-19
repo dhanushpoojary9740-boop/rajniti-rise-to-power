@@ -95,6 +95,17 @@ const defaults = {
   activityHistory: [],
   reviewedNews: [],
   executiveOffice: { tasks: [], files: [], nextId: 1, lastAiReport: 'Your administrative team is standing by.' },
+  nationalCommand: {
+    level: 'State',
+    coalition: [],
+    cabinet: {},
+    bills: [],
+    budget: { year: 1, revenue: 2500000000, expenditure: 2300000000, reserve: 200000000, allocated: { Health: 18, Education: 18, Infrastructure: 22, Agriculture: 14, Home: 10, Welfare: 12, Administration: 6 } },
+    projects: [],
+    history: [],
+    confidence: 'Not tested',
+    sessions: 0
+  },
   government: {
     formed: false,
     chiefMinister: '',
@@ -375,7 +386,7 @@ function shell(content) {
   const nav = [
     'Dashboard', 'Career', 'Activities', 'Party',
     'Constituency', 'Constituency Intel', 'India Map', 'Elections', 'Executive Office', 'Government', 'Parliament', 'Alliances',
-    'Relationships', 'Intelligence', 'Public Opinion', 'Finance', 'News', 'Profile'
+    'National Command', 'Relationships', 'Intelligence', 'Public Opinion', 'Finance', 'News', 'Profile'
   ];
 
   return `
@@ -433,7 +444,7 @@ function shell(content) {
       </main>
 
       <nav class="mobile-nav">
-        ${['Dashboard', 'Career', 'Party', 'Constituency', 'Constituency Intel', 'India Map', 'Elections', 'Executive Office', 'Intelligence', 'Public Opinion', 'Finance', 'News', 'Activities', 'Profile']
+        ${['Dashboard', 'Career', 'Party', 'Constituency', 'Constituency Intel', 'India Map', 'Elections', 'Executive Office', 'Government', 'Parliament', 'National Command', 'Intelligence', 'Public Opinion', 'Finance', 'News', 'Activities', 'Profile']
           .map(name => `
             <button class="${activeTab === name ? 'active' : ''}"
               data-tab="${name}">
@@ -1711,6 +1722,7 @@ function endDay() {
   }
   state.actionsUsed = 0;
   runAiAdministration();
+  advanceNationalCommandMonth();
   advanceMediaCycle();
   const report = processMonthlyFinances();
   processElectionCalendar();
@@ -3770,6 +3782,107 @@ function parliamentAction(action) {
 }
 
 
+
+/* NATIONAL POLITICAL CAREER, CABINET, LEGISLATURE & DEVELOPMENT */
+function ensureNationalCommand() {
+  if (!state.nationalCommand || typeof state.nationalCommand !== 'object') {
+    state.nationalCommand = {
+      level: 'State', coalition: [], cabinet: {}, bills: [], budget: { year: 1, revenue: 2500000000, expenditure: 2300000000, reserve: 200000000, allocated: { Health: 18, Education: 18, Infrastructure: 22, Agriculture: 14, Home: 10, Welfare: 12, Administration: 6 } },
+      projects: [], history: [], confidence: 'Not tested', sessions: 0
+    };
+  }
+  const n = state.nationalCommand;
+  if (!Array.isArray(n.coalition)) n.coalition = [];
+  if (!n.cabinet || typeof n.cabinet !== 'object') n.cabinet = {};
+  if (!Array.isArray(n.bills)) n.bills = [];
+  if (!Array.isArray(n.projects)) n.projects = [];
+  if (!Array.isArray(n.history)) n.history = [];
+  if (!n.budget || typeof n.budget !== 'object') n.budget = { ...defaults.nationalCommand.budget };
+  if (!n.budget.allocated) n.budget.allocated = { ...defaults.nationalCommand.budget.allocated };
+  for (const key of ['revenue','expenditure','reserve']) if (!Number.isFinite(Number(n.budget[key]))) n.budget[key] = defaults.nationalCommand.budget[key];
+  return n;
+}
+function nationalCommandPage() {
+  const n = ensureNationalCommand();
+  const g = ensureGovernmentState();
+  const b = n.budget;
+  const total = Object.values(b.allocated).reduce((sum,v)=>sum+Number(v||0),0);
+  const majority = Math.floor(543/2)+1;
+  const role = String(state.role || '').toLowerCase();
+  const isNational = role.includes('prime minister') || role.includes('union minister') || role.includes('mp');
+  const portfolios = ['Home Affairs','Finance','Defence','External Affairs','Road Transport','Education','Health','Agriculture','Rural Development','Commerce'];
+  const cabinetRows = portfolios.map(name => `<div class="history-row"><b>${escapeHtml(name)}</b><span>${escapeHtml(n.cabinet[name] || 'Vacant')}</span><button class="secondary-btn" data-national-appoint="${escapeHtml(name)}">APPOINT</button></div>`).join('');
+  const bills = n.bills.length ? n.bills.slice().reverse().map((x,i)=>`<div class="history-row"><div><b>${escapeHtml(x.title)}</b><small>${escapeHtml(x.type)} · ${escapeHtml(x.date)}</small></div><span>${escapeHtml(x.status)}</span></div>`).join('') : '<p class="muted">No national bills introduced.</p>';
+  const projects = n.projects.length ? n.projects.slice().reverse().map(x=>`<div class="history-row"><div><b>${escapeHtml(x.name)}</b><small>${escapeHtml(x.department)} · ${money(x.budget)}</small></div><span>${x.progress}% · ${escapeHtml(x.status)}</span></div>`).join('') : '<p class="muted">No national development programmes yet.</p>';
+  const history = n.history.length ? n.history.slice(0,8).map(x=>`<div class="history-row"><b>${escapeHtml(x.event)}</b><small>${escapeHtml(x.date)}</small></div>`).join('') : '<p class="muted">Political and government decisions will appear here.</p>';
+  return `<section class="page-heading"><div><span class="eyebrow">NATIONAL LEADERSHIP · VERSION 1.5.0</span><h1>National <em>Command Centre</em></h1><p>Manage government formation, cabinet responsibilities, legislation, public finances and development programmes in one place.</p></div></section>
+  <div class="stats-grid">${statCard('Political level',escapeHtml(n.level),'Career authority','♜')}${statCard('Coalition partners',n.coalition.length,'Recorded partners','♧')}${statCard('National reserve',money(b.reserve),'Illustrative simulation budget','₹')}${statCard('Development projects',n.projects.length,'Programmes tracked','⌂')}</div>
+  <div class="dashboard-grid">
+   <section class="panel"><span class="eyebrow">POLITICAL CAREER & GOVERNMENT</span><h2>Leadership mandate</h2><p><b>Current role:</b> ${escapeHtml(state.role || 'Political Volunteer')}</p><p><b>State government:</b> ${g.formed ? 'Formed' : 'Not formed'} · <b>National office:</b> ${isNational ? 'National-level role detected' : 'Not currently in a national-level role'}</p><label class="field-label">Simulation government level</label><select id="nationalLevel" class="text-input"><option ${n.level==='State'?'selected':''}>State</option><option ${n.level==='Coalition'?'selected':''}>Coalition</option><option ${n.level==='National'?'selected':''}>National</option></select><button class="primary-btn" data-national-action="update-level">UPDATE GOVERNMENT LEVEL</button><p class="muted">This is a career simulation setting. It does not grant a real-world office or legal authority.</p></section>
+   <section class="panel"><span class="eyebrow">COALITION MANAGEMENT</span><h2>Government formation talks</h2><p>Record simulated coalition partners and their support commitments.</p><button class="secondary-btn" data-national-action="coalition">ADD COALITION PARTNER</button>${n.coalition.map((x,i)=>`<div class="history-row"><b>${escapeHtml(x.name)}</b><span>${x.seats} support seats</span><button data-national-remove="${i}" class="secondary-btn">REMOVE</button></div>`).join('') || '<p class="muted">No coalition partners recorded.</p>'}<p><b>Illustrative Lok Sabha majority:</b> ${majority} of 543 seats. The game does not predict actual election outcomes.</p></section>
+  </div>
+  <section class="panel"><span class="eyebrow">CABINET SECRETARIAT</span><h2>Union Cabinet & Portfolios</h2><p>Assign simulated ministers to national portfolios. Appointments are recorded in the government history.</p><div class="dashboard-grid">${cabinetRows}</div></section>
+  <section class="panel"><span class="eyebrow">PUBLIC FINANCE</span><h2>Annual Government Budget</h2><div class="stats-grid">${statCard('Revenue',money(b.revenue),'Illustrative annual receipts','↗')}${statCard('Expenditure',money(b.expenditure),'Approved spending envelope','↘')}${statCard('Reserve',money(b.reserve),'Available fiscal reserve','₹')}${statCard('Allocation',`${total}%`,'Department allocation total','▤')}</div><div class="dashboard-grid"><div><label class="field-label">Annual revenue (₹)</label><input id="nationalRevenue" class="text-input" type="number" min="0" value="${Number(b.revenue)}"><label class="field-label">Annual expenditure (₹)</label><input id="nationalExpenditure" class="text-input" type="number" min="0" value="${Number(b.expenditure)}"><button class="primary-btn" data-national-action="budget">APPROVE ANNUAL BUDGET</button></div><div><p><b>Fiscal balance:</b> ${money(Number(b.revenue)-Number(b.expenditure))}</p><p class="muted">All values are fictional gameplay amounts, not government forecasts or official budget figures.</p></div></div></section>
+  <div class="dashboard-grid"><section class="panel"><span class="eyebrow">LEGISLATIVE BUSINESS</span><h2>Introduce a national bill</h2><input id="nationalBillTitle" class="text-input" maxlength="80" placeholder="Bill title"><select id="nationalBillType" class="text-input"><option>Finance Bill</option><option>Education Bill</option><option>Healthcare Bill</option><option>Infrastructure Bill</option><option>Agriculture Bill</option><option>Social Welfare Bill</option></select><button class="primary-btn" data-national-action="bill">INTRODUCE BILL</button><button class="secondary-btn" data-national-action="session">OPEN PARLIAMENTARY SESSION</button></section><section class="panel"><span class="eyebrow">NATIONAL DEVELOPMENT</span><h2>Launch a programme</h2><select id="nationalProjectType" class="text-input"><option>National Highway Development</option><option>Rural Healthcare Expansion</option><option>Government School Modernisation</option><option>Clean Drinking Water Mission</option><option>Employment & Skills Programme</option><option>Railway Infrastructure Upgrade</option></select><input id="nationalProjectBudget" class="text-input" type="number" min="1000000" value="100000000" placeholder="Programme budget in rupees"><button class="primary-btn" data-national-action="project">APPROVE DEVELOPMENT PROGRAMME</button></section></div>
+  <section class="panel"><span class="eyebrow">RECORDS</span><h2>Legislation & voting record</h2>${bills}</section>
+  <section class="panel"><span class="eyebrow">DELIVERY TRACKER</span><h2>National development programmes</h2>${projects}</section>
+  <section class="panel"><span class="eyebrow">OFFICIAL HISTORY</span><h2>Decisions & government reports</h2>${history}</section>`;
+}
+function nationalCommandAction(action) {
+  const n = ensureNationalCommand();
+  const log = event => n.history.unshift({ event, date: dateText() });
+  if (action === 'update-level') {
+    const value = document.querySelector('#nationalLevel')?.value;
+    if (!['State','Coalition','National'].includes(value)) return;
+    n.level = value; log(`Government simulation level changed to ${value}`); toast('Government level updated.');
+  }
+  if (action === 'coalition') {
+    const name = prompt('Enter coalition partner name:');
+    if (!name || !name.trim()) return;
+    const seats = Math.max(1, Math.min(543, Math.floor(Number(prompt('Enter simulated support seats:', '12')) || 0)));
+    n.coalition.push({ name: name.trim().slice(0,60), seats });
+    log(`Coalition agreement recorded with ${name.trim()}`); toast('Coalition partner added.');
+  }
+  if (action === 'budget') {
+    const revenue = Math.floor(Number(document.querySelector('#nationalRevenue')?.value));
+    const expenditure = Math.floor(Number(document.querySelector('#nationalExpenditure')?.value));
+    if (!Number.isFinite(revenue) || !Number.isFinite(expenditure) || revenue < 0 || expenditure < 0) return toast('Enter valid non-negative budget amounts.');
+    const balance = revenue - expenditure;
+    if (balance < -Math.max(10000000, revenue * 0.25)) return toast('Proposed deficit is too large for this simulation. Revise the budget.');
+    n.budget.revenue = revenue; n.budget.expenditure = expenditure; n.budget.reserve = Math.max(0, Number(n.budget.reserve || 0) + balance);
+    log(`Annual budget approved: revenue ${money(revenue)}, expenditure ${money(expenditure)}`); toast('Annual budget approved and recorded.');
+  }
+  if (action === 'bill') {
+    const title = document.querySelector('#nationalBillTitle')?.value.trim();
+    const type = document.querySelector('#nationalBillType')?.value || 'Finance Bill';
+    if (!title) return toast('Enter a bill title first.');
+    const parliament = ensureParliamentState();
+    const support = Math.min(543, Number(parliament.rulingSeats || 0) + n.coalition.reduce((sum,x)=>sum+Number(x.seats||0),0));
+    const passed = support >= 272;
+    n.bills.push({ title, type, status: passed ? 'Passed in simulated vote' : 'Introduced · vote not passed', date: dateText(), support: Math.max(0,support) });
+    log(`National bill introduced: ${title}`); toast(passed ? 'Bill passed in the simulation.' : 'Bill recorded; simulated support was insufficient.');
+  }
+  if (action === 'session') { n.sessions = Number(n.sessions||0)+1; log('Parliamentary session opened'); toast('Parliamentary session opened.'); }
+  if (action === 'project') {
+    const name = document.querySelector('#nationalProjectType')?.value;
+    const budget = Math.floor(Number(document.querySelector('#nationalProjectBudget')?.value));
+    if (!Number.isFinite(budget) || budget < 1000000) return toast('Enter a programme budget of at least ₹10 lakh.');
+    if (budget > Number(n.budget.reserve||0)) return toast('Insufficient national reserve. Approve a suitable budget first.');
+    n.budget.reserve -= budget;
+    n.projects.push({ id: `national-${Date.now()}`, name, department: 'Union Government', budget, progress: 0, status: 'Active', createdAt: dateText(), months: 0 });
+    log(`Development programme approved: ${name} · ${money(budget)}`); toast('Development programme approved.');
+  }
+  saveState(); render();
+}
+function advanceNationalCommandMonth() {
+  const n = ensureNationalCommand();
+  n.projects.filter(p=>p.status==='Active').forEach(p=>{
+    p.months = Number(p.months||0)+1;
+    p.progress = Math.min(100, Number(p.progress||0)+8);
+    if (p.progress >= 100) { p.status = 'Completed'; n.history.unshift({event:`Development programme completed: ${p.name}`,date:dateText()}); }
+  });
+}
+
 /* MAIN RENDER */
 
 function render() {
@@ -3826,6 +3939,9 @@ function render() {
       break;
     case 'Government':
       content = governmentPage();
+      break;
+    case 'National Command':
+      content = nationalCommandPage();
       break;
     case 'Parliament':
       content = parliamentPage();
@@ -4108,6 +4224,34 @@ if (!Array.isArray(state.media.history)) state.media.history = [];
   if (allianceWithdraw) { allianceAction('withdraw', allianceWithdraw.dataset.allianceWithdraw); return; }
   const allianceButton = event.target.closest('[data-alliance-action]');
   if (allianceButton) { allianceAction(allianceButton.dataset.allianceAction); return; }
+
+  const nationalActionButton = event.target.closest('[data-national-action]');
+  if (nationalActionButton) { nationalCommandAction(nationalActionButton.dataset.nationalAction); return; }
+  const nationalAppointButton = event.target.closest('[data-national-appoint]');
+  if (nationalAppointButton) {
+    const n = ensureNationalCommand();
+    const portfolio = nationalAppointButton.dataset.nationalAppoint;
+    const candidates = (state.partyMemberRecords || []).map(m=>m.name).filter(Boolean);
+    const suggested = candidates.find(name=>!Object.values(n.cabinet).includes(name)) || 'Simulated Cabinet Member';
+    const name = prompt(`Appoint minister for ${portfolio}. Enter a name:`, suggested);
+    if (name && name.trim()) {
+      n.cabinet[portfolio] = name.trim().slice(0,60);
+      n.history.unshift({event:`${portfolio} portfolio assigned to ${name.trim()}`,date:dateText()});
+      saveState(); render(); toast(`${name.trim()} appointed to ${portfolio}.`);
+    }
+    return;
+  }
+  const nationalRemoveButton = event.target.closest('[data-national-remove]');
+  if (nationalRemoveButton) {
+    const n = ensureNationalCommand();
+    const index = Number(nationalRemoveButton.dataset.nationalRemove);
+    if (Number.isInteger(index) && n.coalition[index]) {
+      const removed = n.coalition.splice(index,1)[0];
+      n.history.unshift({event:`Coalition partner removed: ${removed.name}`,date:dateText()});
+      saveState(); render(); toast('Coalition partner removed.');
+    }
+    return;
+  }
 
   const parliamentButton = event.target.closest('[data-parliament-action]');
   if (parliamentButton) { parliamentAction(parliamentButton.dataset.parliamentAction); return; }
