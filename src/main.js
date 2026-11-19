@@ -2696,24 +2696,50 @@ function ensurePartySlate() {
   if (!Array.isArray(elections.partySlate)) elections.partySlate = [];
   return elections.partySlate;
 }
-function proposePartySlate() {
+function proposePartySlate(typeId = 'assembly') {
   if (state.partyId === 'independent') return toast('Join or establish a party before creating a party-wide candidate slate.');
   const slate = ensurePartySlate();
-  const schedule = ensureElectionCalendar().calendar.assembly;
-  const scheduledAt = Number(schedule?.nextAt || currentMonthIndex());
-  const type = electionTypes.find(item => item.id === 'assembly');
+  const schedule = ensureElectionCalendar().calendar[typeId];
+  if (!schedule) return toast('Select a valid election cycle.');
+  const scheduledAt = Number(schedule.nextAt || currentMonthIndex());
+  const type = electionTypes.find(item => item.id === typeId);
   const members = (state.partyMemberRecords || []).filter(member => member && member.name && member.id !== 'founder');
   if (!members.length) return toast('Recruit party members before proposing candidates.');
   const locations = Array.from(new Set(members.map(member => member.constituency || member.district || member.state || state.hometown || 'Unassigned constituency')));
   let added = 0;
   members.forEach((member, index) => {
+    if (slate.some(item => item.memberId === member.id && item.scheduledAt === scheduledAt && item.typeId === typeId)) return;
     const constituency = locations[index % locations.length];
-    if (slate.some(item => item.memberId === member.id && item.scheduledAt === scheduledAt && item.typeId === 'assembly')) return;
-    slate.push({ id:`slate-${Date.now()}-${index}`, typeId:'assembly', typeName:type?.name || 'State Assembly Election', scheduledAt, memberId:member.id, candidateName:member.name, role:member.role || 'Party Member', constituency, status:'Proposed', campaignManager:'AI District Organisation', approvedBudget:0, createdAt:dateText() });
+    slate.push({
+      id: `slate-${Date.now()}-${typeId}-${index}`,
+      typeId, typeName: type?.name || schedule.label || 'Election',
+      scheduledAt, memberId: member.id, candidateName: member.name,
+      role: member.role || 'Party Member', constituency,
+      status: 'Proposed', campaignManager: 'AI District Organisation',
+      approvedBudget: 0, campaignSpent: 0, createdAt: dateText()
+    });
     added++;
   });
   saveState(); render();
-  toast(`${added} party candidate proposal(s) added for the upcoming Assembly cycle.`);
+  toast(`${added} candidate proposal(s) added for ${type?.name || schedule.label}.`);
+}
+function allocatePartyCandidateBudget(id) {
+  const item = ensurePartySlate().find(entry => entry.id === id);
+  if (!item || item.status !== 'Party Approved') return toast('Approve this candidate before allocating campaign funds.');
+  const amounts = { local: 500000, assembly: 4000000, 'lok-sabha': 9500000 };
+  const amount = amounts[item.typeId] || 1000000;
+  if ((Number(state.partyFunds) || 0) < amount) return toast('Insufficient party treasury funds.');
+  state.partyFunds -= amount;
+  state.partyTreasury = state.partyTreasury || { incomeTotal: 0, expenseTotal: 0, ledger: [] };
+  state.partyTreasury.expenseTotal = (Number(state.partyTreasury.expenseTotal) || 0) + amount;
+  state.partyTreasury.ledger = Array.isArray(state.partyTreasury.ledger) ? state.partyTreasury.ledger : [];
+  state.partyTreasury.ledger.unshift({ type:'Expense', amount, note:`Campaign allocation: ${item.candidateName} · ${item.constituency}`, date:dateText() });
+  state.partyTreasury.ledger = state.partyTreasury.ledger.slice(0,60);
+  item.approvedBudget = (Number(item.approvedBudget) || 0) + amount;
+  item.status = 'Funded';
+  item.fundedAt = dateText();
+  saveState(); render();
+  toast(`${money(amount)} allocated from party treasury to ${item.candidateName}.`);
 }
 function decidePartySlate(id, decision) {
   const item = ensurePartySlate().find(entry => entry.id === id);
@@ -2778,8 +2804,9 @@ function electionPage() {
         <div><small>REJECTED</small><b>${electionCalendar.nominationQueue.filter(item => item.status === 'Rejected').length}</b></div>
       </div>
       ${nominationHtml}
-      <div class="section-heading-row"><div><h2>Party-wide candidate deployment</h2><p class="panel-description">Propose registered party members for multiple constituencies. Approvals create a party slate; they do not automatically file official nominations or spend campaign funds.</p></div><button class="primary-btn" data-party-slate-generate>Generate member proposals</button></div>
-      ${(() => { const slate = ensurePartySlate(); return slate.length ? slate.map(item => `<div class="finance-history"><span><b>${escapeHtml(item.candidateName)}</b><br>${escapeHtml(item.constituency)} · ${escapeHtml(item.role)}<br><small>${escapeHtml(item.typeName)} · ${escapeHtml(item.status)}</small></span>${item.status === 'Proposed' ? `<div class="nomination-actions"><button class="secondary-btn" data-party-slate-action="approve" data-party-slate-id="${escapeHtml(item.id)}">Approve</button><button class="secondary-btn" data-party-slate-action="reject" data-party-slate-id="${escapeHtml(item.id)}">Reject</button></div>` : `<b>${escapeHtml(item.status)}</b>`}</div>`).join('') : '<p class="panel-description">No party-wide candidate proposals yet.</p>'; })()}
+      <div class="section-heading-row"><div><h2>Party-wide candidate deployment</h2><p class="panel-description">Build separate candidate slates for local, Assembly and Lok Sabha cycles. Approvals are internal party decisions; campaign allocations are recorded separately from personal wealth.</p></div></div>
+      <div class="creator-panel"><div class="creator-grid"><div class="creator-field"><label for="partySlateElectionType">Election cycle</label><select id="partySlateElectionType"><option value="local">Local body</option><option value="assembly" selected>State Assembly</option><option value="lok-sabha">Lok Sabha</option></select></div><div class="creator-field"><label>Party treasury available</label><input value="${escapeHtml(money(state.partyFunds || 0))}" readonly></div></div><button class="primary-btn" data-party-slate-generate>Generate member proposals</button></div>
+      ${(() => { const slate = ensurePartySlate(); return slate.length ? slate.slice().sort((a,b)=>Number(b.scheduledAt||0)-Number(a.scheduledAt||0)).map(item => `<div class="finance-history"><span><b>${escapeHtml(item.candidateName)}</b><br>${escapeHtml(item.constituency)} · ${escapeHtml(item.role)}<br><small>${escapeHtml(item.typeName)} · ${escapeHtml(item.status)} · Allocated ${money(item.approvedBudget || 0)}</small></span>${item.status === 'Proposed' ? `<div class="nomination-actions"><button class="secondary-btn" data-party-slate-action="approve" data-party-slate-id="${escapeHtml(item.id)}">Approve</button><button class="secondary-btn" data-party-slate-action="reject" data-party-slate-id="${escapeHtml(item.id)}">Reject</button></div>` : item.status === 'Party Approved' ? `<button class="secondary-btn" data-party-slate-fund="${escapeHtml(item.id)}">Allocate campaign budget</button>` : `<b>${escapeHtml(item.status)}</b>`}</div>`).join('') : '<p class="panel-description">No party-wide candidate proposals yet.</p>'; })()}
     </section>
 
     ${active ? `
@@ -4160,7 +4187,9 @@ document.addEventListener('input', event => {
 
 document.addEventListener('click', event => {
   const slateGenerateButton = event.target.closest('[data-party-slate-generate]');
-  if (slateGenerateButton) { proposePartySlate(); return; }
+  if (slateGenerateButton) { proposePartySlate(document.querySelector('#partySlateElectionType')?.value || 'assembly'); return; }
+  const slateFundButton = event.target.closest('[data-party-slate-fund]');
+  if (slateFundButton) { allocatePartyCandidateBudget(slateFundButton.dataset.partySlateFund); return; }
   const slateActionButton = event.target.closest('[data-party-slate-action]');
   if (slateActionButton) { decidePartySlate(slateActionButton.dataset.partySlateId, slateActionButton.dataset.partySlateAction); return; }
   const nominationButton = event.target.closest('[data-nomination-action]');
