@@ -2690,11 +2690,38 @@ function getAtlasState(name) {
   return indiaAtlas.find(region => region.region === 'South').states.find(item => item.name === 'Karnataka');
 }
 
+
+function atlasDistrictProfile(stateName, districtName) {
+  const key = `${stateName}|${districtName}`;
+  let hash = 0;
+  for (let i = 0; i < key.length; i++) hash = (hash * 31 + key.charCodeAt(i)) >>> 0;
+  const score = (n) => 25 + ((hash >>> n) % 66);
+  return {
+    development: score(2),
+    employment: score(5),
+    infrastructure: score(8),
+    education: score(11),
+    healthcare: score(14),
+    water: score(17),
+    priorities: [
+      ['Roads & transport', score(3)],
+      ['Healthcare access', score(6)],
+      ['Education facilities', score(9)],
+      ['Water & sanitation', score(12)],
+      ['Employment opportunities', score(15)]
+    ].sort((a, b) => a[1] - b[1]).slice(0, 3)
+  };
+}
+
 function indiaMapPage() {
   const selectedState = getAtlasState(state.mapState || state.constituency?.state || 'Karnataka');
   const selectedDistrict = selectedState.districts.includes(state.mapDistrict)
     ? state.mapDistrict
     : selectedState.districts[0];
+  const profile = atlasDistrictProfile(selectedState.name, selectedDistrict);
+  const districtProjects = Array.isArray(state.atlasProjects)
+    ? state.atlasProjects.filter(item => item.state === selectedState.name && item.district === selectedDistrict)
+    : [];
   const stateCount = indiaAtlas.reduce((sum, region) => sum + region.states.length, 0);
   const currentFocus = state.constituency?.state === selectedState.name
     && state.constituency?.district === selectedDistrict;
@@ -2779,10 +2806,36 @@ function indiaMapPage() {
           </div>
         </section>
 
-        <section class="panel atlas-expansion-panel">
-          <span class="eyebrow">NEXT ATLAS EXPANSION</span>
-          <h3>Constituency-level intelligence</h3>
-          <p class="panel-description">The current release provides a state and sample-district directory. Detailed assembly constituency boundaries, seat profiles and region-specific election records will be added in later updates.</p>
+        <section class="panel atlas-development-panel">
+          <div class="command-section-head compact">
+            <div><span class="eyebrow">DISTRICT DEVELOPMENT INTELLIGENCE</span><h2>Development profile</h2></div>
+            <span class="command-symbol">⌂</span>
+          </div>
+          <div class="atlas-development-score"><strong>${profile.development}</strong><span>/100 development index</span></div>
+          <div class="atlas-indicator-grid">
+            ${[['Employment',profile.employment],['Infrastructure',profile.infrastructure],['Education',profile.education],['Healthcare',profile.healthcare],['Water & sanitation',profile.water]].map(([label,value]) => `
+              <div class="atlas-indicator"><div><span>${label}</span><b>${value}/100</b></div><div class="atlas-meter"><i style="width:${value}%"></i></div></div>
+            `).join('')}
+          </div>
+          <p class="atlas-data-note">These are fictional, deterministic gameplay indicators for each district, not official government statistics.</p>
+        </section>
+
+        <section class="panel atlas-priority-panel">
+          <div class="command-section-head compact">
+            <div><span class="eyebrow">DEVELOPMENT NEEDS</span><h2>Priority areas</h2></div>
+            <span class="command-symbol">⚑</span>
+          </div>
+          ${profile.priorities.map(([label,value],index) => `
+            <div class="atlas-priority-row"><span class="priority-rank">${index+1}</span><div><b>${label}</b><small>Needs attention · simulated score ${value}/100</small></div><span class="priority-level">${value < 45 ? 'HIGH' : 'MEDIUM'}</span></div>
+          `).join('')}
+          <button class="primary-btn full" data-atlas-project="1">＋ START DEVELOPMENT PROJECT</button>
+        </section>
+
+        <section class="panel atlas-project-panel">
+          <div class="command-section-head compact"><div><span class="eyebrow">LOCAL DEVELOPMENT</span><h2>Active projects (${districtProjects.length})</h2></div></div>
+          ${districtProjects.length ? districtProjects.map(item => `
+            <div class="atlas-project-row"><div><b>${escapeHtml(item.name)}</b><small>${escapeHtml(item.category)} · ${money(item.budget)} · ${item.progress}% complete</small></div><span class="priority-level">${escapeHtml(item.status)}</span></div>
+          `).join('') : '<p class="panel-description">No projects started in this district yet. Start a project to record a development commitment.</p>'}
         </section>
       </div>
     </div>
@@ -3100,6 +3153,35 @@ document.addEventListener('click', event => {
     state.mapDistrict = mapDistrictButton.dataset.mapDistrict;
     saveState();
     render();
+    return;
+  }
+
+  const atlasProjectButton = event.target.closest('[data-atlas-project]');
+  if (atlasProjectButton) {
+    if (!Array.isArray(state.atlasProjects)) state.atlasProjects = [];
+    const choices = ['Road improvement', 'Primary healthcare centre', 'School facility upgrade', 'Drinking water project', 'Employment & skills centre'];
+    const category = prompt(`Choose project category:\n${choices.map((x,i)=>`${i+1}. ${x}`).join('\n')}\nEnter 1-${choices.length}`);
+    if (category === null) return;
+    const selected = choices[Number(category)-1];
+    if (!selected) { toast('Choose a valid project category.'); return; }
+    const rawBudget = prompt('Enter project budget in rupees (example: 2500000):', '2500000');
+    if (rawBudget === null) return;
+    const budget = Math.floor(Number(rawBudget));
+    if (!Number.isFinite(budget) || budget <= 0) { toast('Enter a valid positive project budget.'); return; }
+    state.atlasProjects.push({
+      id: `atlas-${Date.now()}`,
+      state: state.mapState,
+      district: state.mapDistrict,
+      name: selected,
+      category: selected,
+      budget,
+      progress: 0,
+      status: 'Planned',
+      createdAt: new Date().toISOString()
+    });
+    saveState();
+    render();
+    toast('Development project added to the selected district.');
     return;
   }
 

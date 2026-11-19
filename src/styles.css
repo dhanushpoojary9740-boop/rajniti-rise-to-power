@@ -1880,3 +1880,24 @@ button {
   .alliance-option { padding: 14px 0; }
   .alliance-actions > button { flex: 1 1 220px; }
 }
+
+
+/* RAJNITI 1.1.8 — DISTRICT DEVELOPMENT ATLAS */
+.atlas-development-panel,.atlas-priority-panel,.atlas-project-panel{margin-top:16px}
+.atlas-development-score{display:flex;align-items:baseline;gap:9px;padding:14px 0}
+.atlas-development-score strong{font-size:42px;line-height:1;color:var(--gold,#c7a45b)}
+.atlas-development-score span,.atlas-data-note{font-size:11px;color:var(--muted,#9298a5)}
+.atlas-indicator-grid{display:grid;grid-template-columns:1fr 1fr;gap:13px}
+.atlas-indicator>div:first-child{display:flex;justify-content:space-between;gap:8px;font-size:12px;margin-bottom:6px}
+.atlas-indicator span{color:var(--muted,#9298a5)}
+.atlas-indicator b{font-size:11px}
+.atlas-meter{height:7px;border-radius:20px;background:rgba(140,140,150,.18);overflow:hidden}
+.atlas-meter i{display:block;height:100%;border-radius:20px;background:linear-gradient(90deg,#b38b45,#d9bd78)}
+.atlas-data-note{line-height:1.5;margin:14px 0 0}
+.atlas-priority-row,.atlas-project-row{display:flex;align-items:center;gap:11px;padding:12px 0;border-bottom:1px solid var(--line,rgba(150,150,150,.16))}
+.priority-rank{display:grid;place-items:center;width:26px;height:26px;border-radius:8px;background:rgba(190,150,75,.14);color:var(--gold,#c7a45b);font-weight:800}
+.atlas-priority-row>div,.atlas-project-row>div{display:grid;gap:4px;flex:1;min-width:0}
+.atlas-priority-row b,.atlas-project-row b{font-size:13px}
+.atlas-priority-row small,.atlas-project-row small{font-size:11px;color:var(--muted,#9298a5)}
+.priority-level{font-size:10px;font-weight:800;letter-spacing:.06em;color:var(--gold,#c7a45b)}
+@media(max-width:760px){.atlas-indicator-grid{grid-template-columns:1fr}}
