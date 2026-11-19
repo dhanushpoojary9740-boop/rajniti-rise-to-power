@@ -79,33 +79,40 @@ jobs:
         run: |
           python3 - <<'PY'
           import re
+
           path = 'android/app/src/main/AndroidManifest.xml'
-          text = open(path, encoding='utf-8').read()
+          with open(path, encoding='utf-8') as file:
+              text = file.read()
 
-          # Match an activity opening tag across multiple lines. Capacitor
-          # templates can format the MainActivity declaration differently.
-          matches = list(re.finditer(r'<activity\\b[^>]*>', text, flags=re.DOTALL))
-          if not matches:
-              raise SystemExit('No Android activity element found in AndroidManifest.xml')
+          activity_tags = list(re.finditer(r'<activity\b[^>]*>', text, re.DOTALL))
+          if not activity_tags:
+              raise SystemExit('No activity element found in AndroidManifest.xml')
 
-          # Prefer MainActivity, otherwise use the first app activity.
-          selected = next(
-              (m for m in matches if 'MainActivity' in m.group(0)),
-              matches[0]
-          )
+          main_activity = None
+          for match in activity_tags:
+              if 'MainActivity' in match.group(0):
+                  main_activity = match
+                  break
+
+          selected = main_activity or activity_tags[0]
           tag = selected.group(0)
-          if re.search(r'\\bandroid:screenOrientation\\s*=', tag):
-              updated = re.sub(
-                  r'android:screenOrientation\\s*=\\s*["\\'][^"\\']*["\\']',
+          orientation_attribute = 'android:screenOrientation="[^"]*"'
+
+          if re.search(orientation_attribute, tag):
+              updated_tag = re.sub(
+                  orientation_attribute,
                   'android:screenOrientation="sensor"',
                   tag,
                   count=1
               )
           else:
-              updated = tag[:-1] + ' android:screenOrientation="sensor">'
-          text = text[:selected.start()] + updated + text[selected.end():]
-          open(path, 'w', encoding='utf-8').write(text)
-          print('RAJNITI Android orientation set to sensor (portrait and landscape)')
+              updated_tag = tag[:-1] + ' android:screenOrientation="sensor">'
+
+          text = text[:selected.start()] + updated_tag + text[selected.end():]
+          with open(path, 'w', encoding='utf-8') as file:
+              file.write(text)
+
+          print('Adaptive orientation enabled: portrait and landscape')
           PY
 
       - name: Configure permanent release signing
