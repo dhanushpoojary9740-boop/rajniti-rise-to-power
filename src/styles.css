@@ -1901,3 +1901,10 @@ button {
 .atlas-priority-row small,.atlas-project-row small{font-size:11px;color:var(--muted,#9298a5)}
 .priority-level{font-size:10px;font-weight:800;letter-spacing:.06em;color:var(--gold,#c7a45b)}
 @media(max-width:760px){.atlas-indicator-grid{grid-template-columns:1fr}}
+
+/* RAJNITI 1.1.9 — district directory search */
+.atlas-search-label{display:block;margin:14px 0 7px;color:var(--muted,#9b9b9b);font-size:10px;font-weight:800;letter-spacing:1px}
+.atlas-district-search{width:100%;min-height:44px;padding:11px 13px;border:1px solid var(--line,rgba(255,255,255,.12));border-radius:10px;background:var(--surface-2,rgba(255,255,255,.04));color:inherit;font:inherit;outline:none}
+.atlas-district-search:focus{border-color:var(--gold,#c9a45c);box-shadow:0 0 0 2px rgba(201,164,92,.14)}
+.atlas-directory-meta{margin:7px 0 10px;color:var(--muted,#999);font-size:11px}
+.atlas-district-list [hidden]{display:none!important}

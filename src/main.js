@@ -2752,7 +2752,7 @@ function indiaMapPage() {
           <div><span class="eyebrow">INDIA · REGIONAL SELECTOR</span><h2>Choose your state</h2></div>
           <span class="command-symbol">⌖</span>
         </div>
-        <p class="panel-description">Tap a state or Union Territory to open its district directory. This is a schematic game atlas, not a survey-accurate boundary map.</p>
+        <p class="panel-description">Choose a state, then search its listed districts. This release improves district discovery; the directory remains a starter list, not yet a complete official register or boundary-accurate map.</p>
         <div class="atlas-region-grid">
           ${indiaAtlas.map(region => `
             <section class="atlas-region">
@@ -2790,7 +2790,10 @@ function indiaMapPage() {
             <div><span class="eyebrow">DISTRICT DIRECTORY</span><h2>Select a district</h2></div>
             <span class="command-symbol">▦</span>
           </div>
-          <div class="atlas-district-list">
+          <label class="atlas-search-label" for="atlasDistrictSearch">SEARCH DISTRICTS IN ${escapeHtml(selectedState.name.toUpperCase())}</label>
+          <input id="atlasDistrictSearch" class="atlas-district-search" type="search" placeholder="Type a district name..." autocomplete="off">
+          <div class="atlas-directory-meta">${selectedState.districts.length} districts currently listed for this state</div>
+          <div class="atlas-district-list" id="atlasDistrictList">
             ${selectedState.districts.map(district => `
               <button class="atlas-district-button ${selectedDistrict === district ? 'selected' : ''}"
                 data-map-district="${escapeHtml(district)}">
@@ -3136,6 +3139,15 @@ function render() {
 }
 
 /* EVENT HANDLERS */
+
+document.addEventListener('input', event => {
+  if (event.target && event.target.id === 'atlasDistrictSearch') {
+    const query = event.target.value.trim().toLocaleLowerCase('en-IN');
+    document.querySelectorAll('#atlasDistrictList [data-map-district]').forEach(button => {
+      button.hidden = !button.dataset.mapDistrict.toLocaleLowerCase('en-IN').includes(query);
+    });
+  }
+});
 
 document.addEventListener('click', event => {
   const mapStateButton = event.target.closest('[data-map-state]');
