@@ -130,7 +130,7 @@ jobs:
           text = open(path, encoding='utf-8').read()
           run_number = int(os.environ['RUN_NUMBER'])
           version_code = 1000 + run_number
-          version_name = f"1.8.0.{run_number}"
+          version_name = f"1.8.1.{run_number}"
           text, count = re.subn(r'versionCode\s+\d+', f'versionCode {version_code}', text, count=1)
           if count != 1:
               raise SystemExit('Could not set Android versionCode')
