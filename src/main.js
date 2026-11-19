@@ -163,6 +163,26 @@ if (!state.partyTreasuryGrant300CrClaimed) {
   state.partyTreasuryGrant300CrClaimed = true;
   localStorage.setItem(STORE_KEY, JSON.stringify(state));
 }
+// One-time additional ₹500 crore grant to the BPP party treasury.
+// This is independent of personal wealth and the earlier ₹300 crore grant.
+if (!state.partyTreasuryGrant500CrClaimed) {
+  if (!state.partyTreasury || typeof state.partyTreasury !== 'object') {
+    state.partyTreasury = { incomeTotal: 0, expenseTotal: 0, ledger: [] };
+  }
+  if (!Array.isArray(state.partyTreasury.ledger)) state.partyTreasury.ledger = [];
+  const additionalPartyGrant = 5000000000;
+  state.partyFunds = Math.max(0, Number(state.partyFunds) || 0) + additionalPartyGrant;
+  state.partyTreasury.incomeTotal = (Number(state.partyTreasury.incomeTotal) || 0) + additionalPartyGrant;
+  state.partyTreasury.ledger.unshift({
+    type: 'Income',
+    amount: additionalPartyGrant,
+    note: 'RAJNITI 2.2.0 one-time additional party treasury grant',
+    date: 'RAJNITI 2.2.0 grant'
+  });
+  state.partyTreasury.ledger = state.partyTreasury.ledger.slice(0, 60);
+  state.partyTreasuryGrant500CrClaimed = true;
+  localStorage.setItem(STORE_KEY, JSON.stringify(state));
+}
 if (!state.partyTreasury || typeof state.partyTreasury !== 'object') state.partyTreasury = { incomeTotal: 0, expenseTotal: 0, ledger: [] };
 if (!Array.isArray(state.partyTreasury.ledger)) state.partyTreasury.ledger = [];
 for (const key of ['incomeTotal','expenseTotal']) if (!Number.isFinite(Number(state.partyTreasury[key]))) state.partyTreasury[key] = 0;
@@ -2706,16 +2726,22 @@ function proposePartySlate(typeId = 'assembly') {
   const type = electionTypes.find(item => item.id === typeId);
   const members = (state.partyMemberRecords || []).filter(member => member && member.name && member.id !== 'founder');
   if (!members.length) return toast('Recruit party members before proposing candidates.');
-  const locations = Array.from(new Set(members.map(member => member.constituency || member.district || member.state || state.hometown || 'Unassigned constituency')));
   let added = 0;
   members.forEach((member, index) => {
     if (slate.some(item => item.memberId === member.id && item.scheduledAt === scheduledAt && item.typeId === typeId)) return;
-    const constituency = locations[index % locations.length];
+    const explicitConstituency = String(member.constituencyName || member.constituency || member.ward || '').trim();
     slate.push({
-      id: `slate-${Date.now()}-${typeId}-${index}`,
+      id: `slate-${Date.now()}-${typeId}-${index}-${String(member.id).replace(/[^a-zA-Z0-9_-]/g,'').slice(-12)}`,
       typeId, typeName: type?.name || schedule.label || 'Election',
       scheduledAt, memberId: member.id, candidateName: member.name,
-      role: member.role || 'Party Member', constituency,
+      role: member.role || 'Party Member',
+      stateName: member.state || member.stateName || state.stateName || '',
+      district: member.district || '',
+      constituency: explicitConstituency,
+      seatType: member.seatType || '',
+      age: Number(member.age) || '',
+      politicalHistory: member.politicalHistory || '',
+      manifesto: member.manifesto || '',
       status: 'Proposed', campaignManager: 'AI District Organisation',
       approvedBudget: 0, campaignSpent: 0, createdAt: dateText()
     });
@@ -2724,6 +2750,65 @@ function proposePartySlate(typeId = 'assembly') {
   saveState(); render();
   toast(`${added} candidate proposal(s) added for ${type?.name || schedule.label}.`);
 }
+function editPartySlateCandidate(id) {
+  const item = ensurePartySlate().find(entry => String(entry.id) === String(id));
+  if (!item || !['Proposed','Party Approved'].includes(item.status)) return toast('Only proposed or party-approved candidates can be edited.');
+  const fields = [
+    ['Candidate full name', item.candidateName || ''],
+    ['Election type (local / assembly / lok-sabha)', item.typeId || 'assembly'],
+    ['State', item.stateName || state.stateName || ''],
+    ['District', item.district || ''],
+    ['Constituency / Ward / Seat', item.constituency || ''],
+    ['Seat type (General / SC / ST / Not specified)', item.seatType || 'Not specified'],
+    ['Age', item.age || ''],
+    ['Political experience / history', item.politicalHistory || ''],
+    ['Candidate manifesto / priorities', item.manifesto || '']
+  ];
+  const values = fields.map(([label,value]) => prompt(label, String(value)));
+  if (values.some(value => value === null)) return;
+  const [name,typeId,stateName,district,constituency,seatType,age,history,manifesto] = values.map(value=>String(value).trim());
+  if (name.length < 2 || !['local','assembly','lok-sabha'].includes(typeId) || !stateName || !district || !constituency) {
+    return toast('Candidate not saved. Name, valid election type, state, district and constituency are required.');
+  }
+  if (age && (!Number.isFinite(Number(age)) || Number(age) < 18 || Number(age) > 100)) return toast('Enter a valid candidate age.');
+  item.candidateName=name; item.typeId=typeId;
+  item.typeName=electionTypes.find(type=>type.id===typeId)?.name || typeId;
+  item.stateName=stateName; item.district=district; item.constituency=constituency;
+  item.seatType=seatType; item.age=age ? Number(age) : '';
+  item.politicalHistory=history; item.manifesto=manifesto;
+  item.status='Proposed'; delete item.approvedAt; delete item.approvedBy;
+  item.updatedAt=dateText();
+  saveState(); render(); toast('Candidate details updated. Review and approve when ready.');
+}
+function partySlateConflict(item, slate) {
+  const key = value => String(value || '').trim().toLowerCase().replace(/\\s+/g,' ');
+  const itemIndex = slate.indexOf(item);
+  return slate.some((other, index) => other !== item &&
+    (other.status === 'Party Approved' || (other.status === 'Proposed' && index < itemIndex)) &&
+    other.typeId === item.typeId && Number(other.scheduledAt) === Number(item.scheduledAt) &&
+    key(other.stateName) === key(item.stateName) &&
+    key(other.constituency) === key(item.constituency));
+}
+function bulkApprovePartySlate() {
+  const slate=ensurePartySlate();
+  const pending=slate.filter(item=>item.status==='Proposed');
+  let approved=0, skipped=0;
+  pending.forEach(item=>{
+    const valid=String(item.candidateName||'').trim().length>=2 &&
+      ['local','assembly','lok-sabha'].includes(item.typeId) &&
+      String(item.stateName||'').trim() && String(item.district||'').trim() &&
+      String(item.constituency||'').trim();
+    if (!valid || partySlateConflict(item,slate)) { skipped++; return; }
+    item.status='Party Approved';
+    item.approvedAt=dateText();
+    item.approvedBy=state.playerName||'Party President';
+    item.approvalType='Internal BPP ticket approval';
+    approved++;
+  });
+  saveState(); render();
+  toast(`Bulk approval complete: ${approved} approved; ${skipped} incomplete or conflicting candidate(s) left pending.`);
+}
+
 function allocatePartyCandidateBudget(id) {
   const item = ensurePartySlate().find(entry => entry.id === id);
   if (!item || item.status !== 'Party Approved') return toast('Approve this candidate before allocating campaign funds.');
@@ -2746,9 +2831,12 @@ function decidePartySlate(id, decision) {
   const item = ensurePartySlate().find(entry => entry.id === id);
   if (!item || item.status !== 'Proposed') return toast('This candidate proposal is no longer awaiting review.');
   if (decision === 'approve') {
+    if (!item.stateName || !item.district || !item.constituency || !item.candidateName) return toast('Complete candidate name, state, district and constituency before approval.');
+    if (partySlateConflict(item, ensurePartySlate())) return toast('Another BPP candidate is already approved for this election seat.');
     item.status = 'Party Approved';
     item.approvedAt = dateText();
     item.approvedBy = state.playerName || 'Party President';
+    item.approvalType = 'Internal BPP ticket approval';
   } else {
     item.status = 'Rejected';
     item.rejectedAt = dateText();
@@ -2807,7 +2895,40 @@ function electionPage() {
       ${nominationHtml}
       <div class="section-heading-row"><div><h2>Party-wide candidate deployment</h2><p class="panel-description">Build separate candidate slates for local, Assembly and Lok Sabha cycles. Approvals are internal party decisions; campaign allocations are recorded separately from personal wealth.</p></div></div>
       <div class="creator-panel"><div class="creator-grid"><div class="creator-field"><label for="partySlateElectionType">Election cycle</label><select id="partySlateElectionType"><option value="local">Local body</option><option value="assembly" selected>State Assembly</option><option value="lok-sabha">Lok Sabha</option></select></div><div class="creator-field"><label>Party treasury available</label><input value="${escapeHtml(money(state.partyFunds || 0))}" readonly></div></div><button class="primary-btn" data-party-slate-generate>Generate member proposals</button></div>
-      ${(() => { const slate = ensurePartySlate(); return slate.length ? slate.slice().sort((a,b)=>Number(b.scheduledAt||0)-Number(a.scheduledAt||0)).map(item => `<div class="finance-history"><span><b>${escapeHtml(item.candidateName)}</b><br>${escapeHtml(item.constituency)} · ${escapeHtml(item.role)}<br><small>${escapeHtml(item.typeName)} · ${escapeHtml(item.status)} · Allocated ${money(item.approvedBudget || 0)}</small></span>${item.status === 'Proposed' ? `<div class="nomination-actions"><button class="secondary-btn" data-party-slate-action="approve" data-party-slate-id="${escapeHtml(item.id)}">Approve</button><button class="secondary-btn" data-party-slate-action="reject" data-party-slate-id="${escapeHtml(item.id)}">Reject</button></div>` : item.status === 'Party Approved' ? `<button class="secondary-btn" data-party-slate-fund="${escapeHtml(item.id)}">Allocate campaign budget</button>` : `<b>${escapeHtml(item.status)}</b>`}</div>`).join('') : '<p class="panel-description">No party-wide candidate proposals yet.</p>'; })()}
+      ${(() => {
+        const slate = ensurePartySlate();
+        const ordered = slate.slice().sort((a,b)=>Number(b.scheduledAt||0)-Number(a.scheduledAt||0));
+        const proposed = ordered.filter(item=>item.status==='Proposed').length;
+        const eligible = ordered.filter(item=>item.status==='Proposed' && item.candidateName && item.stateName && item.district && item.constituency && !partySlateConflict(item,ordered)).length;
+        return slate.length ? `
+          <div class="election-metrics">
+            <div><small>TOTAL CANDIDATES</small><b>${slate.length}</b></div>
+            <div><small>AWAITING REVIEW</small><b>${proposed}</b></div>
+            <div><small>READY FOR BULK APPROVAL</small><b>${eligible}</b></div>
+          </div>
+          <p class="panel-description">Review the full candidate register below. Candidates missing a constituency, district or state cannot be approved. Edit any record first. Bulk approval affects all eligible proposed candidates across the displayed slate; it does not allocate campaign funds or submit official nominations.</p>
+          <button class="primary-btn" data-party-slate-bulk-approve ${eligible===0?'disabled':''}>APPROVE ALL ELIGIBLE CANDIDATES (${eligible})</button>
+          <div class="creator-field" style="margin-top:12px"><label for="candidateRegisterSearch">Search candidate / constituency / district / state</label><input id="candidateRegisterSearch" type="search" placeholder="Search the full candidate register..."></div>
+          <div class="candidate-register-list" style="max-height:620px;overflow:auto">
+            ${ordered.map(item => {
+              const member=(state.partyMemberRecords||[]).find(person=>String(person.id)===String(item.memberId));
+              const complete=!!(item.candidateName&&item.stateName&&item.district&&item.constituency);
+              return `<article class="finance-history candidate-register-card" data-candidate-register-row="${escapeHtml([item.candidateName,item.typeName,item.stateName,item.district,item.constituency,item.role].join(' ').toLowerCase())}" style="display:block;padding:14px;margin:10px 0">
+                <div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap"><b>${escapeHtml(item.candidateName||'Unnamed candidate')}</b><b>${escapeHtml(item.status)}</b></div>
+                <div style="margin-top:6px"><b>${escapeHtml(item.typeName||item.typeId||'Election')}</b> · ${escapeHtml(item.stateName||'State missing')} · ${escapeHtml(item.district||'District missing')} · ${escapeHtml(item.constituency||'Constituency not assigned')}</div>
+                <small>Seat: ${escapeHtml(item.seatType||'Not specified')} · Age: ${escapeHtml(item.age||'Not provided')} · Party position: ${escapeHtml(item.role||member?.role||'Party member')} · Polling month: ${Number(item.scheduledAt||0)}</small>
+                <div><small>Political history: ${escapeHtml(item.politicalHistory||'Not provided')}</small></div>
+                <div><small>Manifesto: ${escapeHtml(item.manifesto||'Not provided')}</small></div>
+                <div><small>Campaign allocation: ${money(item.approvedBudget||0)} · ${complete?'Profile complete':'PROFILE INCOMPLETE'}</small></div>
+                <div class="nomination-actions" style="margin-top:8px">
+                  ${['Proposed','Party Approved'].includes(item.status)?`<button class="secondary-btn" data-party-slate-edit="${escapeHtml(item.id)}">Edit details</button>`:''}
+                  ${item.status==='Proposed'?`<button class="secondary-btn" data-party-slate-action="approve" data-party-slate-id="${escapeHtml(item.id)}" ${complete?'':'disabled'}>Approve</button><button class="secondary-btn" data-party-slate-action="reject" data-party-slate-id="${escapeHtml(item.id)}">Reject</button>`:''}
+                  ${item.status==='Party Approved'?`<button class="secondary-btn" data-party-slate-fund="${escapeHtml(item.id)}">Allocate campaign budget</button>`:''}
+                </div>
+              </article>`;
+            }).join('')}
+          </div>` : '<p class="panel-description">No party-wide candidate proposals yet.</p>';
+      })()}
     </section>
 
     ${active ? `
@@ -4285,6 +4406,13 @@ document.addEventListener('click', event => {
 
   const slateGenerateButton = event.target.closest('[data-party-slate-generate]');
   if (slateGenerateButton) { proposePartySlate(document.querySelector('#partySlateElectionType')?.value || 'assembly'); return; }
+  const slateBulkApproveButton = event.target.closest('[data-party-slate-bulk-approve]');
+  if (slateBulkApproveButton) {
+    if (confirm('Approve every complete, conflict-free proposed candidate in the BPP candidate register? No campaign funds will be allocated.')) bulkApprovePartySlate();
+    return;
+  }
+  const slateEditButton = event.target.closest('[data-party-slate-edit]');
+  if (slateEditButton) { editPartySlateCandidate(slateEditButton.dataset.partySlateEdit); return; }
   const slateFundButton = event.target.closest('[data-party-slate-fund]');
   if (slateFundButton) { allocatePartyCandidateBudget(slateFundButton.dataset.partySlateFund); return; }
   const slateActionButton = event.target.closest('[data-party-slate-action]');
@@ -4669,6 +4797,10 @@ document.addEventListener('change', event => {
 });
 
 document.addEventListener('input', event => {
+  if (event.target.id === 'candidateRegisterSearch') {
+    const query=event.target.value.trim().toLowerCase();
+    document.querySelectorAll('[data-candidate-register-row]').forEach(row=>{ row.style.display=row.dataset.candidateRegisterRow.includes(query)?'':'none'; });
+  }
   if (event.target.id === 'memberSearch') {
     const query = event.target.value.trim().toLowerCase();
     document.querySelectorAll('[data-member-row]').forEach(row => { row.style.display = row.dataset.memberRow.includes(query) ? '' : 'none'; });
