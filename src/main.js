@@ -83,6 +83,7 @@ const defaults = {
   totalExpenses: 0,
   completed: [],
   activityHistory: [],
+  reviewedNews: [],
   activeTab: 'Dashboard'
 };
 
@@ -98,6 +99,7 @@ function loadState() {
 let state = loadState();
 let activeTab = 'Dashboard';
 let partySection = 'Overview';
+if (!Array.isArray(state.reviewedNews)) state.reviewedNews = [];
 
 // Upgrade older saves without changing the existing party, wealth or career data.
 function migratePartyManagementSave() {
@@ -265,6 +267,7 @@ function icon(name) {
     Relationships: '♧',
     Finance: '₹',
     News: '▣',
+    Intelligence: '◈',
     Profile: '◉'
   };
   return icons[name] || '•';
@@ -307,7 +310,7 @@ function shell(content) {
   const nav = [
     'Dashboard', 'Career', 'Activities', 'Party',
     'Constituency', 'Elections', 'Government',
-    'Relationships', 'Finance', 'News', 'Profile'
+    'Relationships', 'Intelligence', 'Finance', 'News', 'Profile'
   ];
 
   return `
@@ -365,7 +368,7 @@ function shell(content) {
       </main>
 
       <nav class="mobile-nav">
-        ${['Dashboard', 'Career', 'Party', 'Constituency', 'Elections', 'Finance', 'Activities', 'Profile']
+        ${['Dashboard', 'Career', 'Party', 'Constituency', 'Elections', 'Intelligence', 'Finance', 'News', 'Activities', 'Profile']
           .map(name => `
             <button class="${activeTab === name ? 'active' : ''}"
               data-tab="${name}">
@@ -381,17 +384,23 @@ function shell(content) {
 /* DASHBOARD */
 
 function dashboard() {
+  const localities = state.constituency?.localities || [];
+  const averageSupport = localities.length
+    ? Math.round(localities.reduce((sum, item) => sum + Number(item.support || 0), 0) / localities.length)
+    : Number(state.publicSupport || 0);
+  const latestActivity = (state.activityHistory || []).slice(0, 3);
+
   return `
-    <div class="page-heading">
+    <div class="page-heading command-heading">
       <div>
-        <div class="eyebrow">YOUR POLITICAL JOURNEY</div>
-        <h1>Welcome, <em>${escapeHtml(state.playerName)}</em></h1>
-        <p>${dateText()}</p>
+        <div class="eyebrow">NATIONAL POLITICAL COMMAND CENTRE</div>
+        <h1>Good ${state.day < 15 ? 'day' : 'evening'}, <em>${escapeHtml(state.playerName)}</em></h1>
+        <p>${dateText()} · ${escapeHtml(state.stateName || 'India')} political desk</p>
       </div>
       <div class="date-card">
-        <span>SIMULATION DATE</span>
+        <span>SIMULATION CLOCK</span>
         <b>DAY ${state.day}</b>
-        <small>Year ${state.year}</small>
+        <small>${Math.max(0, 2 - state.actionsUsed)} daily actions remaining</small>
       </div>
     </div>
 
@@ -399,76 +408,189 @@ function dashboard() {
       <section class="panel character-alert">
         <h2>Create your politician</h2>
         <p>Start your journey by creating your political identity.</p>
-        <button class="primary-btn" data-action="create-character">
-          CREATE CHARACTER →
-        </button>
+        <button class="primary-btn" data-action="create-character">CREATE CHARACTER →</button>
       </section>
     ` : ''}
 
-    <section class="hero-panel">
-      <div class="hero-copy">
-        <span class="gold-tag">YOUR STORY STARTS HERE</span>
+    <section class="command-hero">
+      <div class="command-hero-copy">
+        <span class="gold-tag">YOUR POLITICAL BRIEFING</span>
         <h2>From the ground.<br><em>To the top.</em></h2>
-        <p>Build your reputation, earn public trust and shape the future of the nation.</p>
-        <button class="primary-btn" data-tab="Party">
-          EXPLORE POLITICAL PARTIES →
-        </button>
+        <p>Monitor your organisation, understand local sentiment and plan your next political move.</p>
+        <div class="command-hero-actions">
+          <button class="primary-btn" data-tab="Constituency">OPEN CONSTITUENCY →</button>
+          <button class="secondary-btn" data-action="end-day">ADVANCE ONE DAY</button>
+        </div>
       </div>
-      <div class="hero-art">
-        <div class="orbit orbit-one"></div>
-        <div class="orbit orbit-two"></div>
-        <div class="parliament">🏛</div>
+      <div class="command-hero-seal">
+        <div class="command-seal-ring">🇮🇳</div>
+        <span>INDIA · CAREER MODE</span>
       </div>
     </section>
 
-    <div class="section-heading">
-      <div>
-        <span class="eyebrow">POLITICAL OVERVIEW</span>
-        <h2>Your current standing</h2>
-      </div>
+    <div class="command-section-head">
+      <div><span class="eyebrow">LIVE POLITICAL INDICATORS</span><h2>Your current standing</h2></div>
+      <span class="command-live">● SIMULATION DATA</span>
     </div>
-
-    <div class="stats-grid">
-      ${statCard('PERSONAL WEALTH', money(state.money), 'Available funds', '₹')}
+    <div class="stats-grid command-stats">
+      ${statCard('PERSONAL WEALTH', money(state.money), 'Available personal funds', '₹')}
       ${statCard('REPUTATION', state.reputation + '/100', 'Public image', '✦')}
-      ${statCard('INFLUENCE', state.influence + '/100', 'Political reach', '♜')}
+      ${statCard('POLITICAL INFLUENCE', state.influence + '/100', 'Political reach', '♜')}
       ${statCard('PUBLIC SUPPORT', state.publicSupport + '%', 'Estimated support', '♥')}
     </div>
 
-    <div class="content-grid">
-      <section class="panel">
-        <span class="eyebrow">POLITICAL AFFILIATION</span>
+    <div class="command-main-grid">
+      <section class="panel command-panel">
+        <div class="command-section-head compact">
+          <div><span class="eyebrow">YOUR ORGANISATION</span><h2>Political headquarters</h2></div>
+          <span class="command-symbol">⚑</span>
+        </div>
         <h3>${escapeHtml(state.party)}</h3>
-        <p class="panel-description">${escapeHtml(state.partyPosition)}</p>
-        <button class="secondary-btn full" data-tab="Party">
-          MANAGE PARTY →
-        </button>
+        <p class="panel-description">${escapeHtml(state.partyPosition)} · ${Number(state.partyMembers || 1).toLocaleString('en-IN')} members</p>
+        <div class="command-progress-row"><span>Party popularity</span><b>${Number(state.partyPopularity || 0)}/100</b></div>
+        <div class="command-progress"><i style="width:${Math.max(0, Math.min(100, Number(state.partyPopularity || 0)))}%"></i></div>
+        <button class="secondary-btn full" data-tab="Party">OPEN PARTY HEADQUARTERS →</button>
       </section>
 
-      <section class="panel">
-        <span class="eyebrow">YOUR CAREER</span>
-        <h3>${escapeHtml(state.role)}</h3>
-        <p class="panel-description">Level ${state.level} · ${state.experience} XP</p>
-        <button class="secondary-btn full" data-tab="Career">
-          VIEW CAREER →
-        </button>
+      <section class="panel command-panel">
+        <div class="command-section-head compact">
+          <div><span class="eyebrow">GROUND NETWORK</span><h2>Constituency situation</h2></div>
+          <span class="command-symbol">⌖</span>
+        </div>
+        <h3>${escapeHtml(state.constituency?.constituencyName || 'Your constituency')}</h3>
+        <p class="panel-description">${escapeHtml(state.constituency?.district || 'District')}, ${escapeHtml(state.constituency?.state || state.stateName || 'India')}</p>
+        <div class="command-mini-metrics">
+          <div><b>${Number(state.constituency?.totalVoters || 0).toLocaleString('en-IN')}</b><small>Registered voters</small></div>
+          <div><b>${averageSupport}%</b><small>Locality support index</small></div>
+          <div><b>${localities.length}</b><small>Tracked localities</small></div>
+        </div>
+        <button class="secondary-btn full" data-tab="Constituency">MANAGE CONSTITUENCY →</button>
+      </section>
+
+      <section class="panel command-panel">
+        <div class="command-section-head compact">
+          <div><span class="eyebrow">POLITICAL INTELLIGENCE</span><h2>Situation analysis</h2></div>
+          <span class="command-symbol">◈</span>
+        </div>
+        <p class="panel-description">Review simulated polling, rival organisations and regional sentiment before your next move.</p>
+        <div class="command-alert-line"><span class="command-alert-dot"></span><span>Regional intelligence briefing available</span></div>
+        <button class="secondary-btn full" data-tab="Intelligence">OPEN INTELLIGENCE DESK →</button>
+      </section>
+
+      <section class="panel command-panel">
+        <div class="command-section-head compact">
+          <div><span class="eyebrow">NATIONAL NEWSROOM</span><h2>Political developments</h2></div>
+          <span class="command-symbol">▤</span>
+        </div>
+        <p class="panel-description">Follow fictional in-game developments, public issues and policy debates.</p>
+        <div class="command-alert-line"><span class="command-alert-dot gold"></span><span>Daily briefing ready to review</span></div>
+        <button class="secondary-btn full" data-tab="News">OPEN NEWSROOM →</button>
       </section>
     </div>
 
-    <section class="panel" style="margin-top:15px">
-      <span class="eyebrow">SIMULATION CALENDAR</span>
-      <h3>${dateText()}</h3>
-      <p class="panel-description">
-        Available actions: ${Math.max(0, 2 - state.actionsUsed)} / 2.
-        Each tap advances one in-game day. Monthly salary, business income,
-        fixed-deposit interest and living expenses are processed when a new month begins.
-      </p>
-      <button class="secondary-btn" data-action="end-day">
-        ADVANCE ONE DAY →
-      </button>
+    <div class="command-bottom-grid">
+      <section class="panel">
+        <div class="command-section-head compact">
+          <div><span class="eyebrow">CAREER TRACKER</span><h2>Your political journey</h2></div>
+        </div>
+        <h3>${escapeHtml(state.role)}</h3>
+        <p class="panel-description">Level ${state.level} · ${Number(state.experience || 0)} XP · Age ${state.age}</p>
+        <div class="command-progress"><i style="width:${Math.max(0, Math.min(100, Number(state.experience || 0) % 100))}%"></i></div>
+        <button class="secondary-btn full" data-tab="Career">VIEW CAREER PROGRESSION →</button>
+      </section>
+      <section class="panel">
+        <div class="command-section-head compact">
+          <div><span class="eyebrow">RECENT ACTIVITY</span><h2>Political log</h2></div>
+        </div>
+        ${latestActivity.length ? latestActivity.map(item => `
+          <div class="command-log-row"><span class="command-log-dot"></span><div><b>${escapeHtml(item.event || 'Political activity')}</b><small>${escapeHtml(item.date || 'Recorded activity')}</small></div></div>
+        `).join('') : '<p class="panel-description">Your political activity history will appear here as you progress.</p>'}
+        <button class="secondary-btn full" data-tab="Activities">VIEW ACTIVITY LOG →</button>
+      </section>
+    </div>
+
+    <section class="panel command-calendar">
+      <div><span class="eyebrow">SIMULATION CALENDAR</span><h2>${dateText()}</h2><p class="panel-description">Advance one day to refresh daily actions. Monthly income, business profits, fixed-deposit interest and expenses are processed at month change.</p></div>
+      <button class="primary-btn" data-action="end-day">ADVANCE ONE DAY →</button>
     </section>
   `;
 }
+
+let selectedIntelRegion = 'National';
+
+function intelligencePage() {
+  const regions = ['National', 'Karnataka', 'Kerala', 'Tamil Nadu', 'Maharashtra', 'Telangana', 'Delhi', 'Uttar Pradesh'];
+  const regionIndex = Math.max(0, regions.indexOf(selectedIntelRegion));
+  const playerSupport = Math.max(1, Math.min(85, Number(state.publicSupport || 8) + (regionIndex === 0 ? 0 : (regionIndex * 2 - 5))));
+  const rivalOne = Math.max(5, 34 - Math.floor(playerSupport / 5) + (regionIndex % 3));
+  const rivalTwo = Math.max(5, 27 + (regionIndex % 4) - Math.floor(playerSupport / 8));
+  const undecided = Math.max(3, 100 - playerSupport - rivalOne - rivalTwo);
+  const localities = state.constituency?.localities || [];
+  const trend = playerSupport >= 25 ? 'Positive momentum' : playerSupport >= 12 ? 'Building presence' : 'Early-stage presence';
+
+  return `
+    <div class="page-heading">
+      <div><div class="eyebrow">POLITICAL INTELLIGENCE BUREAU</div><h1>Intelligence <em>desk</em></h1><p>Study the simulated political landscape and plan your next move.</p></div>
+      <div class="date-card"><span>BRIEFING DATE</span><b>DAY ${state.day}</b><small>${dateText()}</small></div>
+    </div>
+    <section class="panel intelligence-disclaimer"><span class="gold-tag">GAME SIMULATION</span><b>All polling figures, rival organisations and regional indicators on this screen are fictional gameplay estimates.</b><small>They do not represent real political parties, election forecasts or public opinion data.</small></section>
+    <section class="panel intelligence-region-panel">
+      <div class="command-section-head"><div><span class="eyebrow">REGIONAL MONITOR</span><h2>Select an intelligence region</h2></div><span class="command-symbol">⌖</span></div>
+      <div class="intel-region-grid">
+        ${regions.map(region => `<button class="intel-region ${selectedIntelRegion === region ? 'selected' : ''}" data-intel-region="${region}">${region}</button>`).join('')}
+      </div>
+      <div class="intel-region-summary"><div><span class="eyebrow">CURRENT FOCUS</span><h2>${escapeHtml(selectedIntelRegion)}</h2><p class="panel-description">Regional political overview · ${dateText()}</p></div><div class="intel-trend"><b>${trend}</b><small>Player support index</small></div></div>
+    </section>
+    <div class="command-section-head"><div><span class="eyebrow">SIMULATED POLLING TRACKER</span><h2>Estimated support landscape</h2></div></div>
+    <section class="panel intel-poll-panel">
+      <div class="intel-poll-row"><div><b>Your movement</b><small>${escapeHtml(state.party || 'Independent')}</small></div><strong>${playerSupport}%</strong></div>
+      <div class="intel-poll-track"><i class="player" style="width:${playerSupport}%"></i></div>
+      <div class="intel-poll-row"><div><b>Rival organisation A</b><small>Fictional in-game competitor</small></div><strong>${rivalOne}%</strong></div>
+      <div class="intel-poll-track"><i class="rival-a" style="width:${rivalOne}%"></i></div>
+      <div class="intel-poll-row"><div><b>Rival organisation B</b><small>Fictional in-game competitor</small></div><strong>${rivalTwo}%</strong></div>
+      <div class="intel-poll-track"><i class="rival-b" style="width:${rivalTwo}%"></i></div>
+      <div class="intel-poll-row"><div><b>Undecided voters</b><small>Uncommitted simulation segment</small></div><strong>${undecided}%</strong></div>
+      <div class="intel-poll-track"><i class="undecided" style="width:${undecided}%"></i></div>
+      <small class="intel-footnote">Illustrative game values only. Percentages are normalised to 100%.</small>
+    </section>
+    <div class="command-section-head"><div><span class="eyebrow">LOCAL SENTIMENT</span><h2>Constituency intelligence</h2></div><button class="text-action" data-tab="Constituency">MANAGE LOCALITIES →</button></div>
+    <div class="intel-locality-grid">
+      ${localities.map(item => `
+        <article class="panel intel-locality-card"><span class="eyebrow">${escapeHtml(item.type || 'Locality')}</span><h3>${escapeHtml(item.name)}</h3><div class="intel-locality-stats"><div><b>${Number(item.support || 0)}%</b><small>Support index</small></div><div><b>${Number(item.influence || 0)}/100</b><small>Influence</small></div><div><b>${Number(item.voters || 0).toLocaleString('en-IN')}</b><small>Voters</small></div></div><p class="panel-description">Priority issue: ${escapeHtml(item.issue || 'Community development')}</p></article>
+      `).join('')}
+    </div>
+    <section class="panel intelligence-method"><span class="eyebrow">STRATEGIC NOTE</span><h3>Build your organisation before chasing headline numbers</h3><p class="panel-description">Use constituency outreach, issue surveys, volunteer mobilisation and party-building activities to improve your standing over time.</p><button class="primary-btn" data-tab="Activities">PLAN POLITICAL ACTIVITIES →</button></section>
+  `;
+}
+
+function newsPage() {
+  const stories = [
+    { category: 'PUBLIC SERVICES', title: 'Local infrastructure review announced', summary: 'Residents are discussing road maintenance, drinking water and public transport priorities across several localities.', impact: 'Community issues', tone: 'gold' },
+    { category: 'POLICY DEBATE', title: 'Youth employment becomes a major discussion', summary: 'A fictional policy debate is drawing attention to vocational training, entry-level jobs and small-business opportunities.', impact: 'Employment policy', tone: 'blue' },
+    { category: 'PARTY POLITICS', title: 'Organisations prepare for the next political cycle', summary: 'Local groups are reviewing membership, volunteer networks and their public communication strategy.', impact: 'Party organisation', tone: 'gold' },
+    { category: 'GOVERNANCE', title: 'Public budget priorities under discussion', summary: 'The in-game public debate focuses on balancing infrastructure, education, healthcare and municipal services.', impact: 'Public finance', tone: 'blue' }
+  ];
+  const reviewed = Array.isArray(state.reviewedNews) ? state.reviewedNews : [];
+
+  return `
+    <div class="page-heading"><div><div class="eyebrow">RAJNITI NEWS NETWORK</div><h1>Political <em>newsroom</em></h1><p>Follow the fictional events and policy debates shaping your political world.</p></div><div class="date-card"><span>DAILY EDITION</span><b>DAY ${state.day}</b><small>${dateText()}</small></div></div>
+    <section class="panel newsroom-banner"><div><span class="gold-tag">EDITORIAL BRIEFING</span><h2>Understand the issue. Shape the response.</h2><p class="panel-description">News stories are part of the offline simulation. Review developments and use them to guide your political priorities.</p></div><div class="newsroom-mark">▤</div></section>
+    <div class="newsroom-layout">
+      <div class="newsroom-stories">
+        ${stories.map((story, index) => `
+          <article class="panel newsroom-story">
+            <div class="news-story-top"><span class="news-category ${story.tone}">${story.category}</span><small>${dateText()}</small></div>
+            <h3>${story.title}</h3><p class="panel-description">${story.summary}</p>
+            <div class="news-story-bottom"><span>FOCUS: ${story.impact}</span><button class="news-review ${reviewed.includes(index) ? 'reviewed' : ''}" data-review-news="${index}">${reviewed.includes(index) ? '✓ REVIEWED' : 'MARK AS REVIEWED'}</button></div>
+          </article>
+        `).join('')}
+      </div>
+      <aside class="panel newsroom-sidebar"><span class="eyebrow">YOUR POLITICAL PROFILE</span><h3>${escapeHtml(state.role)}</h3><p class="panel-description">${escapeHtml(state.party)}</p><div class="party-stat-row"><span>Reputation</span><b>${state.reputation}/100</b></div><div class="party-stat-row"><span>Influence</span><b>${state.influence}/100</b></div><div class="party-stat-row"><span>Public support</span><b>${state.publicSupport}%</b></div><button class="secondary-btn full" data-tab="Intelligence">REVIEW INTELLIGENCE →</button><button class="secondary-btn full" data-tab="Government">GOVERNMENT DESK →</button></aside>
+    </div>
+    <section class="panel newsroom-note"><span class="eyebrow">OFFLINE WORLD</span><p class="panel-description">RAJNITI's newsroom uses fictional events generated for gameplay. No live political news or real-world party information is used.</p></section>
+  `;
+}
+
 
 /* PARTY SYSTEM */
 
@@ -2198,6 +2320,26 @@ function showElectionResult(result) {
   document.body.appendChild(overlay);
 }
 
+function governmentPage() {
+  const assemblyWins = (state.elections?.history || []).filter(item => item.result === 'Won' && String(item.typeName || '').toLowerCase().includes('assembly')).length;
+  const hasGovernmentMandate = assemblyWins > 0;
+  const cabinet = [
+    ['Chief Minister', hasGovernmentMandate ? state.playerName : 'Vacant'],
+    ['Finance Minister', hasGovernmentMandate ? 'Appointment pending' : 'Locked'],
+    ['Home Minister', hasGovernmentMandate ? 'Appointment pending' : 'Locked'],
+    ['Rural Development', hasGovernmentMandate ? 'Appointment pending' : 'Locked'],
+    ['Education', hasGovernmentMandate ? 'Appointment pending' : 'Locked'],
+    ['Health & Family Welfare', hasGovernmentMandate ? 'Appointment pending' : 'Locked']
+  ];
+  return `
+    <div class="page-heading"><div><div class="eyebrow">PUBLIC ADMINISTRATION</div><h1>Government <em>command</em></h1><p>Track your route from elected representative to state leadership.</p></div><div class="date-card"><span>GOVERNMENT STATUS</span><b>${hasGovernmentMandate ? 'MANDATE WON' : 'NOT FORMED'}</b><small>State administration</small></div></div>
+    <section class="panel government-hero"><span class="gold-tag">STATE GOVERNMENT</span><h2>${hasGovernmentMandate ? 'Your government mandate' : 'The path to government'}</h2><p class="panel-description">${hasGovernmentMandate ? 'You have recorded an Assembly election victory. Cabinet formation is the next stage of government management.' : 'Win a State Assembly election to unlock government formation, ministerial appointments, department budgets and public programmes.'}</p><div class="government-unlock-grid"><div><b>${assemblyWins}</b><small>Assembly victories</small></div><div><b>${hasGovernmentMandate ? 'Unlocked' : 'Locked'}</b><small>Cabinet formation</small></div><div><b>${hasGovernmentMandate ? 'Pending' : 'Locked'}</b><small>State budget</small></div></div><button class="primary-btn" data-tab="Elections">${hasGovernmentMandate ? 'REVIEW ELECTION RECORD →' : 'PREPARE FOR ELECTIONS →'}</button></section>
+    <div class="command-section-head"><div><span class="eyebrow">CABINET STRUCTURE</span><h2>Government portfolios</h2></div></div>
+    <div class="government-cabinet-grid">${cabinet.map(([role, holder]) => `<article class="panel government-portfolio"><span class="eyebrow">MINISTRY PORTFOLIO</span><h3>${role}</h3><b class="${holder === 'Locked' ? 'government-locked' : ''}">${escapeHtml(holder)}</b><small>${hasGovernmentMandate ? 'Portfolio setup available in a future government expansion.' : 'Unlock by winning a State Assembly election.'}</small></article>`).join('')}</div>
+    <section class="panel government-note"><span class="eyebrow">ADMINISTRATION TRACKER</span><h3>What becomes available after forming a government?</h3><ul><li>Appoint ministers and assign portfolios.</li><li>Prepare a state budget and allocate department funds.</li><li>Launch education, healthcare and infrastructure schemes.</li><li>Monitor delivery, public satisfaction and government approval.</li></ul></section>
+  `;
+}
+
 function genericPage(name) {
   const descriptions = {
     Constituency: 'Understand your local community and constituency.',
@@ -2263,6 +2405,15 @@ function render() {
     case 'Finance':
       content = financePage();
       break;
+    case 'Intelligence':
+      content = intelligencePage();
+      break;
+    case 'News':
+      content = newsPage();
+      break;
+    case 'Government':
+      content = governmentPage();
+      break;
     default:
       content = genericPage(activeTab);
   }
@@ -2273,6 +2424,24 @@ function render() {
 /* EVENT HANDLERS */
 
 document.addEventListener('click', event => {
+  const regionButton = event.target.closest('[data-intel-region]');
+  if (regionButton) {
+    selectedIntelRegion = regionButton.dataset.intelRegion;
+    render();
+    return;
+  }
+
+  const reviewButton = event.target.closest('[data-review-news]');
+  if (reviewButton) {
+    const index = Number(reviewButton.dataset.reviewNews);
+    if (!Array.isArray(state.reviewedNews)) state.reviewedNews = [];
+    if (!state.reviewedNews.includes(index)) state.reviewedNews.push(index);
+    saveState();
+    render();
+    toast('News briefing marked as reviewed.');
+    return;
+  }
+
   const tab = event.target.closest('[data-tab]');
 
   if (tab) {
