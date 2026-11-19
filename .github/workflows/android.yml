@@ -6,14 +6,19 @@ on:
       - main
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   build:
-    name: Build RAJNITI APK
+    name: Build signed RAJNITI APK
     runs-on: ubuntu-latest
-
     env:
       ANDROID_HOME: /usr/local/lib/android/sdk
       ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
+      RAJNITI_KEYSTORE_PASSWORD: ${{ secrets.RAJNITI_KEYSTORE_PASSWORD }}
+      RAJNITI_KEY_ALIAS: rajniti-release
+      RAJNITI_KEY_PASSWORD: ${{ secrets.RAJNITI_KEYSTORE_PASSWORD }}
 
     steps:
       - name: Checkout repository
@@ -30,18 +35,25 @@ jobs:
           distribution: temurin
           java-version: 17
 
+      - name: Validate signing secret
+        env:
+          KEYSTORE_BASE64: ${{ secrets.RAJNITI_KEYSTORE_BASE64 }}
+        shell: bash
+        run: |
+          if [ -z "$RAJNITI_KEYSTORE_PASSWORD" ] || [ -z "$KEYSTORE_BASE64" ]; then
+            echo "Missing GitHub Actions secrets. Add RAJNITI_KEYSTORE_BASE64 and RAJNITI_KEYSTORE_PASSWORD before building."
+            exit 1
+          fi
+
       - name: Install Android SDK packages
         shell: bash
         run: |
           SDKMANAGER=$(find "$ANDROID_HOME/cmdline-tools" -type f -name sdkmanager | head -n 1)
-
           if [ -z "$SDKMANAGER" ]; then
             echo "Android SDK manager not found"
             exit 1
           fi
-
           yes | "$SDKMANAGER" --licenses || true
-
           "$SDKMANAGER" --install \
             "platform-tools" \
             "platforms;android-34" \
@@ -59,15 +71,56 @@ jobs:
       - name: Sync Android project
         run: npx cap sync android
 
-      - name: Build debug APK
+      - name: Configure permanent release signing
+        env:
+          KEYSTORE_BASE64: ${{ secrets.RAJNITI_KEYSTORE_BASE64 }}
+          RUN_NUMBER: ${{ github.run_number }}
+        shell: bash
+        run: |
+          mkdir -p android/app/keystore
+          echo "$KEYSTORE_BASE64" | base64 --decode > android/app/keystore/rajniti-release.jks
+          chmod 600 android/app/keystore/rajniti-release.jks
+          python3 - <<'PY'
+          import os, re
+          path = 'android/app/build.gradle'
+          text = open(path, encoding='utf-8').read()
+          run_number = int(os.environ['RUN_NUMBER'])
+          version_code = 1000 + run_number
+          version_name = f"1.0.5.{run_number}"
+          text, count = re.subn(r'versionCode\s+\d+', f'versionCode {version_code}', text, count=1)
+          if count != 1:
+              raise SystemExit('Could not set Android versionCode')
+          text, count = re.subn(r'versionName\s+"[^"]+"', f'versionName "{version_name}"', text, count=1)
+          if count != 1:
+              raise SystemExit('Could not set Android versionName')
+          if 'signingConfigs {' not in text:
+              signing = """    signingConfigs {
+                  release {
+                      storeFile file("keystore/rajniti-release.jks")
+                      storePassword System.getenv("RAJNITI_KEYSTORE_PASSWORD")
+                      keyAlias System.getenv("RAJNITI_KEY_ALIAS")
+                      keyPassword System.getenv("RAJNITI_KEY_PASSWORD")
+                  }
+              }
+          """
+              text = text.replace('    buildTypes {', signing + '    buildTypes {', 1)
+          if 'signingConfig signingConfigs.release' not in text:
+              text = re.sub(r'(buildTypes\s*\{\s*release\s*\{)', r'\1\n            signingConfig signingConfigs.release', text, count=1)
+          if 'signingConfig signingConfigs.release' not in text:
+              raise SystemExit('Could not attach release signing configuration')
+          open(path, 'w', encoding='utf-8').write(text)
+          PY
+
+      - name: Build signed release APK
         working-directory: android
         run: |
           chmod +x gradlew
-          ./gradlew assembleDebug
+          ./gradlew assembleRelease
 
-      - name: Upload APK
+      - name: Upload signed APK
         uses: actions/upload-artifact@v4
         with:
-          name: RAJNITI-Android-APK
-          path: android/app/build/outputs/apk/debug/app-debug.apk
+          name: RAJNITI-Signed-Android-APK
+          path: android/app/build/outputs/apk/release/app-release.apk
           if-no-files-found: error
+          retention-days: 30
