@@ -234,6 +234,39 @@ if (!Array.isArray(state.media.history)) state.media.history = [];
 
 
 // Upgrade older saves without changing the existing party, wealth or career data.
+const fictionalIndianPartyNames = [
+  'Aarav Sharma','Vivaan Patel','Aditya Rao','Arjun Nair','Ishaan Verma','Rohan Shetty','Karthik Reddy','Nikhil Desai','Rahul Menon','Sanjay Kulkarni',
+  'Ananya Rao','Meera Nair','Kavya Sharma','Priya Iyer','Aditi Joshi','Sneha Patil','Divya Shetty','Pooja Menon','Nandini Gowda','Lakshmi Reddy',
+  'Vikram Shetty','Manoj Kumar','Suresh Naidu','Deepak Yadav','Harish Bhat','Prakash Hegde','Mohan Das','Ajay Singh','Varun Mehta','Girish Rao',
+  'Kiran Gowda','Shweta Kulkarni','Neha Kapoor','Pallavi Desai','Swathi Reddy','Anil Kumar','Ramesh Bhat','Naveen Shetty','Siddharth Jain','Farhan Khan'
+];
+function fictionalPartyMemberName(index) {
+  const base = fictionalIndianPartyNames[index % fictionalIndianPartyNames.length];
+  const cycle = Math.floor(index / fictionalIndianPartyNames.length);
+  return cycle ? `${base} ${cycle + 1}` : base;
+}
+function isGeneratedPlaceholderName(name) {
+  return /^(Party Member|New Party Member)\s+\d+$/i.test(String(name || '').trim());
+}
+function assignPartyElectionSeats(typeId, members, scheduledAt) {
+  const stateName = String(state.stateName || members.find(member => member.state || member.stateName)?.state || members.find(member => member.stateName)?.stateName || '').trim();
+  const districtMap = districtDirectory?.districtCodes?.[stateName] || {};
+  const districts = Object.keys(districtMap);
+  const fallbackDistrict = String(state.constituency?.district || state.hometown || 'State-wide').trim();
+  const pool = districts.length ? districts : [fallbackDistrict];
+  return members.map((member, index) => {
+    const district = pool[index % pool.length];
+    const seatNumber = Math.floor(index / pool.length) + 1;
+    return {
+      stateName,
+      district,
+      constituency: `${district} Constituency ${String(seatNumber).padStart(2,'0')}`,
+      constituencyAssignment: 'AI-assigned simulated seat · automatically distributed',
+      seatType: member.seatType || 'Not specified'
+    };
+  });
+}
+
 function migratePartyManagementSave() {
   if (!Array.isArray(state.partyMemberRecords)) state.partyMemberRecords = [];
   if (!state.partyLeadership || typeof state.partyLeadership !== 'object') state.partyLeadership = {};
@@ -252,8 +285,10 @@ function migratePartyManagementSave() {
     state.partyLeadership['Founder & National President'] = 'founder';
     saveState();
   }
-  state.partyMemberRecords.forEach(member => {
+  state.partyMemberRecords.forEach((member,index) => {
     if (!Number.isFinite(Number(member.campaignFunds))) member.campaignFunds = member.isFounder ? 0 : 50000000;
+    if (isGeneratedPlaceholderName(member.name)) member.name = fictionalPartyMemberName(Math.max(0,index-1));
+    if (!member.role) member.role = 'General Member';
   });
 }
 
@@ -2161,7 +2196,7 @@ function recruitMembers() {
 
   for (let i = 1; i <= 25; i++) {
     const number = state.partyMemberRecords.length + 1;
-    state.partyMemberRecords.push({ id: 'member-' + Date.now() + '-' + i, name: 'New Party Member ' + String(number).padStart(3, '0'), role: 'General Member', loyalty: 50 + (i % 30), experience: i % 10, joined: dateText(), isFounder: false, campaignFunds: 50000000 });
+    state.partyMemberRecords.push({ id: 'member-' + Date.now() + '-' + i, name: fictionalPartyMemberName(number - 1), role: 'General Member', loyalty: 50 + (i % 30), experience: i % 10, joined: dateText(), isFounder: false, campaignFunds: 50000000 });
   }
   state.partyMembers = state.partyMemberRecords.length;
   state.partyPopularity = Math.min(100, state.partyPopularity + 3);
@@ -2787,36 +2822,52 @@ function proposePartySlate(typeId = 'assembly') {
   const type = electionTypes.find(item => item.id === typeId);
   const members = (state.partyMemberRecords || []).filter(member => member && member.name && member.id !== 'founder');
   if (!members.length) return toast('Recruit party members before proposing candidates.');
-  let added = 0;
-  members.forEach((member, index) => {
-    if (slate.some(item => item.memberId === member.id && item.scheduledAt === scheduledAt && item.typeId === typeId)) return;
-    const explicitConstituency = String(member.constituencyName || member.constituency || member.ward || '').trim();
-    const stateName = String(member.state || member.stateName || state.stateName || '').trim();
-    const districtMap = districtDirectory?.districtCodes?.[stateName] || null;
-    const districtNames = districtMap ? Object.keys(districtMap) : [];
-    const assignedDistrict = String(member.district || (districtNames.length ? districtNames[(index - 1) % districtNames.length] : state.constituency?.district || '')).trim();
-    const assignedConstituency = explicitConstituency || (assignedDistrict ? `AI-suggested seat ${String(index).padStart(2,'0')} · ${assignedDistrict}` : '');
+  members.forEach((member,index) => {
+    if (isGeneratedPlaceholderName(member.name)) member.name = fictionalPartyMemberName(index);
+  });
+  const assignments = assignPartyElectionSeats(typeId,members,scheduledAt);
+  let added = 0, refreshed = 0;
+  members.forEach((member,index) => {
+    let existing = slate.find(item => item.memberId === member.id && Number(item.scheduledAt) === scheduledAt && item.typeId === typeId);
+    const seat = assignments[index];
+    if (existing) {
+      if (existing.status === 'Proposed') {
+        existing.candidateName = member.name;
+        existing.role = Object.entries(state.partyLeadership || {}).find(([,memberId]) => String(memberId) === String(member.id))?.[0] || member.role || 'General Member';
+        existing.partyName = state.party || 'Bharat Pragati Party';
+        existing.stateName = seat.stateName;
+        existing.district = seat.district;
+        existing.constituency = seat.constituency;
+        existing.constituencyAssignment = seat.constituencyAssignment;
+        existing.updatedAt = dateText();
+        refreshed++;
+      }
+      return;
+    }
     slate.push({
       id: `slate-${Date.now()}-${typeId}-${index}-${String(member.id).replace(/[^a-zA-Z0-9_-]/g,'').slice(-12)}`,
       typeId, typeName: type?.name || schedule.label || 'Election',
       scheduledAt, memberId: member.id, candidateName: member.name,
-      role: member.role || 'Party Member',
-      stateName,
-      district: assignedDistrict,
-      constituency: assignedConstituency,
-      constituencyAssignment: explicitConstituency ? 'Member profile' : 'AI suggestion — confirm or edit before approval',
-      seatType: member.seatType || '',
+      role: member.role || 'General Member',
+      partyName: state.party || 'Bharat Pragati Party',
+      stateName: seat.stateName,
+      district: seat.district,
+      constituency: seat.constituency,
+      constituencyAssignment: seat.constituencyAssignment,
+      seatType: seat.seatType,
       age: Number(member.age) || '',
       politicalHistory: member.politicalHistory || '',
       manifesto: member.manifesto || '',
-      status: 'Proposed', campaignManager: 'AI District Organisation',
+      status: 'Proposed', campaignManager: 'AI Party Organisation',
       approvedBudget: 0, campaignSpent: 0, createdAt: dateText()
     });
     added++;
   });
+  state.partyMembers = state.partyMemberRecords.length;
   saveState(); render();
-  toast(`${added} candidate proposal(s) added for ${type?.name || schedule.label}.`);
+  toast(`${added} candidate(s) added and ${refreshed} pending assignment(s) refreshed for ${type?.name || schedule.label}.`);
 }
+
 function editPartySlateCandidate(id) {
   const item = ensurePartySlate().find(entry => String(entry.id) === String(id));
   if (!item || !['Proposed','Party Approved'].includes(item.status)) return toast('Only proposed or party-approved candidates can be edited.');
@@ -2961,14 +3012,14 @@ function electionPage() {
       ${electionScheduleHtml}
       <p class="panel-description">The calendar is authoritative: prepare in advance, nominations open four months before polling, official campaigning opens two months before polling, and results are declared only after all counting rounds.</p>
       <h2>AI candidate nomination review</h2>
-      <p class="panel-description">This queue covers scheduled nomination recommendations. Party-wide candidate deployment below is where you review constituency assignments, edit member profiles and approve the party ticket. Neither approval action files an official nomination.</p>
+      <p class="panel-description">This queue covers scheduled nomination recommendations. Party-wide candidate deployment below is where you approve or reject the automatically assigned party tickets. Neither approval action files an official nomination.</p>
       <div class="election-metrics">
         <div><small>PENDING REVIEW</small><b>${pendingNominations.length}</b></div>
         <div><small>APPROVED BY YOU</small><b>${electionCalendar.nominationQueue.filter(item => item.status === 'Approved').length}</b></div>
         <div><small>REJECTED</small><b>${electionCalendar.nominationQueue.filter(item => item.status === 'Rejected').length}</b></div>
       </div>
       ${nominationHtml}
-      <div class="section-heading-row"><div><h2>Party-wide candidate deployment</h2><p class="panel-description">AI proposes a district and a clearly labelled suggested seat for each member. The district comes from the state district directory; the suggested seat is a planning placeholder, not a verified Assembly constituency. Edit it to the correct constituency before approval. Campaign funding is split 50/50 between party treasury and the candidate's own reserve.</p></div></div>
+      <div class="section-heading-row"><div><h2>Party-wide candidate deployment</h2><p class="panel-description">Choose the election and generate candidates. The game automatically distributes party members across different simulated constituencies and shows each person's name, party and role. You only need to approve or reject. Campaign funding is split 50/50 between party treasury and candidate reserve.</p></div></div>
       <div class="creator-panel"><div class="creator-grid"><div class="creator-field"><label for="partySlateElectionType">Election cycle</label><select id="partySlateElectionType"><option value="local">Local body</option><option value="assembly" selected>State Assembly</option><option value="lok-sabha">Lok Sabha</option></select></div><div class="creator-field"><label>Party treasury available</label><input value="${escapeHtml(money(state.partyFunds || 0))}" readonly></div></div><button class="primary-btn" data-party-slate-generate>Generate member proposals</button></div>
       ${(() => {
         const slate = ensurePartySlate();
@@ -2981,24 +3032,22 @@ function electionPage() {
             <div><small>AWAITING REVIEW</small><b>${proposed}</b></div>
             <div><small>READY FOR BULK APPROVAL</small><b>${eligible}</b></div>
           </div>
-          <p class="panel-description">Review the full candidate register below. AI-suggested seat labels are placeholders: replace them with the correct real constituency before approval. Incomplete or conflicting records stay pending. Bulk approval does not allocate campaign funds or submit official nominations.</p>
+          <p class="panel-description">Review the short candidate list. Each member is assigned a different simulated seat where possible. Approving a ticket does not allocate campaign funds or submit official nominations.</p>
           <button class="primary-btn" data-party-slate-bulk-approve ${eligible===0?'disabled':''}>APPROVE ALL ELIGIBLE CANDIDATES (${eligible})</button>
           <div class="creator-field" style="margin-top:12px"><label for="candidateRegisterSearch">Search candidate / constituency / district / state</label><input id="candidateRegisterSearch" type="search" placeholder="Search the full candidate register..."></div>
           <div class="candidate-register-list" style="max-height:620px;overflow:auto">
             ${ordered.map(item => {
               const member=(state.partyMemberRecords||[]).find(person=>String(person.id)===String(item.memberId));
               const complete=!!(item.candidateName&&item.stateName&&item.district&&item.constituency);
-              return `<article class="finance-history candidate-register-card" data-candidate-register-row="${escapeHtml([item.candidateName,item.typeName,item.stateName,item.district,item.constituency,item.role].join(' ').toLowerCase())}" style="display:block;padding:14px;margin:10px 0">
-                <div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap"><b>${escapeHtml(item.candidateName||'Unnamed candidate')}</b><b>${escapeHtml(item.status)}</b></div>
-                <div style="margin-top:6px"><b>${escapeHtml(item.typeName||item.typeId||'Election')}</b> · ${escapeHtml(item.stateName||'State missing')} · ${escapeHtml(item.district||'District missing')} · ${escapeHtml(item.constituency||'Constituency not assigned')}</div>
-                <small>Seat: ${escapeHtml(item.seatType||'Not specified')} · Age: ${escapeHtml(item.age||'Not provided')} · Party position: ${escapeHtml(item.role||member?.role||'Party member')} · Polling month: ${Number(item.scheduledAt||0)}</small>
-                <div><small>Political history: ${escapeHtml(item.politicalHistory||'Not provided')}</small></div>
-                <div><small>Manifesto: ${escapeHtml(item.manifesto||'Not provided')}</small></div>
-                <div><small>Campaign total: ${money(item.approvedBudget||0)} · Party share: ${money(item.partyContribution||0)} · Candidate share: ${money(item.candidateContribution||0)}</small></div><div><small>Candidate reserve remaining: ${money(member?.campaignFunds||0)}</small></div><div><small>${escapeHtml(item.constituencyAssignment||'Constituency assignment requires review')}</small></div><div><small>${complete?'Profile complete':'PROFILE INCOMPLETE'}</small></div>
-                <div class="nomination-actions" style="margin-top:8px">
-                  ${['Proposed','Party Approved'].includes(item.status)?`<button class="secondary-btn" data-party-slate-edit="${escapeHtml(item.id)}">Edit details</button>`:''}
+              const partyName = item.partyName || state.party || 'Bharat Pragati Party';
+              return `<article class="finance-history candidate-register-card candidate-simple-card" data-candidate-register-row="${escapeHtml([item.candidateName,partyName,item.role,item.typeName,item.stateName,item.district,item.constituency].join(' ').toLowerCase())}" style="display:block;padding:13px;margin:9px 0">
+                <div class="candidate-simple-top"><b>${escapeHtml(item.candidateName||'Unnamed candidate')}</b><span class="candidate-status">${escapeHtml(item.status)}</span></div>
+                <div class="candidate-simple-party">${escapeHtml(partyName)} · ${escapeHtml(item.role||member?.role||'General Member')}</div>
+                <div class="candidate-simple-seat">${escapeHtml(item.typeName||item.typeId||'Election')} · ${escapeHtml(item.district||'District pending')} · ${escapeHtml(item.constituency||'Seat pending')}</div>
+                <div class="candidate-simple-actions">
                   ${item.status==='Proposed'?`<button class="secondary-btn" data-party-slate-action="approve" data-party-slate-id="${escapeHtml(item.id)}" ${complete?'':'disabled'}>Approve</button><button class="secondary-btn" data-party-slate-action="reject" data-party-slate-id="${escapeHtml(item.id)}">Reject</button>`:''}
-                  ${item.status==='Party Approved'?`<button class="secondary-btn" data-party-slate-fund="${escapeHtml(item.id)}">Fund 50/50 campaign</button>`:''}${['Elected','Not Elected'].includes(item.status)?`<span class="current-label">${escapeHtml(item.status)}</span>`:''}
+                  ${item.status==='Party Approved'?`<button class="secondary-btn" data-party-slate-fund="${escapeHtml(item.id)}">Fund campaign 50/50</button>`:''}
+                  ${['Elected','Not Elected'].includes(item.status)?`<span class="current-label">${escapeHtml(item.status)}</span>`:''}
                 </div>
               </article>`;
             }).join('')}
