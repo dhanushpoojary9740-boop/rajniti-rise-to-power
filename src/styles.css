@@ -1758,3 +1758,46 @@ button {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 }
+
+
+/* RAJNITI 1.1.3 — CONSTITUENCY INTELLIGENCE */
+.ci-overview{display:flex;justify-content:space-between;align-items:center;gap:20px;margin-bottom:14px;background:linear-gradient(115deg,rgba(190,151,82,.13),rgba(255,255,255,.018))}
+.ci-overview h2{font-size:23px;margin:10px 0 5px}
+.ci-overview p,.ci-footnote,.ci-disclaimer{color:var(--muted,#91a0b4);font-size:10px;line-height:1.6}
+.ci-overview-score{min-width:150px;padding:14px 18px;border:1px solid var(--border,#29374c);border-radius:10px;background:rgba(0,0,0,.12);display:grid;gap:4px}
+.ci-overview-score small,.ci-demographic-grid small,.ci-seat-grid small{font-size:8px;letter-spacing:1px;color:var(--muted,#91a0b4)}
+.ci-overview-score strong{font-size:30px;color:#e5c47e}
+.ci-overview-score strong i{font-size:12px;font-style:normal;color:var(--muted,#91a0b4)}
+.ci-overview-score span{font-size:8px;color:var(--muted,#91a0b4)}
+.ci-top-stats{margin-bottom:14px}
+.ci-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;align-items:start}
+.ci-grid>.panel{min-width:0}
+.ci-demographic-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:14px}
+.ci-demographic-grid>div,.ci-seat-grid>div{padding:11px;border:1px solid var(--border,#29374c);border-radius:8px;background:rgba(255,255,255,.02);display:grid;gap:5px}
+.ci-demographic-grid b{font-size:16px}
+.ci-demographic-grid span{font-size:9px;color:#d6b46b}
+.ci-bar-row{margin-top:15px}
+.ci-bar-row>div{display:flex;justify-content:space-between;gap:8px;font-size:10px;margin-bottom:6px}
+.ci-bar-row b{color:#e4c47f}
+.ci-bar-row>i{height:7px;display:block;background:#253247;border-radius:8px;overflow:hidden}
+.ci-bar-row em{height:100%;display:block;border-radius:8px;background:linear-gradient(90deg,#98733e,#e4c47f)}
+.ci-bar-row em.blue{background:linear-gradient(90deg,#385c83,#80b5e5)}
+.ci-bar-row em.green{background:linear-gradient(90deg,#34745e,#7bc8a2)}
+.ci-footnote{margin-top:12px}
+.ci-priority{display:flex;align-items:center;gap:11px;padding:10px 0;border-bottom:1px solid var(--border,#29374c)}
+.ci-priority:last-of-type{border-bottom:0}
+.ci-priority-rank{font-size:12px;color:#d6b46b;font-weight:800}
+.ci-priority div{display:grid;gap:3px}
+.ci-priority b{font-size:11px}
+.ci-priority small{font-size:8px;color:var(--muted,#91a0b4)}
+.ci-seat-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin:12px 0}
+.ci-seat-grid b{font-size:20px}
+.ci-history-row{display:flex;justify-content:space-between;gap:10px;padding:9px 0;border-bottom:1px solid var(--border,#29374c);font-size:10px}
+.ci-history-row b{color:#d9b66d}
+.ci-compare-head,.ci-compare-row{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;align-items:center;padding:10px 0;border-bottom:1px solid var(--border,#29374c);font-size:9px}
+.ci-compare-head{color:#d9b66d;font-size:8px;letter-spacing:.7px}
+.ci-compare-head b:not(:first-child),.ci-compare-row b{text-align:right;overflow-wrap:anywhere}
+.ci-compare-row span{color:var(--muted,#91a0b4)}
+.ci-disclaimer{margin:12px 2px 0}
+@media(max-width:760px){.ci-grid{grid-template-columns:1fr}.ci-overview{align-items:flex-start;flex-direction:column}.ci-overview-score{width:100%}}
+@media screen and (orientation:landscape) and (min-width:600px){.ci-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.ci-demographic-grid{grid-template-columns:repeat(3,minmax(0,1fr))}}

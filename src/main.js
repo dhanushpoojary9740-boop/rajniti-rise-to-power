@@ -271,6 +271,7 @@ function icon(name) {
     News: '▣',
     Intelligence: '◈',
     'India Map': '⌖',
+    'Constituency Intel': '▦',
     Profile: '◉'
   };
   return icons[name] || '•';
@@ -312,7 +313,7 @@ function statCard(label, value, sub, symbol) {
 function shell(content) {
   const nav = [
     'Dashboard', 'Career', 'Activities', 'Party',
-    'Constituency', 'India Map', 'Elections', 'Government',
+    'Constituency', 'Constituency Intel', 'India Map', 'Elections', 'Government',
     'Relationships', 'Intelligence', 'Finance', 'News', 'Profile'
   ];
 
@@ -371,7 +372,7 @@ function shell(content) {
       </main>
 
       <nav class="mobile-nav">
-        ${['Dashboard', 'Career', 'Party', 'Constituency', 'India Map', 'Elections', 'Intelligence', 'Finance', 'News', 'Activities', 'Profile']
+        ${['Dashboard', 'Career', 'Party', 'Constituency', 'Constituency Intel', 'India Map', 'Elections', 'Intelligence', 'Finance', 'News', 'Activities', 'Profile']
           .map(name => `
             <button class="${activeTab === name ? 'active' : ''}"
               data-tab="${name}">
@@ -2533,6 +2534,111 @@ function indiaMapPage() {
 }
 
 
+
+/* RAJNITI 1.1.3 — CONSTITUENCY INTELLIGENCE */
+function constituencyIntelligencePage() {
+  const c = state.constituency || {};
+  const areas = Array.isArray(c.localities) ? c.localities : [];
+  const voters = Math.max(0, Number(c.totalVoters || areas.reduce((n, a) => n + Number(a.voters || 0), 0)));
+  const support = areas.length
+    ? Math.round(areas.reduce((n, a) => n + Number(a.support || 0), 0) / areas.length)
+    : Math.max(0, Number(state.publicSupport || 0));
+  const influence = areas.length
+    ? Math.round(areas.reduce((n, a) => n + Number(a.influence || 0), 0) / areas.length)
+    : Math.max(0, Number(state.influence || 0));
+  const development = Math.max(10, Math.min(100, Math.round(
+    42 + (Number(c.projects?.length || 0) * 7) + (Number(c.resolvedIssues?.length || 0) * 5)
+    + (areas.length ? areas.reduce((n, a) => n + (Number(a.support || 0) * 0.7), 0) / areas.length : 0)
+  )));
+  const male = Math.round(voters * 0.515);
+  const female = Math.max(0, voters - male);
+  const youth = Math.round(voters * 0.235);
+  const middle = Math.round(voters * 0.485);
+  const senior = Math.max(0, voters - youth - middle);
+  const rival = Math.max(5, Math.min(95, 58 - Math.round(support * .7) + (state.partyCreated ? 5 : 0)));
+  const playerStrength = Math.max(0, Math.min(100, Math.round(support * .65 + influence * .35)));
+  const seatWon = (state.elections?.history || []).filter(x => x.result === 'Won' || x.won === true).length;
+  const seatLost = (state.elections?.history || []).filter(x => x.result === 'Lost' || x.won === false).length;
+  const history = Array.isArray(state.elections?.history) ? state.elections.history.slice(-5).reverse() : [];
+  const issues = areas.map(a => a.issue).filter(Boolean);
+  const issueCounts = [...new Set(issues)].map(issue => ({ issue, count: issues.filter(x => x === issue).length }));
+  const priorities = issueCounts.length ? issueCounts : [
+    { issue: 'Roads and public transport', count: 3 },
+    { issue: 'Drinking water and sanitation', count: 2 },
+    { issue: 'Jobs and local livelihoods', count: 2 }
+  ];
+  const comparison = [
+    { name: c.constituencyName || 'Your constituency', voters, support, influence, development, player: playerStrength },
+    { name: 'Regional comparison profile', voters: Math.round(voters * 1.12), support: Math.max(10, support - 4), influence: Math.max(8, influence - 3), development: Math.max(25, development - 8), player: Math.max(10, playerStrength - 6) }
+  ];
+  const bar = (label, value, tone='gold') => `<div class="ci-bar-row"><div><span>${escapeHtml(label)}</span><b>${value}%</b></div><i><em class="${tone}" style="width:${Math.max(0, Math.min(100, value))}%"></em></i></div>`;
+
+  return `
+    <div class="page-heading">
+      <div><div class="eyebrow">ELECTORAL RESEARCH · OFFLINE SIMULATION</div>
+        <h1>Constituency <em>intelligence</em></h1>
+        <p>A decision dashboard for voter composition, local development, political influence and electoral history.</p>
+      </div>
+      <div class="date-card"><span>ACTIVE CONSTITUENCY</span><b>${escapeHtml(c.district || 'Not set')}</b><small>${escapeHtml(c.state || state.stateName || 'India')}</small></div>
+    </div>
+
+    <section class="panel ci-overview">
+      <div><span class="gold-tag">YOUR CURRENT ELECTORAL AREA</span><h2>${escapeHtml(c.constituencyName || 'Constituency not configured')}</h2>
+        <p>${escapeHtml(c.district || 'District not set')}, ${escapeHtml(c.state || state.stateName || 'India')} · ${areas.length} tracked local areas</p></div>
+      <div class="ci-overview-score"><small>DEVELOPMENT INDEX</small><strong>${development}<i>/100</i></strong><span>Game simulation estimate</span></div>
+    </section>
+
+    <div class="stats-grid ci-top-stats">
+      ${statCard('ESTIMATED VOTERS', voters.toLocaleString('en-IN'), 'Current saved constituency total', '♟')}
+      ${statCard('PUBLIC SUPPORT', support + '%', 'Average across tracked localities', '♥')}
+      ${statCard('POLITICAL INFLUENCE', influence + '/100', 'Average locality influence score', '⚑')}
+      ${statCard('DEVELOPMENT INDEX', development + '/100', 'Projects, issue resolution and support', '⌂')}
+    </div>
+
+    <div class="ci-grid">
+      <section class="panel">
+        <div class="command-section-head"><div><span class="eyebrow">VOTER COMPOSITION</span><h2>Demographic estimate</h2></div><span class="command-symbol">♙</span></div>
+        <p class="panel-description">Illustrative in-game estimates, not official voter-roll or census figures.</p>
+        <div class="ci-demographic-grid">
+          <div><small>MALE</small><b>${male.toLocaleString('en-IN')}</b><span>${voters ? Math.round(male/voters*100) : 0}%</span></div>
+          <div><small>FEMALE</small><b>${female.toLocaleString('en-IN')}</b><span>${voters ? Math.round(female/voters*100) : 0}%</span></div>
+          <div><small>YOUTH · 18–29</small><b>${youth.toLocaleString('en-IN')}</b><span>${voters ? Math.round(youth/voters*100) : 0}%</span></div>
+          <div><small>ADULT · 30–59</small><b>${middle.toLocaleString('en-IN')}</b><span>${voters ? Math.round(middle/voters*100) : 0}%</span></div>
+          <div><small>SENIOR · 60+</small><b>${senior.toLocaleString('en-IN')}</b><span>${voters ? Math.round(senior/voters*100) : 0}%</span></div>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="command-section-head"><div><span class="eyebrow">POLITICAL LANDSCAPE</span><h2>Influence & rival strength</h2></div><span class="command-symbol">⚖</span></div>
+        ${bar('Your ground strength', playerStrength)}
+        ${bar('Rival organisation estimate', rival, 'blue')}
+        ${bar('Development performance', development, 'green')}
+        <div class="ci-footnote">Rival strength is a gameplay estimate derived from current support. It does not represent a real party survey.</div>
+      </section>
+
+      <section class="panel">
+        <div class="command-section-head"><div><span class="eyebrow">PUBLIC PRIORITIES</span><h2>Local development needs</h2></div><span class="command-symbol">⌖</span></div>
+        ${priorities.slice(0,5).map((item, i) => `<div class="ci-priority"><span class="ci-priority-rank">0${i+1}</span><div><b>${escapeHtml(item.issue)}</b><small>${item.count} tracked ${item.count === 1 ? 'area' : 'areas'}</small></div></div>`).join('')}
+        <div class="ci-footnote">${Number(c.projects?.length || 0)} projects started · ${Number(c.resolvedIssues?.length || 0)} issues marked resolved.</div>
+      </section>
+
+      <section class="panel">
+        <div class="command-section-head"><div><span class="eyebrow">SEAT PERFORMANCE</span><h2>Election record</h2></div><span class="command-symbol">▤</span></div>
+        <div class="ci-seat-grid"><div><small>CONTESTED</small><b>${Number(state.elections?.totalContested || history.length)}</b></div><div><small>WON</small><b>${Number(state.elections?.totalWon || seatWon)}</b></div><div><small>LOST</small><b>${Number(state.elections?.totalLost || seatLost)}</b></div></div>
+        ${history.length ? history.map(item => `<div class="ci-history-row"><span>${escapeHtml(item.type || item.electionType || 'Election')}</span><b>${escapeHtml(item.result || (item.won ? 'Won' : 'Recorded'))}</b></div>`).join('') : '<p class="panel-description">No constituency election results have been recorded yet. Contest an election to build this history.</p>'}
+      </section>
+
+      <section class="panel ci-comparison-panel">
+        <div class="command-section-head"><div><span class="eyebrow">REGIONAL BENCHMARK</span><h2>Constituency comparison</h2></div><span class="command-symbol">⇄</span></div>
+        <p class="panel-description">Compare your saved constituency with a generated regional benchmark profile.</p>
+        <div class="ci-compare-head"><b>METRIC</b><b>${escapeHtml(comparison[0].name)}</b><b>${escapeHtml(comparison[1].name)}</b></div>
+        ${[['Voters','voters'],['Public support','support'],['Influence','influence'],['Development','development']].map(([label,key]) => `<div class="ci-compare-row"><span>${label}</span><b>${Number(comparison[0][key]).toLocaleString('en-IN')}${key==='voters'?'': '%'}</b><b>${Number(comparison[1][key]).toLocaleString('en-IN')}${key==='voters'?'': '%'}</b></div>`).join('')}
+      </section>
+    </div>
+    <p class="ci-disclaimer">Simulation notice: voter demographics, development index, rival strength and regional benchmark are generated gameplay estimates. They are not official demographic, constituency boundary, polling or election-seat data.</p>
+  `;
+}
+
 /* MAIN RENDER */
 
 function render() {
@@ -2562,6 +2668,9 @@ function render() {
       break;
     case 'Constituency':
       content = constituencyPage();
+      break;
+    case 'Constituency Intel':
+      content = constituencyIntelligencePage();
       break;
     case 'India Map':
       content = indiaMapPage();
