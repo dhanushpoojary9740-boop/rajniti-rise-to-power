@@ -54,7 +54,13 @@ const defaults = {
     history: [],
     totalContested: 0,
     totalWon: 0,
-    totalLost: 0
+    totalLost: 0,
+    calendar: {
+      local: { intervalMonths: 60, nextAt: 36, label: 'Local body elections' },
+      assembly: { intervalMonths: 60, nextAt: 60, label: 'State Assembly elections' },
+      'lok-sabha': { intervalMonths: 60, nextAt: 48, label: 'Lok Sabha elections' }
+    },
+    nominationQueue: []
   },
 
   finance: {
@@ -118,6 +124,9 @@ function loadState() {
 }
 
 let state = loadState();
+if (!state.elections || typeof state.elections !== 'object') state.elections = JSON.parse(JSON.stringify(defaults.elections));
+if (!state.elections.calendar) state.elections.calendar = JSON.parse(JSON.stringify(defaults.elections.calendar));
+if (!Array.isArray(state.elections.nominationQueue)) state.elections.nominationQueue = [];
 let activeTab = 'Dashboard';
 let partySection = 'Overview';
 if (!Array.isArray(state.reviewedNews)) state.reviewedNews = [];
@@ -325,7 +334,7 @@ function dateText() {
     'May', 'June', 'July', 'August',
     'September', 'October', 'November', 'December'
   ];
-  return `Day ${state.day} · ${months[state.month - 1]} · Year ${state.year}`;
+  return `${months[state.month - 1]} · Year ${state.year}`;
 }
 
 function toast(message) {
@@ -403,7 +412,7 @@ function shell(content) {
           </div>
 
           <div class="top-right">
-            <span class="day-pill">DAY ${state.day}</span>
+            <span class="day-pill">${dateText()}</span>
             <button class="avatar" data-tab="Profile">
               ${escapeHtml(state.playerName.slice(0, 1).toUpperCase())}
             </button>
@@ -444,9 +453,9 @@ function dashboard() {
         <p>${dateText()} · ${escapeHtml(state.stateName || 'India')} political desk</p>
       </div>
       <div class="date-card">
-        <span>SIMULATION CLOCK</span>
-        <b>DAY ${state.day}</b>
-        <small>${Math.max(0, dailyActionLimit() - state.actionsUsed)} daily actions remaining</small>
+        <span>MONTHLY SIMULATION CLOCK</span>
+        <b>${dateText()}</b>
+        <small>${Math.max(0, dailyActionLimit() - state.actionsUsed)} monthly actions remaining</small>
       </div>
     </div>
 
@@ -577,7 +586,7 @@ function intelligencePage() {
   return `
     <div class="page-heading">
       <div><div class="eyebrow">POLITICAL INTELLIGENCE BUREAU</div><h1>Intelligence <em>desk</em></h1><p>Study the simulated political landscape and plan your next move.</p></div>
-      <div class="date-card"><span>BRIEFING DATE</span><b>DAY ${state.day}</b><small>${dateText()}</small></div>
+      <div class="date-card"><span>BRIEFING DATE</span><b>${dateText()}</b><small>${dateText()}</small></div>
     </div>
     <section class="panel intelligence-disclaimer"><span class="gold-tag">GAME SIMULATION</span><b>All polling figures, rival organisations and regional indicators on this screen are fictional gameplay estimates.</b><small>They do not represent real political parties, election forecasts or public opinion data.</small></section>
     <section class="panel intelligence-region-panel">
@@ -631,7 +640,7 @@ function publicOpinionPage() {
     <div class="page-heading">
       <div><div class="eyebrow">PUBLIC SENTIMENT & COMMUNICATIONS BUREAU</div><h1>Public <em>opinion</em></h1>
       <p>Track approval, media reach, public mood and political communication.</p></div>
-      <div class="date-card"><span>OPINION BRIEFING</span><b>DAY ${state.day}</b><small>${dateText()}</small></div>
+      <div class="date-card"><span>OPINION BRIEFING</span><b>${dateText()}</b><small>${dateText()}</small></div>
     </div>
     <section class="panel po-disclaimer"><span class="gold-tag">OFFLINE GAME SIMULATION</span><b>All ratings, media stories and public mood indicators are fictional gameplay estimates.</b><small>They are not real surveys, news reports or public opinion measurements.</small></section>
     <div class="stats-grid po-stats">
@@ -676,7 +685,7 @@ function recordMediaEvent(event) {
 
 function mediaAction(type) {
   if (!state.characterCreated) return toast('Create your politician first.');
-  if (state.actionsUsed >= dailyActionLimit()) return toast('No daily actions remaining.');
+  if (state.actionsUsed >= dailyActionLimit()) return toast('No monthly actions remaining.');
   const actions = {
     press: { cost: 1000, trust: 7, reach: 9, approval: 3, label: 'Press conference held' },
     listen: { cost: 500, trust: 9, reach: 2, approval: 2, label: 'Community listening session completed' },
@@ -702,7 +711,7 @@ function mediaAction(type) {
 function resolveMediaControversy(id) {
   const item = state.media.controversies.find(entry => entry.id === id && !entry.resolved);
   if (!item) return;
-  if (state.actionsUsed >= dailyActionLimit()) return toast('No daily actions remaining.');
+  if (state.actionsUsed >= dailyActionLimit()) return toast('No monthly actions remaining.');
   if (state.money < 1200) return toast('You need ₹1,200 for a response team.');
   state.money -= 1200;
   state.totalExpenses = Number(state.totalExpenses || 0) + 1200;
@@ -745,7 +754,7 @@ function newsPage() {
   const reviewed = Array.isArray(state.reviewedNews) ? state.reviewedNews : [];
 
   return `
-    <div class="page-heading"><div><div class="eyebrow">RAJNITI NEWS NETWORK</div><h1>Political <em>newsroom</em></h1><p>Follow the fictional events and policy debates shaping your political world.</p></div><div class="date-card"><span>DAILY EDITION</span><b>DAY ${state.day}</b><small>${dateText()}</small></div></div>
+    <div class="page-heading"><div><div class="eyebrow">RAJNITI NEWS NETWORK</div><h1>Political <em>newsroom</em></h1><p>Follow the fictional events and policy debates shaping your political world.</p></div><div class="date-card"><span>MONTHLY EDITION</span><b>${dateText()}</b><small>${dateText()}</small></div></div>
     <section class="panel newsroom-banner"><div><span class="gold-tag">EDITORIAL BRIEFING</span><h2>Understand the issue. Shape the response.</h2><p class="panel-description">News stories are part of the offline simulation. Review developments and use them to guide your political priorities.</p></div><div class="newsroom-mark">▤</div></section>
     <div class="newsroom-layout">
       <div class="newsroom-stories">
@@ -1281,7 +1290,7 @@ function activitiesPage() {
     </div>
 
     <section class="panel">
-      <span class="eyebrow">DAILY ACTIONS</span>
+      <span class="eyebrow">MONTHLY ACTIONS</span>
       <h3>${Math.max(0, dailyActionLimit() - state.actionsUsed)} / 2 remaining</h3>
       <p class="panel-description">${dateText()}</p>
       <button class="secondary-btn" data-action="end-day">END DAY →</button>
@@ -1520,36 +1529,65 @@ function financePage() {
   `;
 }
 
+function currentMonthIndex() {
+  return Math.max(0, (Number(state.year || 1) - 1) * 12 + (Number(state.month || 1) - 1));
+}
+function ensureElectionCalendar() {
+  if (!state.elections || typeof state.elections !== 'object') state.elections = JSON.parse(JSON.stringify(defaults.elections));
+  if (!state.elections.calendar) state.elections.calendar = JSON.parse(JSON.stringify(defaults.elections.calendar));
+  if (!Array.isArray(state.elections.nominationQueue)) state.elections.nominationQueue = [];
+  return state.elections;
+}
+function processElectionCalendar() {
+  const elections = ensureElectionCalendar();
+  const now = currentMonthIndex();
+  const types = [
+    { id: 'local', label: 'Local Body Election', interval: 60, offset: 36 },
+    { id: 'assembly', label: 'State Assembly Election', interval: 60, offset: 60 },
+    { id: 'lok-sabha', label: 'Lok Sabha Election', interval: 60, offset: 48 }
+  ];
+  types.forEach(type => {
+    let schedule = elections.calendar[type.id];
+    if (!schedule || typeof schedule !== 'object') schedule = elections.calendar[type.id] = { intervalMonths: type.interval, nextAt: type.offset, label: type.label };
+    if (!Number.isFinite(Number(schedule.nextAt))) schedule.nextAt = type.offset;
+    if (now >= Number(schedule.nextAt) && !elections.nominationQueue.some(item => item.typeId === type.id && item.status === 'Pending')) {
+      const members = Array.isArray(state.partyMemberRecords) ? state.partyMemberRecords : [];
+      const proposals = members.filter(member => member && member.name).slice(0, 8);
+      if (proposals.length) proposals.forEach((member, index) => elections.nominationQueue.push({
+        id: `${type.id}-${now}-${index}`, typeId: type.id, typeName: type.label,
+        candidateName: member.name, candidateRole: member.role || 'Party member',
+        constituency: member.constituency || member.district || state.constituency?.constituencyName || 'Assigned constituency',
+        status: 'Pending', aiReason: 'AI party committee proposal. Review eligibility and suitability before approval.',
+        createdAt: dateText()
+      }));
+      else elections.nominationQueue.push({
+        id: `${type.id}-${now}-vacant`, typeId: type.id, typeName: type.label,
+        candidateName: 'Candidate required', candidateRole: 'Vacant nomination',
+        constituency: 'Constituency assignment required', status: 'Pending',
+        aiReason: 'No party-member records are available. Add party members before approving nominations.',
+        createdAt: dateText()
+      });
+      schedule.nextAt = now + Number(schedule.intervalMonths || type.interval);
+    }
+  });
+}
 function endDay() {
-  if (!state.characterCreated) {
-    return toast('Create your politician first.');
+  if (!state.characterCreated) return toast('Create your politician first.');
+  state.day = 1;
+  state.month = Number(state.month || 1) + 1;
+  if (state.month > 12) {
+    state.month = 1;
+    state.year = Number(state.year || 1) + 1;
+    state.age = Number(state.age || 21) + 1;
   }
-
-  state.day++;
   state.actionsUsed = 0;
   runAiAdministration();
-
-  let message = 'New day started. Daily actions refreshed.';
-
-  if (state.day > 30) {
-    state.day = 1;
-    state.month++;
-
-    if (state.month > 12) {
-      state.month = 1;
-      state.year++;
-      state.age++;
-    }
-
-    advanceMediaCycle();
-    const report = processMonthlyFinances();
-    const totalIncome = report.salary + report.businessIncome + report.investmentIncome;
-    message = `New month! Income ${money(totalIncome)} · Living expenses ${money(report.expenses)} · Net ${report.net >= 0 ? '+' : '−'}${money(Math.abs(report.net))}`;
-  }
-
-  saveState();
-  render();
-  toast(message);
+  advanceMediaCycle();
+  const report = processMonthlyFinances();
+  processElectionCalendar();
+  const totalIncome = report.salary + report.businessIncome + report.investmentIncome;
+  const message = `New month: ${dateText()}. Income ${money(totalIncome)} · Expenses ${money(report.expenses)} · Net ${report.net >= 0 ? '+' : '−'}${money(Math.abs(report.net))}. Election calendar updated.`;
+  saveState(); render(); toast(message);
 }
 
 /* PARTY ACTIONS */
@@ -1629,7 +1667,7 @@ function establishParty(form) {
 
 function partyMeeting() {
   if (state.partyId === 'independent') return;
-  if (state.actionsUsed >= dailyActionLimit()) return toast('No daily actions remaining.');
+  if (state.actionsUsed >= dailyActionLimit()) return toast('No monthly actions remaining.');
   if (state.money < 300) return toast('You need ₹300.');
 
   state.money -= 300;
@@ -1661,7 +1699,7 @@ function donatePartyFunds() {
 
 function recruitMembers() {
   if (!state.partyCreated) return;
-  if (state.actionsUsed >= dailyActionLimit()) return toast('No daily actions remaining.');
+  if (state.actionsUsed >= dailyActionLimit()) return toast('No monthly actions remaining.');
   if (state.money < 1000) return toast('You need ₹1,000.');
 
   state.money -= 1000;
@@ -2268,6 +2306,14 @@ function electionPage() {
   const averageSupport = Math.round((state.constituency.localities || []).reduce((sum, item) => sum + Number(item.support || 0), 0) / Math.max(1, (state.constituency.localities || []).length));
   const winRate = e.totalContested ? Math.round(e.totalWon / e.totalContested * 100) : 0;
 
+  const electionCalendar = ensureElectionCalendar();
+  const pendingNominations = electionCalendar.nominationQueue.filter(item => item.status === 'Pending');
+  const electionScheduleHtml = Object.entries(electionCalendar.calendar).map(([id, item]) =>
+    `<div class="finance-history"><span>${escapeHtml(item.label || id)}</span><b>${Math.max(0, Number(item.nextAt || 0) - currentMonthIndex())} months</b></div>`
+  ).join('');
+  const nominationHtml = pendingNominations.length ? pendingNominations.map(item =>
+    `<div class="finance-history"><span><b>${escapeHtml(item.typeName)}</b><br>${escapeHtml(item.candidateName)} · ${escapeHtml(item.constituency)}<br><small>${escapeHtml(item.aiReason)}</small></span><b>Pending</b></div>`
+  ).join('') : '<p class="panel-description">No AI candidate proposals are awaiting review.</p>';
   return `
     <div class="page-heading">
       <div>
@@ -2283,6 +2329,15 @@ function electionPage() {
       ${statCard('WIN RATE', winRate + '%', 'Based on completed contests', '✦')}
       ${statCard('LOCAL SUPPORT', averageSupport + '%', 'Across your localities', '♥')}
     </div>
+
+    <section class="panel">
+      <span class="gold-tag">RECURRING ELECTION CALENDAR</span>
+      <h2>Upcoming election cycles</h2>
+      ${electionScheduleHtml}
+      <h2>AI candidate nomination review</h2>
+      <p class="panel-description">AI proposals appear here for your review. No nomination is submitted automatically.</p>
+      ${nominationHtml}
+    </section>
 
     ${active ? `
       <section class="panel election-active-panel">
