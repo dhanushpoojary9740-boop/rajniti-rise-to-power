@@ -141,6 +141,27 @@ function loadState() {
 }
 
 let state = loadState();
+
+// One-time ₹300 crore special grant to the existing party treasury.
+// This flag is persisted in the same save, so reloads and future updates cannot credit it again.
+if (!state.partyTreasuryGrant300CrClaimed) {
+  if (!state.partyTreasury || typeof state.partyTreasury !== 'object') {
+    state.partyTreasury = { incomeTotal: 0, expenseTotal: 0, ledger: [] };
+  }
+  if (!Array.isArray(state.partyTreasury.ledger)) state.partyTreasury.ledger = [];
+  const specialPartyGrant = 3000000000;
+  state.partyFunds = Math.max(0, Number(state.partyFunds) || 0) + specialPartyGrant;
+  state.partyTreasury.incomeTotal = (Number(state.partyTreasury.incomeTotal) || 0) + specialPartyGrant;
+  state.partyTreasury.ledger.unshift({
+    type: 'Income',
+    amount: specialPartyGrant,
+    note: 'One-time special party treasury grant',
+    date: 'Special grant'
+  });
+  state.partyTreasury.ledger = state.partyTreasury.ledger.slice(0, 60);
+  state.partyTreasuryGrant300CrClaimed = true;
+  localStorage.setItem(STORE_KEY, JSON.stringify(state));
+}
 if (!state.partyTreasury || typeof state.partyTreasury !== 'object') state.partyTreasury = { incomeTotal: 0, expenseTotal: 0, ledger: [] };
 if (!Array.isArray(state.partyTreasury.ledger)) state.partyTreasury.ledger = [];
 for (const key of ['incomeTotal','expenseTotal']) if (!Number.isFinite(Number(state.partyTreasury[key]))) state.partyTreasury[key] = 0;
