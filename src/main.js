@@ -2839,6 +2839,46 @@ function advanceOfficeMonth() {
   office.lastAiReport = `Monthly review: ${office.tasks.filter(task => task.carryForwardCount > 0).length} unfinished responsibilities carried forward. ${office.tasks.filter(task => task.createdAt === dateText()).length} new assignments issued for ${dateText()}.`;
 }
 
+
+function ensurePoliticalRelationships() {
+  if (!state.politicalRelationships || typeof state.politicalRelationships !== 'object') state.politicalRelationships = {};
+  const rel = state.politicalRelationships;
+  if (!Array.isArray(rel.people)) rel.people = [
+    { id:'party-chief', name:'Arjun Rao', role:'State Party President', type:'Party leadership', loyalty:68, trust:62, influence:82, note:'Controls key party organisation decisions.' },
+    { id:'senior-minister', name:'Meera Kulkarni', role:'Senior Minister', type:'Cabinet', loyalty:74, trust:70, influence:76, note:'Influential in cabinet and policy discussions.' },
+    { id:'young-mla', name:'Kiran Shetty', role:'Young MLA', type:'Party colleague', loyalty:58, trust:55, influence:42, note:'Wants a larger role in the party.' },
+    { id:'opposition-leader', name:'Dev Malhotra', role:'Opposition Leader', type:'Opposition', loyalty:35, trust:30, influence:78, note:'Can cooperate on public-interest issues, but challenges your leadership.' },
+    { id:'coalition-partner', name:'Ravi Deshmukh', role:'Regional Party Leader', type:'Coalition partner', loyalty:61, trust:57, influence:65, note:'Coalition support depends on consultation and commitments.' }
+  ];
+  rel.people.forEach(person => {
+    ['loyalty','trust','influence'].forEach(key => { person[key] = Math.max(0, Math.min(100, Number(person[key] ?? 50))); });
+  });
+  if (!Number.isFinite(Number(rel.stability))) rel.stability = 65;
+  if (!Number.isFinite(Number(rel.oppositionPressure))) rel.oppositionPressure = 35;
+  if (!Array.isArray(rel.history)) rel.history = [];
+  rel.history = rel.history.slice(0, 30);
+  return rel;
+}
+
+function updatePoliticalRelationshipsMonthly() {
+  const rel = ensurePoliticalRelationships();
+  rel.people.forEach(person => {
+    if (person.type === 'Opposition') {
+      person.trust = Math.max(0, person.trust - 1);
+      rel.oppositionPressure = Math.min(100, Math.max(0, rel.oppositionPressure + (person.influence > 70 ? 1 : 0)));
+    } else if (person.trust < person.loyalty) {
+      person.trust = Math.min(person.loyalty, person.trust + 1);
+    }
+  });
+  const averageLoyalty = rel.people.filter(p => p.type !== 'Opposition').reduce((sum,p) => sum + p.loyalty, 0) / Math.max(1, rel.people.filter(p => p.type !== 'Opposition').length);
+  rel.stability = Math.max(0, Math.min(100, Math.round(averageLoyalty * 0.65 + (100 - rel.oppositionPressure) * 0.35)));
+}
+
+function recordRelationshipEvent(rel, person, text) {
+  rel.history.unshift({ date: dateText(), person: person.name, event: text });
+  rel.history = rel.history.slice(0, 30);
+}
+
 function ensureExecutiveOffice() {
   if (!state.executiveOffice) state.executiveOffice = { tasks: [], files: [], nextId: 1, lastAiReport: 'Administrative teams are ready.' };
   const office = state.executiveOffice;
@@ -2884,6 +2924,7 @@ function executiveOfficePage() {
     <section class="panel"><div class="command-section-head"><div><span class="eyebrow">SIGNATURE DESK</span><h2>Pending for my approval</h2></div><b>${pending.length} pending</b></div>${pending.length ? pending.map(f=>`<article class="panel government-portfolio"><span class="gold-tag">OFFICIAL FILE · ${escapeHtml(f.from)}</span><h3>${escapeHtml(f.title)}</h3><p class="panel-description">${escapeHtml(f.summary)}</p><p><b>AI / officer recommendation:</b> ${escapeHtml(f.recommendation)}</p><div class="gov-budget-actions"><button class="primary-btn" data-office-decision="approve" data-office-file="${f.id}">APPROVE & SIGN</button><button class="secondary-btn" data-office-decision="return" data-office-file="${f.id}">RETURN FOR REVISION</button><button class="secondary-btn" data-office-decision="reject" data-office-file="${f.id}">REJECT</button></div></article>`).join('') : '<p class="panel-description">No important files require your signature right now. Routine work is being handled by the administration.</p>'}</section>
     <section class="panel"><span class="eyebrow">MONTHLY PROJECT OVERSIGHT</span><h2>Approved projects & instalments</h2>${office.projects.length ? office.projects.slice(-8).reverse().map(project=>`<article class="panel government-portfolio"><div class="command-section-head"><h3>${escapeHtml(project.title)}</h3><b>${escapeHtml(project.status)}</b></div><p>${escapeHtml(project.department)} · Officer: ${escapeHtml(project.officer)}</p><div class="task-detail-grid"><div><small>TOTAL BUDGET</small><b>${money(project.totalBudget)}</b></div><div><small>SPENT</small><b>${money(project.spent)}</b></div><div><small>PROGRESS</small><b>${Number(project.progress)}%</b></div><div><small>MONTHS LEFT</small><b>${Number(project.monthsRemaining)}</b></div></div><p>${escapeHtml(project.lastReport || '')}</p></article>`).join('') : '<p class="panel-description">Approved projects will appear here with budgets and monthly officer reports.</p>'}</section>
     <section class="panel"><span class="eyebrow">URGENT POLITICAL & ADMINISTRATIVE MATTERS</span><h2>Situation desk</h2>${office.crises.filter(item=>item.status==='Pending').length ? office.crises.filter(item=>item.status==='Pending').map(item=>`<article class="panel government-portfolio"><span class="gold-tag">${escapeHtml(item.category)}</span><h3>${escapeHtml(item.title)}</h3><p>${escapeHtml(item.detail)}</p><div class="gov-budget-actions"><button class="primary-btn" data-office-crisis="respond" data-crisis-id="${item.id}">ISSUE RESPONSE</button><button class="secondary-btn" data-office-crisis="delegate" data-crisis-id="${item.id}">DELEGATE TO AI</button></div></article>`).join('') : '<p class="panel-description">No urgent matters are awaiting your decision.</p>'}</section>
+    <section class="panel"><div class="command-section-head"><div><span class="eyebrow">POLITICAL RELATIONSHIPS</span><h2>Power & influence network</h2><p class="panel-description">Trust and loyalty shape party unity, cabinet cooperation and coalition stability. Your choices have lasting political consequences.</p></div></div>${(()=>{const rel=ensurePoliticalRelationships();return `<div class="government-unlock-grid"><div><b>${rel.stability}</b><small>Political stability</small></div><div><b>${rel.oppositionPressure}</b><small>Opposition pressure</small></div><div><b>${rel.people.filter(p=>p.type!=='Opposition'&&p.loyalty>=65).length}</b><small>Strong supporters</small></div></div>${rel.people.map(p=>`<article class="panel government-portfolio"><div class="command-section-head"><div><span class="gold-tag">${escapeHtml(p.type)}</span><h3>${escapeHtml(p.name)}</h3><small>${escapeHtml(p.role)}</small></div><b>${p.loyalty>=70?'Reliable':p.loyalty>=50?'Uncertain':'At risk'}</b></div><p>${escapeHtml(p.note)}</p><div class="task-detail-grid"><div><small>LOYALTY</small><b>${p.loyalty}/100</b></div><div><small>TRUST</small><b>${p.trust}/100</b></div><div><small>INFLUENCE</small><b>${p.influence}/100</b></div></div><div class="gov-budget-actions"><button class="primary-btn" data-relationship-action="consult" data-relationship-id="${escapeHtml(p.id)}">CONSULT</button><button class="secondary-btn" data-relationship-action="negotiate" data-relationship-id="${escapeHtml(p.id)}">${p.type==='Opposition'?'SEEK COOPERATION':p.type==='Coalition partner'?'RENEW COMMITMENT':'BUILD ALLIANCE'}</button></div></article>`).join('')}<h3>Recent political interactions</h3>${rel.history.slice(0,5).map(h=>`<div class="finance-history"><span><b>${escapeHtml(h.person)}</b><small>${escapeHtml(h.date)}</small></span><small>${escapeHtml(h.event)}</small></div>`).join('')||'<p class="panel-description">Your meetings and negotiations will be recorded here.</p>'}`})()}</section>
     <section class="panel"><span class="eyebrow">DECISION CONSEQUENCES</span><h2>Your leadership record</h2><div class="government-unlock-grid"><div><b>${office.consequenceMetrics.approvals}</b><small>Approved</small></div><div><b>${office.consequenceMetrics.rejections}</b><small>Rejected</small></div><div><b>${office.consequenceMetrics.delayedProjects}</b><small>Delayed instalments</small></div><div><b>${office.consequenceMetrics.completedProjects}</b><small>Projects completed</small></div></div>${office.decisionHistory.slice(0,5).map(item=>`<div class="finance-history"><span><b>${escapeHtml(item.title)}</b><small>${escapeHtml(item.date)} · ${escapeHtml(item.decision)}</small></span><small>Reputation ${item.reputation} · Party ${item.partyPopularity}</small></div>`).join('')}</section>
     <section class="panel"><span class="eyebrow">AI ADMINISTRATION REPORT</span><h2>Work handled automatically</h2><p class="panel-description">${escapeHtml(office.lastAiReport || 'Your administrative teams are monitoring routine operations.')}</p><p class="ci-disclaimer">AI decisions are simulated gameplay. Major decisions outside your authority are not sent to you for approval. Critical decisions within your authority appear on this signature desk.</p></section>
   `;
@@ -3066,6 +3107,7 @@ function runAiAdministration() {
     office.crises.unshift({ id: office.nextId++, title: item[0], category: item[1], detail: item[2], status: 'Pending', createdAt: dateText() });
     office.crises = office.crises.slice(0, 20);
   }
+  updatePoliticalRelationshipsMonthly();
   office.lastAiReport = `AI administration monitored ${pending} pending assignments and ${active} active assignments. ${reports.slice(0, 2).join(' ')} Routine district operations continue automatically.`;
 }
 
@@ -3647,6 +3689,41 @@ document.addEventListener('click', event => {
     crisis.decidedAt = dateText();
     saveState(); render(); toast(crisis.outcome);
     return;
+  }
+
+  const relationshipButton = event.target.closest('[data-relationship-action]');
+  if (relationshipButton) {
+    const rel = ensurePoliticalRelationships();
+    const person = rel.people.find(item => item.id === relationshipButton.dataset.relationshipId);
+    if (!person) return;
+    const action = relationshipButton.dataset.relationshipAction;
+    if (action === 'consult') {
+      person.trust = Math.min(100, person.trust + 5);
+      if (person.type !== 'Opposition') person.loyalty = Math.min(100, person.loyalty + 2);
+      recordRelationshipEvent(rel, person, 'Held a consultation and discussed political priorities.');
+      toast(`Consultation completed with ${person.name}. Trust improved.`);
+    } else if (action === 'negotiate') {
+      if (person.type === 'Opposition') {
+        person.trust = Math.min(100, person.trust + 8);
+        rel.oppositionPressure = Math.max(0, rel.oppositionPressure - 5);
+        recordRelationshipEvent(rel, person, 'Opened cross-party talks on a public-interest issue.');
+        toast('Cross-party cooperation improved; opposition pressure eased.');
+      } else if (person.type === 'Coalition partner') {
+        person.trust = Math.min(100, person.trust + 7);
+        person.loyalty = Math.min(100, person.loyalty + 5);
+        rel.stability = Math.min(100, rel.stability + 4);
+        recordRelationshipEvent(rel, person, 'Renewed coalition commitment through private negotiations.');
+        toast('Coalition commitment strengthened.');
+      } else {
+        person.trust = Math.min(100, person.trust + 6);
+        person.loyalty = Math.min(100, person.loyalty + 5);
+        recordRelationshipEvent(rel, person, 'Reached a private political understanding and strengthened party ties.');
+        toast('Party alliance strengthened.');
+      }
+    }
+    const allies = rel.people.filter(p => p.type !== 'Opposition');
+    rel.stability = Math.max(0, Math.min(100, Math.round(allies.reduce((sum,p)=>sum+p.loyalty,0)/Math.max(1,allies.length)*0.65+(100-rel.oppositionPressure)*0.35)));
+    saveState(); render(); return;
   }
 
   const mapStateButton = event.target.closest('[data-map-state]');
