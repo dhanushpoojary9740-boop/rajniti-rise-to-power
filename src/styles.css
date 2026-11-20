@@ -2347,3 +2347,46 @@ input, select, textarea {
 @media (max-width: 520px) {
   .election-national-seat-grid { grid-template-columns: 1fr; }
 }
+
+
+/* RAJNITI 4.2.0 · National Lok Sabha candidate deployment */
+.national-lok-sabha-register {
+  border-color: rgba(201,165,93,.32);
+  background: linear-gradient(150deg, rgba(16,27,40,.98), rgba(9,15,24,.98));
+}
+.national-lok-sabha-actions { display:flex; flex-wrap:wrap; gap:10px; margin:14px 0; }
+.national-ls-state-details, .national-ls-candidate-details {
+  margin-top: 14px;
+  padding: 12px;
+  border: 1px solid rgba(255,255,255,.09);
+  border-radius: 12px;
+  background: rgba(255,255,255,.018);
+}
+.national-ls-state-details summary, .national-ls-candidate-details summary {
+  cursor:pointer;
+  color: var(--text-primary, #e8eaf0);
+  font-weight: 650;
+  padding: 5px 2px;
+}
+.national-ls-state-grid {
+  display:grid;
+  grid-template-columns:repeat(2,minmax(0,1fr));
+  gap:7px 12px;
+  margin-top:12px;
+}
+.national-ls-state-row {
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  gap:10px;
+  padding:10px;
+  border:1px solid rgba(255,255,255,.07);
+  border-radius:9px;
+}
+.national-ls-state-row span { min-width:0; display:flex; flex-direction:column; gap:3px; }
+.national-ls-state-row small { color:var(--text-secondary,#aab2c0); font-size:.76rem; line-height:1.35; }
+.national-ls-state-row strong { color:#dfbb75; font-variant-numeric:tabular-nums; }
+@media(max-width:520px) {
+  .national-ls-state-grid { grid-template-columns:1fr; }
+  .national-lok-sabha-actions .primary-btn { width:100%; }
+}

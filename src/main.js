@@ -255,6 +255,23 @@ function assignPartyElectionSeats(typeId, members, scheduledAt) {
     constituencyAssignment:'Official Karnataka Assembly constituency list · 2023 reference',
     seatType:member.seatType || 'Verify reservation category'
   }));
+  if (typeId === 'lok-sabha') {
+    const seats = [];
+    lokSabhaSeatAllocation.forEach(unit => {
+      const stateCode = unit.unit.toUpperCase().replace(/[^A-Z0-9]+/g,'-').replace(/^-|-$/g,'');
+      for (let number=1; number<=unit.seats; number++) {
+        seats.push({
+          stateName:unit.unit, district:'Parliamentary constituency',
+          constituencyNumber:number,
+          constituency:`${unit.unit} · PC ${String(number).padStart(2,'0')}`,
+          constituencyAssignment:'2024 Election Commission of India state/UT parliamentary seat allocation; official constituency name mapping is a separate data layer',
+          seatType:'Official reservation category to be verified',
+          seatCode:`${stateCode}-PC-${String(number).padStart(2,'0')}`
+        });
+      }
+    });
+    return seats;
+  }
   const stateName = String(state.stateName || 'Karnataka');
   const districtMap = districtDirectory?.districtCodes?.[stateName] || {};
   const districts = Object.keys(districtMap);
@@ -3341,7 +3358,72 @@ function nationalElectionArchitecturePanel() {
 }
 
 
-function electionPage() {
+
+function nationalLokSabhaCandidatePanel() {
+  const schedule = ensureElectionCalendar().calendar['lok-sabha'];
+  const cycle = Number(schedule?.nextAt || currentMonthIndex());
+  const records = ensurePartySlate().filter(item => item.typeId === 'lok-sabha' && Number(item.scheduledAt) === cycle);
+  const proposed = records.filter(item => item.status === 'Proposed').length;
+  const approved = records.filter(item => item.status === 'Party Approved').length;
+  const funded = records.filter(item => item.status === 'Funded').length;
+  const elected = records.filter(item => item.status === 'Elected').length;
+  const byUnit = lokSabhaSeatAllocation.map(unit => {
+    const rows = records.filter(item => item.stateName === unit.unit);
+    return { ...unit, assigned: rows.length, approved: rows.filter(item => ['Party Approved','Funded','Elected'].includes(item.status)).length, funded: rows.filter(item => item.status === 'Funded').length };
+  });
+  const total = lokSabhaSeatAllocation.reduce((sum, item) => sum + item.seats, 0);
+  const availableMembers = (state.partyMemberRecords || []).filter(member => member && member.name && member.id !== 'founder').length;
+  return `
+    <section class="panel national-lok-sabha-register">
+      <span class="gold-tag">NATIONAL ELECTION · 543 CONSTITUENCIES</span>
+      <h2>Lok Sabha candidate deployment</h2>
+      <p class="panel-description">Build the party's national parliamentary candidate slate. The state/UT seat allocation follows the 2024 ECI reference. Candidate proposals use distinct existing party-member records; the system will not invent extra candidates or reuse one member for multiple seats.</p>
+      <div class="election-metrics">
+        <div><small>PARLIAMENTARY SEATS</small><b>${total}</b></div>
+        <div><small>PARTY MEMBERS AVAILABLE</small><b>${availableMembers}</b></div>
+        <div><small>PROPOSED</small><b>${proposed}</b></div>
+        <div><small>APPROVED</small><b>${approved}</b></div>
+        <div><small>FUNDED</small><b>${funded}</b></div>
+        <div><small>VACANT / NOT ASSIGNED</small><b>${Math.max(0,total-records.length)}</b></div>
+      </div>
+      <div class="national-lok-sabha-actions">
+        <button class="primary-btn" data-national-ls-generate>GENERATE NATIONAL CANDIDATE PROPOSALS</button>
+      </div>
+      <p class="panel-description">The proposal generator assigns available party members once, in the official state/UT seat-count order. Unfilled seats remain vacant for recruitment and review. These numbered seat identifiers are not presented as official constituency names; the full ECI constituency-name and reservation-category dataset must be added before official-style nomination filing is simulated.</p>
+      <details class="national-ls-state-details" open>
+        <summary>State / UT deployment · ${byUnit.length} electoral units</summary>
+        <div class="national-ls-state-grid">
+          ${byUnit.map(unit => `
+            <div class="national-ls-state-row">
+              <span><b>${escapeHtml(unit.unit)}</b><small>${unit.assigned} proposed / ${unit.seats} seats · ${unit.approved} approved · ${unit.funded} funded</small></span>
+              <strong>${unit.seats}</strong>
+            </div>
+          `).join('')}
+        </div>
+      </details>
+      ${records.length ? `
+        <details class="national-ls-candidate-details">
+          <summary>National candidate register · ${records.length} assigned</summary>
+          <div class="creator-field"><label for="nationalLsSearch">Search candidate / state / seat</label><input id="nationalLsSearch" type="search" placeholder="Search national candidate register..."></div>
+          <div class="candidate-register-list">
+            ${records.slice().sort((a,b)=>String(a.stateName).localeCompare(String(b.stateName)) || Number(a.constituencyNumber)-Number(b.constituencyNumber)).map(item => `
+              <article class="finance-history candidate-register-card candidate-simple-card" data-national-ls-row="${escapeHtml([item.candidateName,item.stateName,item.constituency,item.status].join(' ').toLowerCase())}" style="display:block;padding:12px;margin:8px 0">
+                <div class="candidate-simple-top"><b>${escapeHtml(item.candidateName)}</b><span class="candidate-status">${escapeHtml(item.status)}</span></div>
+                <div class="candidate-simple-seat">${escapeHtml(item.stateName)} · ${escapeHtml(item.constituency)}</div>
+                <div class="candidate-simple-actions">
+                  ${item.status==='Proposed' ? `<button class="secondary-btn" data-party-slate-edit="${escapeHtml(item.id)}">Edit</button><button class="secondary-btn" data-party-slate-action="approve" data-party-slate-id="${escapeHtml(item.id)}">Approve ticket</button><button class="secondary-btn" data-party-slate-action="reject" data-party-slate-id="${escapeHtml(item.id)}">Reject</button>` : ''}
+                  ${item.status==='Party Approved' ? `<button class="secondary-btn" data-party-slate-fund="${escapeHtml(item.id)}">Fund campaign 50/50</button>` : ''}
+                </div>
+              </article>
+            `).join('')}
+          </div>
+        </details>
+      ` : '<p class="panel-description">No national candidate proposals have been generated for this Lok Sabha cycle yet.</p>'}
+    </section>
+  `;
+}
+
+\nfunction electionPage() {
   migrateAssemblyCountdownV260();
   archiveExpiredPartySlateCycles();
   ensureAssemblyElectionCountdown();
@@ -3379,7 +3461,7 @@ function electionPage() {
       ${statCard('WIN RATE', winRate + '%', 'Based on completed contests', '✦')}
       ${statCard('LOCAL SUPPORT', averageSupport + '%', 'Across your localities', '♥')}
     </div>
-
+\n    ${nationalLokSabhaCandidatePanel()}\n
     ${nationalElectionArchitecturePanel()}
 
     <section class="panel">
@@ -5206,6 +5288,8 @@ document.addEventListener('click', event => {
   const rivalAction = event.target.closest('[data-rival-action]');
   if (rivalAction) { updateRivalPartyIntelligence(rivalAction.dataset.rivalAction, rivalAction.dataset.rivalId); return; }
 
+  const nationalLsGenerateButton = event.target.closest('[data-national-ls-generate]');
+  if (nationalLsGenerateButton) { proposePartySlate('lok-sabha'); return; }
   const slateGenerateButton = event.target.closest('[data-party-slate-generate]');
   if (slateGenerateButton) { proposePartySlate(document.querySelector('#partySlateElectionType')?.value || 'assembly'); return; }
   const slateBulkFundButton = event.target.closest('[data-party-slate-bulk-fund]');
@@ -5622,6 +5706,10 @@ document.addEventListener('input', event => {
   if (event.target.id === 'candidateRegisterSearch') {
     const query=event.target.value.trim().toLowerCase();
     document.querySelectorAll('[data-candidate-register-row]').forEach(row=>{ row.style.display=row.dataset.candidateRegisterRow.includes(query)?'':'none'; });
+  }
+  if (event.target.id === 'nationalLsSearch') {
+    const query=event.target.value.trim().toLowerCase();
+    document.querySelectorAll('[data-national-ls-row]').forEach(row=>{ row.style.display=row.dataset.nationalLsRow.includes(query)?'':'none'; });
   }
   if (event.target.id === 'memberSearch') {
     const query = event.target.value.trim().toLowerCase();
