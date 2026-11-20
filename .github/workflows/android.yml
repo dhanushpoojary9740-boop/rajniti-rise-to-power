@@ -74,6 +74,44 @@ jobs:
       - name: Sync Android project
         run: npx cap sync android
 
+      - name: Configure Maven repository fallbacks
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import os
+
+          root = 'android'
+          changed = []
+          google_mirror = "maven { url 'https://maven.aliyun.com/repository/google' }"
+          central_mirror = "maven { url 'https://maven.aliyun.com/repository/central' }"
+
+          for folder, _, files in os.walk(root):
+              for name in files:
+                  if not name.endswith('.gradle'):
+                      continue
+                  path = os.path.join(folder, name)
+                  with open(path, encoding='utf-8') as handle:
+                      original = handle.read()
+                  updated = original
+                  if 'https://maven.aliyun.com/repository/google' not in updated:
+                      updated = updated.replace('google()', google_mirror + '\\n        google()')
+                  if 'https://maven.aliyun.com/repository/central' not in updated:
+                      updated = updated.replace('mavenCentral()', central_mirror + '\\n        mavenCentral()')
+                  if updated != original:
+                      with open(path, 'w', encoding='utf-8') as handle:
+                          handle.write(updated)
+                      changed.append(path)
+
+          settings = os.path.join(root, 'settings.gradle')
+          if not os.path.exists(settings):
+              raise SystemExit('Android settings.gradle was not generated; cannot configure repository fallbacks.')
+          if not changed:
+              raise SystemExit('No Gradle repository declarations were updated. Check generated Android project structure.')
+          print('Configured Google Maven and Maven Central fallback mirrors in:')
+          for path in changed:
+              print(' - ' + path)
+          PY
+
       - name: Enable adaptive Android orientation
         shell: bash
         run: |
@@ -130,7 +168,7 @@ jobs:
           text = open(path, encoding='utf-8').read()
           run_number = int(os.environ['RUN_NUMBER'])
           version_code = 1000 + run_number
-          version_name = f"4.1.1.{run_number}"
+          version_name = f"4.2.2.{run_number}"
           text, count = re.subn(r'versionCode\s+\d+', f'versionCode {version_code}', text, count=1)
           if count != 1:
               raise SystemExit('Could not set Android versionCode')
@@ -160,17 +198,17 @@ jobs:
         shell: bash
         run: |
           chmod +x gradlew
-          for attempt in 1 2 3; do
-            echo "Gradle build attempt ${attempt}/3"
+          for attempt in 1 2 3 4; do
+            echo "Gradle build attempt ${attempt}/4"
             if ./gradlew assembleRelease --no-daemon; then
               exit 0
             fi
-            if [ "$attempt" -lt 3 ]; then
-              echo "Build failed; waiting 45 seconds before retrying dependency downloads..."
-              sleep 45
+            if [ "$attempt" -lt 4 ]; then
+              echo "Build failed; waiting 60 seconds before retrying dependency downloads..."
+              sleep 60
             fi
           done
-          echo "Gradle build failed after 3 attempts. Review the final Gradle error above."
+          echo "Gradle build failed after 4 attempts. Review the final Gradle error above."
           exit 1
 
       - name: Upload signed APK
