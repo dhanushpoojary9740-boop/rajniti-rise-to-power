@@ -1608,6 +1608,82 @@ function advancePartyCampaignOperations() {
   }
 }
 
+// RAJNITI 4.9.0: AI-managed campaigns for approved and funded party candidates.
+// The player candidate is excluded and remains fully player-controlled.
+function processPartySlateCampaignAI() {
+  const elections = ensureElectionCalendar();
+  const slate = Array.isArray(elections.partySlate) ? elections.partySlate : [];
+  const now = currentMonthIndex();
+  let processed = 0;
+
+  slate.forEach(item => {
+    if (!item || item.status !== 'Funded' || !['assembly', 'lok-sabha', 'local'].includes(item.typeId)) return;
+    const schedule = elections.calendar?.[item.typeId];
+    const cycle = Number(item.scheduledAt);
+    if (!schedule || !Number.isFinite(cycle) || Number(schedule.nextAt) !== cycle) return;
+    const monthsRemaining = cycle - now;
+    if (monthsRemaining < 1 || monthsRemaining > 2) return;
+
+    const campaignKey = `${cycle}:${now}`;
+    if (item.lastAiCampaignMonth === campaignKey) return;
+    const member = (state.partyMemberRecords || []).find(person => String(person.id) === String(item.memberId));
+    const loyalty = Math.max(0, Math.min(100, Number(member?.loyalty ?? 50)));
+    const experience = Math.max(0, Math.min(100, Number(member?.experience ?? 20)));
+    const organisation = Math.max(0, Math.min(100, Number(state.partyPopularity ?? 35)));
+    const seed = stableElectionSeed(`${campaignKey}|${item.id}|${item.constituency}`);
+    const actions = ['Door-to-door voter outreach', 'Constituency public meeting', 'Local issue listening session', 'Manifesto and policy outreach', 'Volunteer coordination drive', 'Community meeting'];
+    const action = actions[seed % actions.length];
+    const quality = Math.round(loyalty * 0.30 + experience * 0.25 + organisation * 0.25 + ((seed >>> 8) % 21));
+    const scoreGain = Math.max(5, Math.min(18, Math.round(6 + quality / 12)));
+    const budget = Math.max(0, Number(item.approvedBudget) || 0);
+    const spent = Math.max(0, Number(item.campaignSpent) || 0);
+    const expenditure = Math.min(Math.floor(budget * 0.18), Math.max(0, budget - spent));
+
+    item.campaignSpent = spent + expenditure;
+    item.campaignScore = Math.max(0, Math.min(100, Number(item.campaignScore || item.campaignStrength || 0) + scoreGain));
+    item.campaignStrength = item.campaignScore;
+    item.aiCampaigns = Math.max(0, Number(item.aiCampaigns || 0)) + 1;
+    item.lastAiCampaignMonth = campaignKey;
+    item.lastAiCampaignAt = dateText();
+    if (!Array.isArray(item.aiCampaignReports)) item.aiCampaignReports = [];
+    item.aiCampaignReports.unshift({
+      id: `ai-campaign-${item.id}-${campaignKey}`, date: dateText(), month: now,
+      action, expenditure, scoreGain, campaignScore: item.campaignScore,
+      note: `${item.candidateName} completed an AI-managed campaign activity in ${item.constituency}.`
+    });
+    item.aiCampaignReports = item.aiCampaignReports.slice(0, 8);
+    processed++;
+  });
+
+  // Simulate the main rival's independent campaign in the player's own contest too.
+  // This is an NPC operation; it never consumes player actions or player funds.
+  const active = elections.active;
+  if (active && ['assembly', 'lok-sabha', 'local'].includes(active.typeId) &&
+      Number(active.scheduledAt) - now >= 1 && Number(active.scheduledAt) - now <= 2 &&
+      active.phase !== 'counting' && active.phase !== 'voting') {
+    const rivalKey = `${Number(active.scheduledAt)}:${now}`;
+    if (active.opponentLastAiCampaignMonth !== rivalKey) {
+      const rivalSeed = stableElectionSeed(`${active.id}|${rivalKey}|opponent`);
+      const rivalActions = ['Rival door-to-door outreach', 'Rival public meeting', 'Rival local issue campaign', 'Rival volunteer mobilisation', 'Rival policy announcement'];
+      const rivalGain = 5 + (rivalSeed % 10);
+      active.opponentCampaign = active.opponentCampaign || { score: 0, activities: [], expenditure: 0 };
+      active.opponentCampaign.score = Math.min(100, Number(active.opponentCampaign.score || 0) + rivalGain);
+      active.opponentCampaign.expenditure = Number(active.opponentCampaign.expenditure || 0) + Math.round((Number(active.budget || 0) * 0.08));
+      active.opponentCampaign.activities = Array.isArray(active.opponentCampaign.activities) ? active.opponentCampaign.activities : [];
+      active.opponentCampaign.activities.unshift({ date: dateText(), action: rivalActions[rivalSeed % rivalActions.length], scoreGain: rivalGain });
+      active.opponentCampaign.activities = active.opponentCampaign.activities.slice(0, 8);
+      active.opponentLastAiCampaignMonth = rivalKey;
+      processed++;
+    }
+  }
+
+  if (processed) {
+    elections.aiCampaignLastRun = dateText();
+    elections.aiCampaignLastRunCount = processed;
+  }
+  return processed;
+}
+
 function generatePartyAuditReport() {
   if (!state.partyTreasury || typeof state.partyTreasury !== 'object') state.partyTreasury = { incomeTotal: 0, expenseTotal: 0, ledger: [] };
   if (!Array.isArray(state.partyAuditReports)) state.partyAuditReports = [];
@@ -2279,7 +2355,8 @@ function initializeElectionCounting(active) {
   const turnoutRate = Math.min(0.78, 0.48 + Number(active.campaignScore || 0) / 250 + Number(active.estimatedSupport || 0) / 500);
   const turnout = Math.round(totalVoters * turnoutRate);
   const candidateShare = Math.max(5, Math.min(85, Number(active.estimatedSupport || 0) * 0.48 + Number(active.campaignScore || 0) * 0.32 + state.reputation * 0.12 + state.influence * 0.08));
-  const rivalOneShare = Math.max(5, Math.min(55, 34 + ((state.elections.totalContested % 5) - 2) * 2));
+  const rivalCampaignScore = Math.max(0, Math.min(100, Number(active.opponentCampaign?.score || 0)));
+  const rivalOneShare = Math.max(5, Math.min(55, 34 + ((state.elections.totalContested % 5) - 2) * 2 + rivalCampaignScore * 0.08));
   const rivalTwoShare = Math.max(5, Math.min(35, 20 + ((state.partyPopularity || 0) % 7) - 3));
   const rawShares = [candidateShare, rivalOneShare, rivalTwoShare, Math.max(3, 100 - candidateShare - rivalOneShare - rivalTwoShare)];
   const total = rawShares.reduce((a,b)=>a+b,0);
@@ -2600,6 +2677,7 @@ function endDay() {
   advanceMediaCycle();
   const report = processMonthlyFinances();
   processElectionCalendar();
+  processPartySlateCampaignAI();
   advanceOfficeMonth();
   const totalIncome = report.salary + report.businessIncome + report.investmentIncome;
   const message = `New month: ${dateText()}. Income ${money(totalIncome)} · Expenses ${money(report.expenses)} · Net ${report.net >= 0 ? '+' : '−'}${money(Math.abs(report.net))}. Election calendar updated.`;
@@ -4046,6 +4124,8 @@ function electionPage() {
         const proposed = ordered.filter(item=>item.status==='Proposed').length;
         const approvedCount = ordered.filter(item=>item.status==='Party Approved').length;
         const eligible = ordered.filter(item=>item.status==='Proposed' && item.candidateName && item.stateName && item.district && item.constituency && !partySlateConflict(item,ordered)).length;
+        const aiCampaigning = ordered.filter(item=>item.status==='Funded' && Number(item.campaignScore||0)>0).length;
+        const aiCampaignSpend = ordered.reduce((sum,item)=>sum+Math.max(0,Number(item.campaignSpent)||0),0);
         return ordered.length ? `
           <div class="election-metrics">
             <div><small>TOTAL CANDIDATES</small><b>${ordered.length}/224</b></div>
@@ -4053,6 +4133,8 @@ function electionPage() {
             <div><small>READY FOR BULK APPROVAL</small><b>${eligible}</b></div>
           </div>
           <p class="panel-description">Review all 224 Karnataka Assembly constituencies. Each constituency appears exactly once. Approving a ticket does not allocate campaign funds or submit official nominations.</p>
+          <div class="election-metrics"><div><small>AI CANDIDATES CAMPAIGNING</small><b>${aiCampaigning}</b></div><div><small>AI CAMPAIGN EXPENDITURE</small><b>${money(aiCampaignSpend)}</b></div><div><small>LAST AI CAMPAIGN RUN</small><b>${escapeHtml(e.aiCampaignLastRun || 'Not started')}</b></div></div>
+          <p class="creator-note">During the final two full months before polling, every funded party candidate runs constituency outreach automatically each game month. Your own candidate remains under your direct control.</p>
           <button class="primary-btn" data-party-slate-bulk-approve ${eligible===0?'disabled':''}>APPROVE ALL ELIGIBLE CANDIDATES (${eligible})</button>
           <button class="secondary-btn full" data-party-slate-bulk-fund ${approvedCount===0?'disabled':''}>FUND ALL APPROVED CAMPAIGNS 50/50 (${approvedCount})</button>
           <div class="creator-field" style="margin-top:12px"><label for="candidateRegisterSearch">Search candidate / constituency / district / state</label><input id="candidateRegisterSearch" type="search" placeholder="Search the full candidate register..."></div>
@@ -4065,6 +4147,7 @@ function electionPage() {
                 <div class="candidate-simple-top"><b>${escapeHtml(item.candidateName||'Unnamed candidate')}</b><span class="candidate-status">${escapeHtml(item.status)}</span></div>
                 <div class="candidate-simple-party">${escapeHtml(partyName)} · ${escapeHtml(item.role||member?.role||'General Member')}</div>
                 <div class="candidate-simple-seat">Karnataka · Constituency ${String(item.constituencyNumber||'—')} · <b>${escapeHtml(item.constituency||'Seat pending')}</b></div>
+                ${item.status==='Funded' ? `<div class="candidate-simple-seat">AI campaign score: <b>${Number(item.campaignScore||0)}/100</b> · Activities: <b>${Number(item.aiCampaigns||0)}</b> · Spent: <b>${money(item.campaignSpent||0)}</b></div>${(item.aiCampaignReports||[]).slice(0,2).map(report=>`<small class="creator-note">${escapeHtml(report.date)} · ${escapeHtml(report.action)} · ${money(report.expenditure)}</small>`).join('')}` : ''}
                 <div class="candidate-simple-actions">
                   ${item.status==='Proposed'?`<button class="secondary-btn" data-party-slate-edit="${escapeHtml(item.id)}">Edit</button><button class="secondary-btn" data-party-slate-action="approve" data-party-slate-id="${escapeHtml(item.id)}" ${complete?'':'disabled'}>Approve</button><button class="secondary-btn" data-party-slate-action="reject" data-party-slate-id="${escapeHtml(item.id)}">Reject</button>`:''}
                   ${item.status==='Party Approved'?`<button class="secondary-btn" data-party-slate-fund="${escapeHtml(item.id)}">Fund campaign 50/50</button>`:''}
