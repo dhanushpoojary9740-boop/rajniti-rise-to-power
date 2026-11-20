@@ -3423,7 +3423,8 @@ function nationalLokSabhaCandidatePanel() {
   `;
 }
 
-\nfunction electionPage() {
+
+function electionPage() {
   migrateAssemblyCountdownV260();
   archiveExpiredPartySlateCycles();
   ensureAssemblyElectionCountdown();
