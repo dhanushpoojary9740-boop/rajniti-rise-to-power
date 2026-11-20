@@ -2437,3 +2437,13 @@ input, select, textarea {
 @media (max-width: 520px) {
   .national-results-centre .party-result-tools { grid-template-columns: 1fr; }
 }
+
+
+/* RAJNITI 4.7.0 — persistent election alert centre */
+.election-alert-centre{margin-top:18px;padding-top:16px;border-top:1px solid var(--line,rgba(255,255,255,.1))}
+.election-alert-row{align-items:flex-start;gap:12px}
+.election-alert-row small{display:inline-block;max-width:680px;line-height:1.5;margin-top:5px}
+.election-alert-row.alert-unread{border-left:3px solid var(--gold,#c9a45c);padding-left:12px}
+.election-alert-row.alert-read{opacity:.72}
+.election-alert-row button{flex-shrink:0;white-space:nowrap}
+@media(max-width:600px){.election-alert-row{flex-direction:column}.election-alert-row button{width:100%}}

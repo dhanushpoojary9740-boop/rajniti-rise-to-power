@@ -67,7 +67,10 @@ const defaults = {
       assembly: { intervalMonths: 60, nextAt: 8, label: 'State Assembly elections' },
       'lok-sabha': { intervalMonths: 60, nextAt: 48, label: 'Lok Sabha elections' }
     },
-    nominationQueue: []
+    nominationQueue: [],
+    alertHistory: [],
+    alertKeys: [],
+    lastAlertPopupId: null
   },
 
   finance: {
@@ -2073,7 +2076,70 @@ function ensureElectionCalendar() {
   if (!state.elections || typeof state.elections !== 'object') state.elections = JSON.parse(JSON.stringify(defaults.elections));
   if (!state.elections.calendar) state.elections.calendar = JSON.parse(JSON.stringify(defaults.elections.calendar));
   if (!Array.isArray(state.elections.nominationQueue)) state.elections.nominationQueue = [];
+  if (!Array.isArray(state.elections.alertHistory)) state.elections.alertHistory = [];
+  if (!Array.isArray(state.elections.alertKeys)) state.elections.alertKeys = [];
   return state.elections;
+}
+
+function addElectionAlert(typeId, cycleAt, stage, title, message) {
+  const elections = ensureElectionCalendar();
+  const key = `${typeId}-${cycleAt}-${stage}`;
+  if (elections.alertKeys.includes(key)) return null;
+  const alert = {
+    id: `election-alert-${key}`,
+    key,
+    typeId,
+    cycleAt: Number(cycleAt),
+    stage,
+    title,
+    message,
+    createdAt: dateText(),
+    read: false
+  };
+  elections.alertKeys.push(key);
+  elections.alertHistory.unshift(alert);
+  elections.alertHistory = elections.alertHistory.slice(0, 250);
+  elections.alertKeys = elections.alertKeys.slice(-500);
+  return alert;
+}
+
+function processElectionAlerts(now = currentMonthIndex()) {
+  const elections = ensureElectionCalendar();
+  const labels = {
+    local: 'Local Body Election',
+    assembly: 'State Assembly Election',
+    'lok-sabha': 'Lok Sabha Election'
+  };
+  Object.entries(elections.calendar).forEach(([typeId, schedule]) => {
+    if (!schedule || !Number.isFinite(Number(schedule.nextAt))) return;
+    const due = Number(schedule.nextAt);
+    const remaining = due - now;
+    const label = labels[typeId] || schedule.label || typeId;
+    const milestones = [
+      { offset: 12, stage: '12-month-warning', title: `${label}: 12-month early warning`, message: `The next ${label.toLowerCase()} is scheduled in 12 months. AI state teams should begin organisation and voter-readiness reviews.` },
+      { offset: 6, stage: '6-month-preparation', title: `${label}: preparation alert`, message: `Six months remain. Review state organisation, constituency readiness and preliminary campaign plans.` },
+      { offset: 3, stage: '3-month-candidate-preparation', title: `${label}: candidate preparation`, message: `Three months remain. Review candidate recommendations, constituency coverage and campaign requirements.` },
+      { offset: 1, stage: '1-month-final-readiness', title: `${label}: final readiness`, message: `One month remains. Complete candidate approvals, compliance checks and final campaign readiness.` },
+      { offset: 2, stage: 'official-notification', title: `${label}: election notification`, message: `The official simulation election window has been announced. Review the schedule and nomination requirements.` },
+      { offset: 1, stage: 'nomination-window', title: `${label}: nominations`, message: `The nomination preparation window is active. Review and approve the proposed party candidates.` },
+      { offset: 0, stage: 'polling-day', title: `${label}: polling day`, message: `The scheduled polling month has arrived. Review the active election and polling status.` }
+    ];
+    milestones.forEach(item => {
+      if (remaining === item.offset) addElectionAlert(typeId, due, item.stage, item.title, item.message);
+    });
+  });
+  const active = elections.active;
+  if (active && active.phase === 'counting') {
+    addElectionAlert(active.typeId, active.scheduledAt, 'counting', `${labels[active.typeId] || 'Election'}: counting`, 'Counting is in progress. Follow the constituency count and wait for the declared result.');
+  }
+}
+
+function showNextElectionAlert() {
+  const elections = ensureElectionCalendar();
+  const next = elections.alertHistory.find(item => !item.read);
+  if (!next || elections.lastAlertPopupId === next.id) return;
+  elections.lastAlertPopupId = next.id;
+  toast(`ELECTION ALERT · ${next.title}`);
 }
 function electionMonthsUntil(typeId) {
   const schedule = ensureElectionCalendar().calendar[typeId];
@@ -2133,6 +2199,7 @@ function processElectionCalendar() {
       schedule.proposalKey = proposalKey;
     }
   });
+  processElectionAlerts(now);
   const active = elections.active;
   if (active) {
     const phase = electionPhase(active);
@@ -2140,6 +2207,10 @@ function processElectionCalendar() {
       active.phase = phase;
       active.phaseUpdatedAt = dateText();
       if (phase === 'voting') active.pollingOpenedAt = dateText();
+    }
+    if (active.phase === 'counting') {
+      const label = active.typeName || 'Election';
+      addElectionAlert(active.typeId, active.scheduledAt, 'counting', `${label}: counting`, 'Counting is in progress. Follow the constituency count and wait for the declared result.');
     }
   }
 }
@@ -2413,6 +2484,7 @@ function completeElectionCounting(active) {
   const type = electionTypes.find(item => item.id === active.typeId);
   state.elections.history.unshift(result);
   state.elections.history = state.elections.history.slice(0,200);
+  addElectionAlert(active.typeId, active.scheduledAt, 'result-declared', `${active.typeName || 'Election'}: result declared`, `${result.candidateName} ${won ? 'won' : 'lost'} the ${active.typeName || 'election'} in ${active.constituency}. The result is saved in your election history.`);
   state.elections.totalContested++;
   if (won) {
     state.elections.totalWon++;
@@ -2473,6 +2545,7 @@ function endDay() {
   const totalIncome = report.salary + report.businessIncome + report.investmentIncome;
   const message = `New month: ${dateText()}. Income ${money(totalIncome)} · Expenses ${money(report.expenses)} · Net ${report.net >= 0 ? '+' : '−'}${money(Math.abs(report.net))}. Election calendar updated.`;
   saveState(); render(); toast(message);
+  showNextElectionAlert();
 }
 
 /* PARTY ACTIONS */
@@ -3744,6 +3817,13 @@ function electionPage() {
     const stage = remaining <= 0 ? 'Scheduled now' : remaining <= 2 ? 'Campaign window soon' : remaining <= 4 ? 'Nomination window soon' : 'Preparation period';
     return `<div class="finance-history"><span>${escapeHtml(item.label || id)}<br><small>${stage}</small></span><b>${remaining} months</b></div>`;
   }).join('');
+  const unreadElectionAlerts = electionCalendar.alertHistory.filter(item => !item.read);
+  const electionAlertHtml = electionCalendar.alertHistory.slice(0, 30).map(item => `
+    <div class="finance-history election-alert-row ${item.read ? 'alert-read' : 'alert-unread'}">
+      <span><b>${escapeHtml(item.title)}</b><br><small>${escapeHtml(item.createdAt)} · ${escapeHtml(item.message)}</small></span>
+      <button class="secondary-btn" data-election-alert-read="${escapeHtml(item.id)}">${item.read ? 'READ' : 'MARK READ'}</button>
+    </div>
+  `).join('') || '<p class="panel-description">No election alerts yet. The calendar will create alerts as your game month advances.</p>';
   const nominationHtml = pendingNominations.length ? pendingNominations.map(item =>
     `<div class="finance-history nomination-card"><span><b>${escapeHtml(item.typeName)}</b><br>${escapeHtml(item.candidateName)} · ${escapeHtml(item.constituency)}<br><small>${escapeHtml(item.candidateRole || 'Party member')} · ${escapeHtml(item.aiReason)}</small></span><div class="nomination-actions"><button class="secondary-btn" data-nomination-action="approve" data-nomination-id="${escapeHtml(item.id)}">Approve</button><button class="secondary-btn" data-nomination-action="replace" data-nomination-id="${escapeHtml(item.id)}">Replace</button><button class="secondary-btn" data-nomination-action="reject" data-nomination-id="${escapeHtml(item.id)}">Reject</button></div></div>`
   ).join('') : '<p class="panel-description">No AI candidate proposals are awaiting your review.</p>';
@@ -3772,6 +3852,11 @@ function electionPage() {
       <span class="gold-tag">RECURRING ELECTION CALENDAR</span>
       <h2>Upcoming election cycles</h2>
       ${electionScheduleHtml}
+      <div class="election-alert-centre">
+        <div class="finance-line"><b>Election alert history</b><span>${unreadElectionAlerts.length} unread</span></div>
+        ${electionAlertHtml}
+        <p class="panel-description">Alerts are generated from the in-game election calendar and saved to your career. They are not live Election Commission notifications.</p>
+      </div>
       <p class="panel-description">The calendar is authoritative: prepare in advance, nominations open four months before polling, official campaigning opens two months before polling, and results are declared only after all counting rounds.</p>
       ${(() => {
         const allAssembly = ensurePartySlate().filter(item => item.typeId === 'assembly');
@@ -5635,6 +5720,12 @@ document.addEventListener('change', event => {
 });
 
 document.addEventListener('click', event => {
+  const electionAlertRead = event.target.closest('[data-election-alert-read]');
+  if (electionAlertRead) {
+    const alert = ensureElectionCalendar().alertHistory.find(item => item.id === electionAlertRead.dataset.electionAlertRead);
+    if (alert) { alert.read = true; saveState(); render(); }
+    return;
+  }
   const nationalReview=event.target.closest('[data-national-election-review]'); if(nationalReview){reviewNationalElection(nationalReview.dataset.nationalElectionReview);return;}
 
   const rivalSelect = event.target.closest('[data-rival-select]');
