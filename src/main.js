@@ -3196,7 +3196,7 @@ function electionPage() {
           </div>
           <p class="panel-description">Review all 224 Karnataka Assembly constituencies. Each constituency appears exactly once. Approving a ticket does not allocate campaign funds or submit official nominations.</p>
           <button class="primary-btn" data-party-slate-bulk-approve ${eligible===0?'disabled':''}>APPROVE ALL ELIGIBLE CANDIDATES (${eligible})</button>
-          <button class="secondary-btn full" data-party-slate-bulk-fund ${approved===0?'disabled':''}>FUND ALL APPROVED CAMPAIGNS 50/50 (${approved})</button>
+          <button class="secondary-btn full" data-party-slate-bulk-fund ${approvedCount===0?'disabled':''}>FUND ALL APPROVED CAMPAIGNS 50/50 (${approvedCount})</button>
           <div class="creator-field" style="margin-top:12px"><label for="candidateRegisterSearch">Search candidate / constituency / district / state</label><input id="candidateRegisterSearch" type="search" placeholder="Search the full candidate register..."></div>
           <div class="candidate-register-list" style="max-height:620px;overflow:auto">
             ${ordered.map(item => {
