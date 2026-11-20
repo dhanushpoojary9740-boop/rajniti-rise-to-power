@@ -225,6 +225,7 @@ if (!Array.isArray(state.elections.completedCounting)) state.elections.completed
 if (!Number.isFinite(Number(state.elections.lifecycleVersion))) state.elections.lifecycleVersion = 1;
 let activeTab = 'Dashboard';
 let partySection = 'Overview';
+let electionSection = 'assembly';
 if (!Array.isArray(state.reviewedNews)) state.reviewedNews = [];
 if (!state.media || typeof state.media !== 'object') state.media = JSON.parse(JSON.stringify(defaults.media));
 for (const key of ['approval', 'trust', 'reach']) {
@@ -3720,7 +3721,7 @@ function nationalLokSabhaCandidatePanel() {
 
 
 function nationalElectionResultsCentre() {
-  const history = Array.isArray(state.elections?.history) ? state.elections.history : [];
+  const history = Array.isArray(state.elections?.history) ? state.elections.history.filter(election => election.typeId === 'lok-sabha') : [];
   const records = history.flatMap((election, electionIndex) =>
     (Array.isArray(election.partyCandidateResults) ? election.partyCandidateResults : []).map(candidate => ({
       ...candidate,
@@ -3809,6 +3810,14 @@ function electionPage() {
   const totalVoters = Number(state.constituency.totalVoters) || 46900;
   const averageSupport = Math.round((state.constituency.localities || []).reduce((sum, item) => sum + Number(item.support || 0), 0) / Math.max(1, (state.constituency.localities || []).length));
   const winRate = e.totalContested ? Math.round(e.totalWon / e.totalContested * 100) : 0;
+  const electionSectionMeta = {
+    assembly: { label: 'State Assembly', typeId: 'assembly', description: 'State legislative assembly elections and MLA constituencies.' },
+    'lok-sabha': { label: 'Lok Sabha', typeId: 'lok-sabha', description: 'National parliamentary elections and MP constituencies.' },
+    local: { label: 'Local Elections', typeId: 'local', description: 'Panchayat, municipality and municipal corporation elections.' },
+    other: { label: 'Other Elections', typeId: null, description: 'Rajya Sabha, Legislative Council, by-elections and other special contests.' }
+  };
+  const selectedElectionSection = electionSectionMeta[electionSection] ? electionSection : 'assembly';
+  const selectedElectionTypeId = electionSectionMeta[selectedElectionSection].typeId;
 
   const electionCalendar = ensureElectionCalendar();
   const pendingNominations = electionCalendar.nominationQueue.filter(item => item.typeId !== 'assembly' && item.status === 'Pending');
@@ -3837,6 +3846,18 @@ function electionPage() {
       </div>
     </div>
 
+    <nav class="election-category-tabs" aria-label="Election categories">
+      <button type="button" class="election-category-tab ${selectedElectionSection === 'assembly' ? 'active' : ''}" data-election-section="assembly"><span>🏛</span><b>State Assembly</b><small>MLA elections</small></button>
+      <button type="button" class="election-category-tab ${selectedElectionSection === 'lok-sabha' ? 'active' : ''}" data-election-section="lok-sabha"><span>🇮🇳</span><b>Lok Sabha</b><small>MP elections</small></button>
+      <button type="button" class="election-category-tab ${selectedElectionSection === 'local' ? 'active' : ''}" data-election-section="local"><span>🏘</span><b>Local</b><small>Panchayat & civic</small></button>
+      <button type="button" class="election-category-tab ${selectedElectionSection === 'other' ? 'active' : ''}" data-election-section="other"><span>🗳</span><b>Other</b><small>Special elections</small></button>
+    </nav>
+    <section class="election-section-intro">
+      <span class="gold-tag">SELECTED ELECTION CATEGORY</span>
+      <h2>${electionSectionMeta[selectedElectionSection].label}</h2>
+      <p>${electionSectionMeta[selectedElectionSection].description}</p>
+    </section>
+
     <div class="stats-grid election-stats">
       ${statCard('ELECTIONS CONTESTED', e.totalContested, 'Career record', '▤')}
       ${statCard('ELECTIONS WON', e.totalWon, 'Successful contests', '★')}
@@ -3844,9 +3865,12 @@ function electionPage() {
       ${statCard('LOCAL SUPPORT', averageSupport + '%', 'Across your localities', '♥')}
     </div>
 
-    ${nationalElectionResultsCentre()}
-\n    ${verifiedLokSabhaDataPanel()}\n    ${nationalLokSabhaCandidatePanel()}\n
-    ${nationalElectionArchitecturePanel()}
+    ${selectedElectionSection === 'lok-sabha' ? `
+      ${nationalElectionResultsCentre()}
+      ${verifiedLokSabhaDataPanel()}
+      ${nationalLokSabhaCandidatePanel()}
+      ${nationalElectionArchitecturePanel()}
+    ` : ''}
 
     <section class="panel">
       <span class="gold-tag">RECURRING ELECTION CALENDAR</span>
@@ -3858,6 +3882,7 @@ function electionPage() {
         <p class="panel-description">Alerts are generated from the in-game election calendar and saved to your career. They are not live Election Commission notifications.</p>
       </div>
       <p class="panel-description">The calendar is authoritative: prepare in advance, nominations open four months before polling, official campaigning opens two months before polling, and results are declared only after all counting rounds.</p>
+      ${selectedElectionSection === 'assembly' ? `
       ${(() => {
         const allAssembly = ensurePartySlate().filter(item => item.typeId === 'assembly');
         const activeAssemblyCycle = Number(ensureElectionCalendar().calendar.assembly?.nextAt || currentMonthIndex());
@@ -3993,6 +4018,44 @@ function electionPage() {
           </div>` : '<p class="panel-description">No party-wide candidate proposals yet.</p>';
       })()}
     </section>
+      ` : ''}
+
+
+
+    ${selectedElectionSection === 'local' ? `
+      <section class="panel local-election-category-panel">
+        <span class="gold-tag">LOCAL DEMOCRACY</span>
+        <h2>Local government elections</h2>
+        <p class="panel-description">Contest elections closest to citizens. Local contests use the existing local-body election cycle and constituency-level campaign system.</p>
+        <div class="election-metrics">
+          <div><small>ELECTION CYCLE</small><b>${Math.max(0, Number(electionCalendar.calendar.local?.nextAt || 0) - currentMonthIndex())} months</b></div>
+          <div><small>LEVEL</small><b>Local body</b></div>
+          <div><small>CONSTITUENCY</small><b>${escapeHtml(state.constituency.district || 'Your district')}</b></div>
+        </div>
+        <div class="local-election-level-grid">
+          <article><b>Gram Panchayat</b><small>Village-level elected representatives</small></article>
+          <article><b>Taluk Panchayat</b><small>Taluk-level rural administration</small></article>
+          <article><b>Zilla Panchayat</b><small>District-level rural administration</small></article>
+          <article><b>Municipality / Corporation</b><small>Urban wards, councillors and civic leadership</small></article>
+        </div>
+        <p class="creator-note">The current playable election engine supports a general Local Body Election. Separate ward, panchayat-tier and mayoral contest mechanics can be added as a later expansion without changing existing saves.</p>
+      </section>
+    ` : ''}
+
+    ${selectedElectionSection === 'other' ? `
+      <section class="panel other-election-category-panel">
+        <span class="gold-tag">ADDITIONAL CONSTITUTIONAL ELECTIONS</span>
+        <h2>Other elections</h2>
+        <p class="panel-description">A dedicated home for electoral contests outside the regular Assembly, Lok Sabha and local-body cycles.</p>
+        <div class="local-election-level-grid">
+          <article><b>Rajya Sabha</b><small>Indirect elections to the Council of States by elected MLAs, under the applicable allocation and voting rules</small><span class="candidate-status">Planned module</span></article>
+          <article><b>Legislative Council</b><small>State-level upper-house elections, where a Legislative Council exists</small><span class="candidate-status">Planned module</span></article>
+          <article><b>By-elections</b><small>Casual vacancies in Lok Sabha and State Legislative Assemblies</small><span class="candidate-status">Planned module</span></article>
+          <article><b>Special elections</b><small>Other notified electoral contests and institutional elections</small><span class="candidate-status">Planned module</span></article>
+        </div>
+        <p class="creator-note">These election types are shown separately for planning. They are not yet connected to candidate filing, voting or result calculation, so the game will not generate fictional results for them in this update.</p>
+      </section>
+    ` : ''}
 
     ${active ? `
       <section class="panel election-active-panel">
@@ -4030,7 +4093,7 @@ function electionPage() {
           <p class="creator-note">${electionPhase(active)==='counting'?'Counting is underway. Use the live counting panel to reveal each round.':electionPhase(active)==='campaign'?'Polling and counting unlock when the scheduled election month arrives.':'Your election is registered. The calendar controls nomination, campaigning, polling and counting dates.'}</p>
         </section>
       </section>
-    ` : `
+    ` : selectedElectionSection !== 'other' ? `
       <section class="panel election-start-panel">
         <span class="gold-tag">NEXT ELECTORAL OPPORTUNITY</span>
         <h2>Prepare to contest an election</h2>
@@ -4040,7 +4103,7 @@ function electionPage() {
             <div class="creator-field">
               <label for="electionType">Election type</label>
               <select id="electionType" name="electionType" required>
-                ${electionTypes.map(type => `<option value="${type.id}">${type.name} · ${type.level}</option>`).join('')}
+                ${electionTypes.filter(type => type.id === selectedElectionTypeId).map(type => `<option value="${type.id}">${type.name} · ${type.level}</option>`).join('')}
               </select>
             </div>
             <div class="creator-field">
@@ -4069,12 +4132,18 @@ function electionPage() {
           <button type="submit" class="primary-btn full">REGISTER CANDIDACY & RESERVE BUDGET →</button>
         </form>
       </section>
+    ` : `
+      <section class="panel other-election-register-placeholder">
+        <span class="gold-tag">SEPARATE ELECTION ENGINE</span>
+        <h2>Other election contests</h2>
+        <p class="panel-description">Rajya Sabha, Legislative Council and by-election workflows will be implemented separately because their electorates, nomination rules and counting methods differ from direct constituency elections.</p>
+      </section>
     `}
 
     <section class="panel" style="margin-top:16px">
       <span class="eyebrow">ELECTION HISTORY</span>
       <h3>Your electoral record</h3>
-      ${e.history.length ? e.history.slice(0, 10).map(item => `
+      ${e.history.filter(item => selectedElectionTypeId ? item.typeId === selectedElectionTypeId : !['assembly','lok-sabha','local'].includes(item.typeId)).length ? e.history.filter(item => selectedElectionTypeId ? item.typeId === selectedElectionTypeId : !['assembly','lok-sabha','local'].includes(item.typeId)).slice(0, 10).map(item => `
         <div class="career-step election-history-row">
           <div><b>${escapeHtml(item.typeName)}</b><small>${escapeHtml(item.candidateName)} · ${escapeHtml(item.date)}</small></div>
           <span class="${item.result === 'Won' ? 'current-label' : 'locked'}">${item.result.toUpperCase()}</span>
@@ -5720,6 +5789,12 @@ document.addEventListener('change', event => {
 });
 
 document.addEventListener('click', event => {
+  const electionSectionButton = event.target.closest('[data-election-section]');
+  if (electionSectionButton) {
+    electionSection = electionSectionButton.dataset.electionSection;
+    render();
+    return;
+  }
   const electionAlertRead = event.target.closest('[data-election-alert-read]');
   if (electionAlertRead) {
     const alert = ensureElectionCalendar().alertHistory.find(item => item.id === electionAlertRead.dataset.electionAlertRead);
