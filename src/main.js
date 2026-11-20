@@ -4473,7 +4473,9 @@ function ensureGovernmentState() {
   if (!Array.isArray(g.coalitionPartners)) g.coalitionPartners = [];
   if (!Array.isArray(g.history)) g.history = [];
   if (!g.formationMeeting || typeof g.formationMeeting !== 'object') g.formationMeeting = { status:'Not convened', nominees:[], selectedLeaderId:null, votes:{}, resolution:null };
-  if (!Array.isArray(g.formationMeeting.nominees)) g.formationMeeting.nominees = [];
+  if (!g.formation || typeof g.formation !== 'object') g.formation = { stage:'not-started', governorInvitation:null, appointment:null, cmOath:null, cabinetOath:null, floorTest:null };
+  if (!g.formation.stage) g.formation.stage = g.formed ? 'government-formed' : 'not-started';
+  if (!Array.isArray(g.formation.nominees)) g.formation.nominees = [];
   if (!g.formationMeeting.votes || typeof g.formationMeeting.votes !== 'object') g.formationMeeting.votes = {};
   if (!Number.isFinite(Number(g.treasury))) g.treasury = 50000000;
   if (!Number.isFinite(Number(g.performance))) g.performance = 50;
@@ -4562,28 +4564,71 @@ function recordMeetingVote(memberId, nomineeId) {
 function formGovernment() {
   const g = ensureGovernmentState();
   const meeting = ensureFormationMeeting();
-  if (governmentMandateCount() < governmentMajorityMark()) return toast(`Your party has ${governmentMandateCount()} Assembly seat(s). A majority of 113 seats is required before forming the government.`);
-  if (g.formed) return toast('Your state government is already formed.');
-  if (meeting.status !== 'Leader elected' || !meeting.selectedLeaderName) return toast('Hold the BPP Legislative Party Meeting and elect a Legislative Party Leader before government formation.');
+  if (governmentMandateCount() < governmentMajorityMark()) return toast(`Your party has ${governmentMandateCount()} Assembly seat(s). A majority of 113 seats is required before seeking to form the government.`);
+  if (g.formed || g.formation.stage !== 'not-started') return toast('The government formation process has already started.');
+  if (meeting.status !== 'Leader elected' || !meeting.selectedLeaderName) return toast('Hold the BPP Legislative Party Meeting and elect a Legislative Party Leader first.');
   const elected = eligibleElectedMinisters();
   if (!elected.some(person=>String(person.id)===String(meeting.selectedLeaderId))) return toast('The selected Legislative Party Leader must be an elected BPP MLA.');
-  g.formed = true;
   g.chiefMinister = meeting.selectedLeaderName;
   g.formationLeaderId = meeting.selectedLeaderId;
-  g.cabinetConfirmed = false;
-  g.history.unshift({day:state.day,month:state.month,year:state.year,event:`Government formation initiated with ${g.chiefMinister} as elected Legislative Party Leader; cabinet appointments pending`});
-  saveState(); render(); toast(`${g.chiefMinister} selected as Legislative Party Leader. Proceed to cabinet formation and final confirmation.`);
+  g.formation.stage = 'governor-invited';
+  g.formation.governorInvitation = { governor:'Governor of Karnataka', invitedLeader:g.chiefMinister, date:dateText(), basis:`Party has ${governmentMandateCount()} of 224 Assembly seats and a single-party majority.` };
+  g.history.unshift({day:state.day,month:state.month,year:state.year,event:`Governor invited ${g.chiefMinister}, elected BPP Legislative Party Leader, to form the Karnataka government`});
+  saveState(); render(); toast('Governor invitation recorded. Complete the Chief Minister appointment and oath process.');
+}
+
+function advanceGovernmentFormation() {
+  const g = ensureGovernmentState();
+  const f = g.formation;
+  if (f.stage === 'governor-invited') {
+    f.stage = 'cm-appointed';
+    f.appointment = { office:'Chief Minister of Karnataka', appointedBy:'Governor of Karnataka', appointee:g.chiefMinister, date:dateText(), basis:'Appointment following the elected legislative party leader demonstrating a majority position.' };
+    g.history.unshift({day:state.day,month:state.month,year:state.year,event:`Governor appointed ${g.chiefMinister} as Chief Minister`});
+    toast('Chief Minister appointed by the Governor. The oath of office and secrecy is next.');
+  } else if (f.stage === 'cm-appointed') {
+    f.stage = 'cm-sworn';
+    f.cmOath = { office:g.chiefMinister, oath:'Oath of office and secrecy', administeredBy:'Governor of Karnataka', date:dateText() };
+    g.history.unshift({day:state.day,month:state.month,year:state.year,event:`${g.chiefMinister} took the oath of office and secrecy before the Governor`});
+    toast('Chief Minister oath recorded. Form the Council of Ministers.');
+  } else if (f.stage === 'cm-sworn' || f.stage === 'cabinet-in-progress') {
+    const appointed = governmentPortfolios.filter(portfolio=>!!g.ministers[portfolio]);
+    if (!appointed.length) return toast('Appoint at least one elected MLA as a minister before completing the cabinet stage.');
+    f.stage = 'cabinet-sworn';
+    f.cabinetOath = { ministers:appointed.map(portfolio=>({portfolio,name:g.ministers[portfolio]})), date:dateText(), administeredBy:'Governor of Karnataka' };
+    g.cabinetConfirmed = true;
+    g.history.unshift({day:state.day,month:state.month,year:state.year,event:`Council of Ministers sworn in: ${appointed.length} minister(s); portfolios recorded`});
+    toast('Council of Ministers oath recorded. The government must now prove its majority on the Assembly floor.');
+  } else if (f.stage === 'cabinet-sworn') {
+    const seats = governmentMandateCount();
+    f.floorTest = { date:dateText(), seatsFor:seats, seatsAgainst:224-seats, majorityRequired:113, passed:seats>=113 };
+    if (!f.floorTest.passed) {
+      f.stage = 'floor-test-failed';
+      g.formed = false;
+      g.history.unshift({day:state.day,month:state.month,year:state.year,event:`Government failed the Assembly floor test (${seats} of 224; 113 required)`});
+      toast('Floor test failed. The government cannot continue as a majority government.');
+    } else {
+      f.stage = 'government-formed';
+      g.formed = true;
+      g.history.unshift({day:state.day,month:state.month,year:state.year,event:`Government won the Assembly floor test with ${seats} of 224 seats; administration formally commenced`});
+      toast('Floor test passed. Your Karnataka government is now officially formed.');
+    }
+  } else return toast('No government-formation action is available at this stage.');
+  saveState(); render();
 }
 
 function appointMinister(portfolio, memberId) {
   const g = ensureGovernmentState();
-  if (!g.formed) return toast('Complete the legislative party meeting and form the government first.');
+  if (!['cm-sworn','cabinet-in-progress'].includes(g.formation.stage) && !(g.formed && g.ministers[portfolio])) return toast('The Chief Minister must take the oath before cabinet appointments begin.');
+  const currentMinisters = Object.keys(g.ministers).filter(key=>!!g.ministers[key]).length;
+  const maxMinisters = Math.floor(224 * 0.15);
+  if (!g.ministers[portfolio] && currentMinisters >= maxMinisters) return toast(`The Karnataka Council of Ministers has reached its constitutional ceiling of ${maxMinisters} members, including the Chief Minister.`);
   if (!governmentPortfolios.includes(portfolio)) return;
   const used = Object.entries(g.ministers).filter(([key])=>key!==portfolio).map(([,name])=>name);
   const candidate = eligibleElectedMinisters().find(person=>String(person.id)===String(memberId));
   if (!candidate) return toast('Choose an elected BPP MLA from the searchable member list.');
   if (used.includes(candidate.name)) return toast('This MLA already holds another ministry. Select a different member.');
   g.ministers[portfolio] = candidate.name;
+  if (!g.formed) g.formation.stage = 'cabinet-in-progress';
   g.ministerMemberIds = g.ministerMemberIds || {};
   g.ministerMemberIds[portfolio] = candidate.id;
   g.history.unshift({ day:state.day, month:state.month, year:state.year, event:`${candidate.name}, elected from ${candidate.constituency}, appointed Minister for ${portfolio} by the Chief Minister` });
@@ -4673,6 +4718,9 @@ function governmentPage() {
     formed = false;
   }
   const appointedMinisterCount = governmentPortfolios.filter(portfolio => !!g.ministers[portfolio]).length;
+  const formationStage = g.formation.stage;
+  const cabinetOpen = ['cm-sworn','cabinet-in-progress'].includes(formationStage) || formed;
+  const formationLabels = {'not-started':'Awaiting Governor invitation','governor-invited':'Governor invitation received','cm-appointed':'Chief Minister appointed','cm-sworn':'Chief Minister sworn in','cabinet-in-progress':'Cabinet being constituted','cabinet-sworn':'Council of Ministers sworn in','government-formed':'Government formed','floor-test-failed':'Floor test failed'};
   const meeting = ensureFormationMeeting();
   const electedMlas = eligibleElectedMinisters();
   const selectedPortfolio = g.pendingPortfolio || governmentPortfolios[0];
@@ -4686,7 +4734,7 @@ function governmentPage() {
       </div>
     </article>`;
   }).join('');
-  const cabinetChoices = electedMlas.filter(person => !Object.entries(g.ministers).some(([portfolio,name])=>portfolio!==selectedPortfolio && name===person.name)).map(person=>`
+  const cabinetChoices = electedMlas.filter(person => String(person.id)!==String(g.formationLeaderId) && !Object.entries(g.ministers).some(([portfolio,name])=>portfolio!==selectedPortfolio && name===person.name)).map(person=>`
     <article class="meeting-member" data-cabinet-member-row="${escapeHtml((person.name+' '+person.role+' '+person.constituency).toLowerCase())}">
       <div><b>${escapeHtml(person.name)}</b><small>${escapeHtml(person.role)} · ${escapeHtml(person.constituency||'Constituency not recorded')} · ${person.experience} experience</small></div>
       <button class="secondary-btn" data-cabinet-select="${escapeHtml(person.id)}" data-cabinet-portfolio="${escapeHtml(selectedPortfolio)}">APPOINT</button>
@@ -4695,7 +4743,7 @@ function governmentPage() {
     <article class="panel government-portfolio">
       <span class="eyebrow">MINISTRY PORTFOLIO</span><h3>${escapeHtml(portfolio)}</h3>
       <b>${escapeHtml(g.ministers[portfolio] || (portfolio === 'Finance' && formed ? 'Appointment pending' : 'Vacant'))}</b>
-      <button class="secondary-btn" data-gov-appoint="${escapeHtml(portfolio)}" ${!formed ? 'disabled' : ''}>${g.ministers[portfolio] ? 'REPLACE MINISTER' : 'APPOINT MINISTER'}</button>
+      <button class="secondary-btn" data-gov-appoint="${escapeHtml(portfolio)}" ${!cabinetOpen ? 'disabled' : ''}>${g.ministers[portfolio] ? 'REPLACE MINISTER' : 'APPOINT MINISTER'}</button>
     </article>`).join('');
   const departments = Object.entries(g.departments).map(([name, value]) => `
     <div class="gov-budget-row"><div><b>${escapeHtml(name)}</b><strong>${Number(value)}%</strong></div>
@@ -4707,8 +4755,12 @@ function governmentPage() {
     <section class="panel government-hero"><span class="gold-tag">STATE ADMINISTRATION</span><h2>${formed ? 'Your state government' : majorityReached ? 'Assembly majority secured' : wins ? 'The path to a majority' : 'The path to government'}</h2>
       <p class="panel-description">${formed ? `Chief Minister: ${escapeHtml(g.chiefMinister || state.playerName)}. Build your cabinet and deliver programmes.` : 'One MLA victory gives you one Assembly seat, not a government. A single party needs 113 of 224 seats to form a majority government. Party candidates must be approved, funded and included in the election cycle before their simulated constituency results count.'}</p>
       <div class="government-unlock-grid"><div><b>${wins} / 224</b><small>Party Assembly seats won · majority 113</small></div><div><b>${money(g.treasury)}</b><small>Government treasury</small></div><div><b>${Number(g.performance)}%</b><small>Administration performance</small></div><div><b>${appointedMinisterCount}/${governmentPortfolios.length}</b><small>Ministers appointed</small></div></div>
-      ${!meeting.selectedLeaderName && !formed ? `<button class="primary-btn" data-action="call-party-meeting" ${!majorityReached?'disabled':''}>CALL BPP LEGISLATIVE PARTY MEETING</button>` : `<button class="primary-btn" data-action="gov-form" ${!majorityReached || formed || meeting.status!=='Leader elected' ? 'disabled' : ''}>PROCEED TO GOVERNMENT FORMATION</button>`}
-      <p class="panel-description government-majority-note">${formed ? `Government led by ${escapeHtml(g.chiefMinister)}.` : meeting.selectedLeaderName ? `${escapeHtml(meeting.selectedLeaderName)} has been elected Legislative Party Leader. Proceed when ready.` : majorityReached ? 'Majority secured. Hold a party meeting and elect your Legislative Party Leader before government formation.' : `You currently have ${wins} seat(s). ${governmentMajorityMark()-wins} more seat(s) are required for a single-party majority.`}</p>
+      ${!meeting.selectedLeaderName && !formed && formationStage==='not-started' && meeting.status!=='In session' ? `<button class="primary-btn" data-action="call-party-meeting" ${!majorityReached?'disabled':''}>CALL BPP LEGISLATIVE PARTY MEETING</button>` : ''}
+      ${meeting.selectedLeaderName && !formed && formationStage==='not-started' ? `<button class="primary-btn" data-action="gov-form" ${!majorityReached || meeting.status!=='Leader elected' ? 'disabled' : ''}>REQUEST GOVERNOR TO FORM GOVERNMENT</button>` : ''}
+      <p class="panel-description government-majority-note">${formed ? `Government led by ${escapeHtml(g.chiefMinister)}.` : `Formation stage: ${escapeHtml(formationLabels[formationStage] || formationStage)}. ${meeting.selectedLeaderName ? `${escapeHtml(meeting.selectedLeaderName)} is the elected Legislative Party Leader.` : majorityReached ? 'Majority secured. Convene the BPP legislative party meeting.' : `You currently have ${wins} seat(s); ${governmentMajorityMark()-wins} more are required for a single-party majority.`}`}</p>
+      ${formationStage!=='not-started' && formationStage!=='government-formed' && formationStage!=='floor-test-failed' ? `<section class="meeting-resolution"><b>CONSTITUTIONAL FORMATION CHECKLIST</b><p>${escapeHtml(formationLabels[formationStage] || formationStage)}</p>${g.formation.governorInvitation?`<small>Governor's invitation: ${escapeHtml(g.formation.governorInvitation.date)} · ${escapeHtml(g.formation.governorInvitation.basis)}</small>`:''}${g.formation.appointment?`<small>Appointment: ${escapeHtml(g.formation.appointment.appointee)} · ${escapeHtml(g.formation.appointment.date)}</small>`:''}${g.formation.cmOath?`<small>Chief Minister oath: ${escapeHtml(g.formation.cmOath.date)}</small>`:''}${g.formation.cabinetOath?`<small>Ministers sworn in: ${g.formation.cabinetOath.ministers.length} · ${escapeHtml(g.formation.cabinetOath.date)}</small>`:''}<button class="primary-btn" data-action="gov-stage">${formationStage==='governor-invited'?'RECORD GOVERNOR APPOINTMENT':formationStage==='cm-appointed'?'RECORD CHIEF MINISTER OATH':['cm-sworn','cabinet-in-progress'].includes(formationStage)?'COMPLETE CABINET & RECORD MINISTER OATH':'CONDUCT ASSEMBLY FLOOR TEST'}</button></section>` : ''}
+      ${formationStage==='government-formed'?`<p class="meeting-resolution"><b>FLOOR TEST PASSED</b><br>${g.formation.floorTest.seatsFor} for · ${g.formation.floorTest.seatsAgainst} against · ${g.formation.floorTest.majorityRequired} required</p>`:''}
+      ${formationStage==='floor-test-failed'?`<p class="meeting-resolution"><b>FLOOR TEST FAILED</b><br>${g.formation.floorTest?.seatsFor||0} for · ${g.formation.floorTest?.majorityRequired||113} required</p>`:''}
     </section>
     ${majorityReached && !formed ? `<section class="panel legislative-meeting-panel" style="margin-top:16px">
       <span class="eyebrow">BPP LEGISLATIVE PARTY</span><h2>Party meeting & leader election</h2>
@@ -4728,12 +4780,12 @@ function governmentPage() {
     <div class="command-section-head"><div><span class="eyebrow">COUNCIL OF MINISTERS</span><h2>Cabinet formation</h2></div></div>
     <section class="panel cabinet-selection-panel">
       <h3>Search and appoint elected MLAs</h3>
-      <p class="panel-description">Choose a portfolio, search the elected BPP MLA register and appoint the member yourself. No ministers are assigned automatically.</p>
+      <p class="panel-description">Choose a portfolio and appoint an elected BPP MLA after the Chief Minister takes the oath. The Chief Minister is not counted as a separate minister appointment.</p>
       <label class="field-label" for="cabinetPortfolioSelect">Ministry portfolio</label>
-      <select id="cabinetPortfolioSelect" class="search-input" ${!formed?'disabled':''}>${governmentPortfolios.map(portfolio=>`<option value="${escapeHtml(portfolio)}" ${portfolio===selectedPortfolio?'selected':''}>${escapeHtml(portfolio)}</option>`).join('')}</select>
+      <select id="cabinetPortfolioSelect" class="search-input" ${!cabinetOpen?'disabled':''}>${governmentPortfolios.map(portfolio=>`<option value="${escapeHtml(portfolio)}" ${portfolio===selectedPortfolio?'selected':''}>${escapeHtml(portfolio)}</option>`).join('')}</select>
       <label class="field-label" for="cabinetMemberSearch">Search eligible elected MLAs</label>
-      <input id="cabinetMemberSearch" class="search-input" placeholder="Search name, party role or constituency…" ${!formed?'disabled':''}>
-      <div id="cabinetMemberList" class="meeting-member-list">${formed ? (cabinetChoices || '<p class="panel-description">No unassigned elected BPP MLAs available.</p>') : '<p class="panel-description">Complete the party meeting and form the government to appoint ministers.</p>'}</div>
+      <input id="cabinetMemberSearch" class="search-input" placeholder="Search name, party role or constituency…" ${!cabinetOpen?'disabled':''}>
+      <div id="cabinetMemberList" class="meeting-member-list">${cabinetOpen ? (cabinetChoices || '<p class="panel-description">No unassigned elected BPP MLAs available.</p>') : '<p class="panel-description">The Chief Minister must take the oath before ministers can be appointed.</p>'}</div>
     </section>
     <div class="government-cabinet-grid">${ministries}</div>
     <section class="panel gov-budget-panel"><div class="command-section-head"><div><span class="eyebrow">PUBLIC FINANCE</span><h2>Department allocations</h2></div><b>${totalAllocation}% allocated</b></div>
@@ -6316,6 +6368,9 @@ if (!Array.isArray(state.media.history)) state.media.history = [];
       break;
     case 'gov-form':
       formGovernment();
+      break;
+    case 'gov-stage':
+      advanceGovernmentFormation();
       break;
     case 'gov-scheme':
       launchGovernmentScheme();
