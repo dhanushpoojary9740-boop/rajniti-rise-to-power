@@ -4598,6 +4598,9 @@ function ensureGovernmentState() {
   }
   if (!Array.isArray(g.alternativeAdministration.partners)) g.alternativeAdministration.partners = [];
   if (!Array.isArray(g.alternativeAdministration.ministers)) g.alternativeAdministration.ministers = [];
+  if (!Number.isFinite(Number(g.alternativeAdministration.ownPartySeats))) g.alternativeAdministration.ownPartySeats = 0;
+  if (!g.alternativeAdministration.negotiationStatus) g.alternativeAdministration.negotiationStatus = 'Not started';
+  g.alternativeAdministration.partners.forEach(partner=>{if(!partner.status)partner.status='accepted';});
 
   if (!Array.isArray(g.projects)) g.projects = [];
   if (!Array.isArray(g.governmentOrders)) g.governmentOrders = [];
@@ -4949,7 +4952,40 @@ function buildAlternativeCabinetFromElectedMembers(){
 function alternativeGovernmentAction(action) {
   const g=ensureGovernmentState();
   const a=g.alternativeAdministration;
-  if(action==='form'){
+  if(action==='negotiate'){
+    if(!a.partners.length)return toast('Load party-wise election results before starting coalition negotiations.');
+    let accepted=0, rejected=0;
+    a.partners.forEach(partner=>{
+      const decision=prompt(`Coalition proposal to ${partner.name} (${partner.seats} elected members). Enter ACCEPT or REJECT:`,partner.status==='accepted'?'ACCEPT':'ACCEPT');
+      if(decision===null)return;
+      if(decision.trim().toLowerCase()==='accept'){
+        const demand=prompt(`${partner.name} has accepted in principle. Enter its requested ministry/portfolio (or leave blank):`,partner.portfolioDemand||'');
+        partner.status='accepted';partner.portfolioDemand=(demand||'').trim();partner.negotiatedAt=dateText();accepted++;
+      }else{
+        partner.status='rejected';partner.negotiatedAt=dateText();rejected++;
+      }
+    });
+    a.supportSeats=Number(a.ownPartySeats||0)+a.partners.filter(x=>x.status==='accepted').reduce((sum,x)=>sum+Number(x.seats||0),0);
+    a.negotiatedParties=a.partners.length;
+    a.negotiationStatus=`Negotiations recorded · ${accepted} accepted · ${rejected} rejected`;
+    a.confidence='Awaiting floor test';
+    saveState();render();toast(`Negotiations updated. Accepted coalition support: ${a.supportSeats} seats.`);
+  } else if(action==='withdraw'){
+    if(!a.partners.length)return toast('There are no coalition parties to withdraw.');
+    const choices=a.partners.map((x,i)=>`${i+1}. ${x.name} (${x.seats} seats · ${x.status||'accepted'})`).join('\\n');
+    const raw=prompt(`Enter the number of the party withdrawing support:\\n${choices}`);
+    if(raw===null)return;
+    const partner=a.partners[Number(raw)-1];
+    if(!partner)return toast('Invalid party selection.');
+    partner.status='withdrawn';partner.negotiatedAt=dateText();
+    a.supportSeats=Number(a.ownPartySeats||0)+a.partners.filter(x=>x.status==='accepted').reduce((sum,x)=>sum+Number(x.seats||0),0);
+    a.confidence='Coalition support changed · floor test required';
+    if(a.active && a.supportSeats < Math.floor((a.level==='lok-sabha'?543:224)/2)+1){
+      a.active=false;a.confidence='Majority lost after coalition withdrawal';g.formed=false;g.status='Coalition majority lost';
+    }
+    g.history.unshift({day:state.day,month:state.month,year:state.year,event:`${partner.name} withdrew coalition support. Remaining declared support: ${a.supportSeats} seats.`});
+    saveState();render();toast(`${partner.name} withdrew support. Coalition now has ${a.supportSeats} seats.`);
+  } else if(action==='form'){
     const leader=prompt('Enter the opposition coalition leader who will become Chief Minister:');
     if(!leader||!leader.trim())return;
     const party=prompt('Enter the leader’s party:');
@@ -4958,9 +4994,10 @@ function alternativeGovernmentAction(action) {
     const partyRegister=electedPartySeatRegister(a.level==='lok-sabha'?'lok-sabha':'assembly');
     const ownParty=partyRegister.find(x=>x.party.toLowerCase()===party.trim().toLowerCase());
     if(partyRegister.length && ownParty){
-      const coalition=partyRegister.filter(x=>x.party!==ownParty.party);
-      a.partners=coalition.map(x=>({name:x.party,seats:x.seats}));
-      seats=ownParty.seats+coalition.reduce((sum,x)=>sum+x.seats,0);
+      const coalition=a.partners.filter(x=>x.status==='accepted' && x.name!==ownParty.party);
+      seats=ownParty.seats+coalition.reduce((sum,x)=>sum+Number(x.seats||0),0);
+      if(a.partners.length && !a.negotiatedParties)return toast('Negotiate with each party before forming the coalition.');
+      a.partners=coalition;
     }else{
       const totalSeats=a.level==='lok-sabha'?543:224, majority=Math.floor(totalSeats/2)+1;
       const raw=prompt(`Enter total declared support seats (including coalition partners; majority ${majority} of ${totalSeats}):`,String(majority));
@@ -4971,7 +5008,7 @@ function alternativeGovernmentAction(action) {
     }
     const totalSeats=a.level==='lok-sabha'?543:224, majority=Math.floor(totalSeats/2)+1;
     if(seats<majority)return toast(`Recorded coalition has ${seats} seats; ${majority} are required.`);
-    a.active=true;a.leader=leader.trim();a.party=party.trim();a.supportSeats=seats;a.ministers=[];a.formedAt=dateText();a.confidence='Awaiting floor test';a.source='Alternative coalition formed after election result';
+    a.ownPartySeats=ownParty?Number(ownParty.seats||0):seats; a.active=true;a.leader=leader.trim();a.party=party.trim();a.supportSeats=seats;a.ministers=[];a.formedAt=dateText();a.confidence='Awaiting floor test';a.source='Alternative coalition formed after election result';
     g.formed=false;g.status='Alternative coalition formed · Floor test pending';
     g.history.unshift({day:state.day,month:state.month,year:state.year,event:`Opposition coalition led by ${a.leader} (${a.party}) declared ${seats} Assembly support seats and formed an alternative administration pending floor test`});
     saveState();render();toast('Alternative coalition recorded. Appoint ministers and complete its floor test.');
@@ -4980,7 +5017,7 @@ function alternativeGovernmentAction(action) {
     const name=prompt('Supporting party name:');if(!name||!name.trim())return;
     const raw=prompt('Committed support seats:','1');if(raw===null)return;
     const seats=Math.floor(Number(raw));if(!Number.isFinite(seats)||seats<=0||a.supportSeats+seats>224)return toast('Enter valid support seats within the 224-seat House.');
-    a.partners.push({name:name.trim(),seats});a.supportSeats+=seats;
+    a.partners.push({name:name.trim(),seats,status:'accepted',negotiatedAt:dateText()});a.supportSeats=Number(a.ownPartySeats||0)+a.partners.filter(x=>x.status==='accepted').reduce((sum,x)=>sum+Number(x.seats||0),0);
     saveState();render();toast('Coalition partner and support recorded.');
   } else if(action==='minister'){
     if(!a.active)return toast('Form an alternative coalition first.');
@@ -5008,8 +5045,11 @@ function alternativeGovernmentAction(action) {
     if(!parties.length)return toast('No party-wise elected-member records are available for this chamber yet.');
     a.partySeatRegister=parties.map(({party,seats})=>({party,seats}));
     const opposition=parties.filter(x=>x.party!==state.party);
-    a.supportSeats=opposition.reduce((sum,x)=>sum+x.seats,0);
-    a.partners=opposition.map(x=>({name:x.party,seats:x.seats}));
+    a.partners=opposition.map(x=>({name:x.party,seats:x.seats,status:'pending',portfolioDemand:'',negotiatedAt:''}));
+    a.ownPartySeats=parties.find(x=>x.party===state.party)?.seats||0;
+    a.supportSeats=Number(a.ownPartySeats||0);
+    a.negotiationStatus='Awaiting party negotiations';
+    a.negotiatedParties=0;
     saveState();render();toast(`Loaded ${parties.length} parties and ${a.supportSeats} opposition seats from recorded winners.`);
   }
 }
@@ -5090,13 +5130,16 @@ function governmentPage() {
     <section class="panel"><span class="eyebrow">ALTERNATIVE GOVERNMENT & COALITION</span><h2>${alternative.active ? 'Opposition-led administration' : 'Alternative government formation'}</h2>
       <p>${alternative.active ? `A coalition led by <b>${escapeHtml(alternative.leader)}</b> (${escapeHtml(alternative.party)}) has declared ${Number(alternative.supportSeats)} supporting seats in the ${alternative.level==='lok-sabha'?'Lok Sabha':'Karnataka Assembly'}.` : 'If your party cannot form a majority, record an opposition coalition and its proposed Council of Ministers here.'}</p>
       <p><b>Floor-test status:</b> ${escapeHtml(alternative.confidence || 'Not tested')} · Majority required: ${Math.floor((alternative.level==='lok-sabha'?543:224)/2)+1}</p>
-      ${alternative.partners.map(x=>`<div class="history-row"><b>${escapeHtml(x.name)}</b><small>${Number(x.seats)} supporting seats</small></div>`).join('')}
+      <p><b>Coalition negotiations:</b> ${escapeHtml(alternative.negotiationStatus||'Not started')}</p>
+      ${alternative.partners.map(x=>`<div class="history-row"><b>${escapeHtml(x.name)}</b><small>${Number(x.seats)} seats · ${escapeHtml(x.status||'accepted')}${x.portfolioDemand?` · Requested: ${escapeHtml(x.portfolioDemand)}`:''}</small></div>`).join('')}
       ${alternative.ministers.length ? `<h3>Alternative Council of Ministers</h3>${alternative.ministers.map(m=>`<div class="history-row"><b>${escapeHtml(m.name)}</b><small>${escapeHtml(m.portfolio)} · ${escapeHtml(m.party)}</small></div>`).join('')}` : '<p class="muted">No ministers appointed yet.</p>'}
       <h3>Party-wise elected members</h3>
       ${electedPartySeatRegister(alternative.level==='lok-sabha'?'lok-sabha':'assembly').map(x=>`<div class="history-row"><b>${escapeHtml(x.party)}</b><small>${x.seats} recorded elected members</small></div>`).join('') || '<p class="muted">No complete elected-member register available yet.</p>'}
       ${alternative.cabinetSource ? `<p><b>Cabinet source:</b> ${escapeHtml(alternative.cabinetSource)} · ${escapeHtml(alternative.cabinetGeneratedAt||'')}</p>` : ''}
       <div class="national-lok-sabha-actions">
         <button class="secondary-btn" data-alt-government="auto-seats">LOAD PARTY SEATS FROM ELECTION RESULTS</button>
+        <button class="secondary-btn" data-alt-government="negotiate" ${!alternative.partners.length?'disabled':''}>NEGOTIATE WITH EACH PARTY</button>
+        <button class="secondary-btn" data-alt-government="withdraw" ${!alternative.partners.some(x=>x.status==='accepted')?'disabled':''}>PARTY WITHDRAWS SUPPORT</button>
         <button class="secondary-btn" data-alt-government="form">FORM OPPOSITION GOVERNMENT</button>
         <button class="secondary-btn" data-alt-government="partner" ${!alternative.active?'disabled':''}>ADD COALITION PARTNER</button>
         <button class="secondary-btn" data-alt-government="minister" ${!alternative.active?'disabled':''}>APPOINT MINISTER</button>
