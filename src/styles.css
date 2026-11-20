@@ -2413,3 +2413,27 @@ input, select, textarea {
 .party-result-candidate details { border-top:1px solid rgba(255,255,255,.07); padding-top:8px; }
 .party-result-candidate summary { color:var(--text-secondary,#b7c0cc); cursor:pointer; font-size:.82rem; }
 @media(max-width:520px) { .party-result-tools { grid-template-columns:1fr; } .party-result-topline { flex-direction:column; } }
+
+
+/* RAJNITI 4.6.0 · Saved national election results centre */
+.national-results-centre {
+  border-color: rgba(201,165,93,.3);
+  background: linear-gradient(145deg, rgba(18,27,40,.95), rgba(10,16,25,.98));
+}
+.national-results-centre h3 { margin-top: 22px; }
+.national-results-centre .party-result-tools {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(150px, .55fr);
+  gap: 9px;
+  margin: 12px 0;
+}
+.national-results-centre .party-result-tools input,
+.national-results-centre .party-result-tools select {
+  min-width: 0;
+}
+.national-results-centre .party-result-candidate details {
+  margin-top: 10px;
+}
+@media (max-width: 520px) {
+  .national-results-centre .party-result-tools { grid-template-columns: 1fr; }
+}

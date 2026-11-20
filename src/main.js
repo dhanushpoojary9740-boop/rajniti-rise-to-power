@@ -2412,7 +2412,7 @@ function completeElectionCounting(active) {
   }
   const type = electionTypes.find(item => item.id === active.typeId);
   state.elections.history.unshift(result);
-  state.elections.history = state.elections.history.slice(0,30);
+  state.elections.history = state.elections.history.slice(0,200);
   state.elections.totalContested++;
   if (won) {
     state.elections.totalWon++;
@@ -3645,6 +3645,86 @@ function nationalLokSabhaCandidatePanel() {
 }
 
 
+
+function nationalElectionResultsCentre() {
+  const history = Array.isArray(state.elections?.history) ? state.elections.history : [];
+  const records = history.flatMap((election, electionIndex) =>
+    (Array.isArray(election.partyCandidateResults) ? election.partyCandidateResults : []).map(candidate => ({
+      ...candidate,
+      electionId: election.id || `history-${electionIndex}`,
+      electionType: election.typeName || election.typeId || 'Election',
+      electionDate: election.date || '',
+      party: candidate.party || election.party || state.party || 'Party'
+    }))
+  );
+  const won = records.filter(item => item.result === 'Won').length;
+  const lost = records.filter(item => item.result === 'Lost').length;
+  const votes = records.reduce((sum,item) => sum + Number(item.votes || 0),0);
+  const averageShare = records.length ? (records.reduce((sum,item)=>sum+Number(item.voteShare||0),0)/records.length).toFixed(1) : '0.0';
+  const stateSummary = Object.values(records.reduce((acc,item) => {
+    const key = item.stateName || 'Unspecified';
+    if (!acc[key]) acc[key] = {name:key, contested:0, won:0, lost:0, votes:0};
+    acc[key].contested++;
+    if (item.result === 'Won') acc[key].won++;
+    if (item.result === 'Lost') acc[key].lost++;
+    acc[key].votes += Number(item.votes || 0);
+    return acc;
+  }, {})).sort((a,b)=>b.won-a.won || b.votes-a.votes);
+  const rows = records.slice().sort((a,b) => Number(!!b.isPlayer)-Number(!!a.isPlayer) ||
+    Number(!!b.isManualMember)-Number(!!a.isManualMember) ||
+    String(a.candidateName).localeCompare(String(b.candidateName)));
+  return `
+    <section class="panel national-results-centre">
+      <span class="gold-tag">ELECTION ARCHIVE · SAVED RESULTS</span>
+      <h2>National election results centre</h2>
+      <p class="panel-description">This report reads completed candidate results saved in your election history. Opening this page never reruns counting or generates replacement vote totals. Only constituencies with saved results are included.</p>
+      <div class="stats-grid">
+        ${statCard('CANDIDATE RESULTS', records.length, 'Saved constituency records', '▤')}
+        ${statCard('WON', won, 'Saved winning results', '★')}
+        ${statCard('NOT ELECTED', lost, 'Saved unsuccessful results', '—')}
+        ${statCard('TOTAL PARTY VOTES', votes.toLocaleString('en-IN'), 'Across saved candidate records', '▥')}
+      </div>
+      <div class="election-national-note">
+        <b>Average candidate vote share</b>
+        <p>${averageShare}% across ${records.length} saved candidate records. This is an unweighted average of individual candidate vote shares, not a national vote share calculated from all electors.</p>
+      </div>
+      <h3>State-wise saved performance</h3>
+      ${stateSummary.length ? stateSummary.map(item=>`
+        <div class="finance-history"><span><b>${escapeHtml(item.name)}</b><br><small>${item.contested} saved contests · ${item.votes.toLocaleString('en-IN')} party candidate votes</small></span><b>${item.won} won · ${item.lost} lost</b></div>
+      `).join('') : '<p class="panel-description">No completed party-wide candidate result records are available yet.</p>'}
+      <h3>Candidate result archive</h3>
+      <div class="party-result-tools">
+        <input id="electionArchiveSearch" type="search" placeholder="Search candidate, constituency, state or election">
+        <select id="electionArchiveFilter">
+          <option value="all">All saved results</option>
+          <option value="won">Winners</option>
+          <option value="lost">Not elected</option>
+          <option value="player">Your results</option>
+          <option value="manual">Manually created members</option>
+        </select>
+      </div>
+      <div id="electionArchiveRows" class="party-result-list">
+        ${rows.map((item,index)=>`
+          <article class="party-result-candidate" data-election-archive-row="${escapeHtml([item.candidateName,item.constituency,item.stateName,item.electionType,item.party].join(' ').toLowerCase())}" data-election-archive-status="${item.result==='Won'?'won':'lost'}" data-election-archive-player="${item.isPlayer?'yes':'no'}" data-election-archive-manual="${item.isManualMember?'yes':'no'}">
+            <div class="party-result-topline">
+              <div><b>${item.isPlayer?'★ ':''}${escapeHtml(item.candidateName || 'Candidate')}</b><small>${escapeHtml(item.constituency || 'Constituency')} · ${escapeHtml(item.stateName || 'State')} · ${escapeHtml(item.electionType)}</small></div>
+              <span class="party-result-status ${item.result==='Won'?'won':'lost'}">${item.result==='Won'?'WON':'NOT ELECTED'}</span>
+            </div>
+            <div class="party-result-metrics">
+              <span><small>VOTES</small><b>${Number(item.votes||0).toLocaleString('en-IN')}</b></span>
+              <span><small>VOTE SHARE</small><b>${Number(item.voteShare||0)}%</b></span>
+              <span><small>MARGIN</small><b>${Number(item.margin||0).toLocaleString('en-IN')}</b></span>
+            </div>
+            <details><summary>Competitors and vote totals</summary>
+              ${(item.competitors||[]).map(contestant=>`<div class="finance-history"><span>${escapeHtml(contestant.name)} · ${escapeHtml(contestant.party)}</span><b>${Number(contestant.votes||0).toLocaleString('en-IN')} · ${Number(contestant.share||0)}%</b></div>`).join('')}
+            </details>
+          </article>
+        `).join('')}
+      </div>
+    </section>
+  `;
+}
+
 function electionPage() {
   migrateAssemblyCountdownV260();
   archiveExpiredPartySlateCycles();
@@ -3683,6 +3763,8 @@ function electionPage() {
       ${statCard('WIN RATE', winRate + '%', 'Based on completed contests', '✦')}
       ${statCard('LOCAL SUPPORT', averageSupport + '%', 'Across your localities', '♥')}
     </div>
+
+    ${nationalElectionResultsCentre()}
 \n    ${verifiedLokSabhaDataPanel()}\n    ${nationalLokSabhaCandidatePanel()}\n
     ${nationalElectionArchitecturePanel()}
 
@@ -5507,6 +5589,12 @@ function render() {
 /* EVENT HANDLERS */
 
 document.addEventListener('input', event => {
+  if (event.target?.id === 'electionArchiveSearch') {
+    const query = event.target.value.trim().toLocaleLowerCase('en-IN');
+    document.querySelectorAll('#electionArchiveRows [data-election-archive-row]').forEach(row => {
+      row.hidden = !row.dataset.electionArchiveRow.includes(query);
+    });
+  }
   if(event.target?.id==='nationalStateSearch'){const q=event.target.value.trim().toLowerCase();document.querySelectorAll('#nationalUnitGrid [data-national-unit]').forEach(card=>card.hidden=!card.dataset.nationalUnit.includes(q));}
 
   if (event.target && event.target.id === 'meetingMemberSearch') {
@@ -5526,6 +5614,17 @@ document.addEventListener('input', event => {
 });
 
 document.addEventListener('change', event => {
+  if (event.target?.id === 'electionArchiveFilter') {
+    const filter = event.target.value;
+    document.querySelectorAll('#electionArchiveRows [data-election-archive-row]').forEach(row => {
+      const visible = filter === 'all' ||
+        (filter === 'won' && row.dataset.electionArchiveStatus === 'won') ||
+        (filter === 'lost' && row.dataset.electionArchiveStatus === 'lost') ||
+        (filter === 'player' && row.dataset.electionArchivePlayer === 'yes') ||
+        (filter === 'manual' && row.dataset.electionArchiveManual === 'yes');
+      row.hidden = !visible;
+    });
+  }
   if(event.target?.id==='nationalUnitFilter'){const f=event.target.value;document.querySelectorAll('#nationalUnitGrid [data-national-unit]').forEach(card=>card.hidden=(f!=='all'&&card.dataset.unitType!==f));}
 
   if (event.target && event.target.id === 'cabinetPortfolioSelect') {
