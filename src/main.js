@@ -3340,7 +3340,8 @@ function nationalElectionArchitecturePanel() {
   `;
 }
 
-\nfunction electionPage() {
+
+function electionPage() {
   migrateAssemblyCountdownV260();
   archiveExpiredPartySlateCycles();
   ensureAssemblyElectionCountdown();
@@ -3378,7 +3379,9 @@ function nationalElectionArchitecturePanel() {
       ${statCard('WIN RATE', winRate + '%', 'Based on completed contests', '✦')}
       ${statCard('LOCAL SUPPORT', averageSupport + '%', 'Across your localities', '♥')}
     </div>
-\n    ${nationalElectionArchitecturePanel()}\n
+
+    ${nationalElectionArchitecturePanel()}
+
     <section class="panel">
       <span class="gold-tag">RECURRING ELECTION CALENDAR</span>
       <h2>Upcoming election cycles</h2>
