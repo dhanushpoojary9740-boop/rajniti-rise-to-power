@@ -159,7 +159,7 @@ if (!state.assemblyElection8MonthScheduleV221) {
   const previousScheduledAt = Number(assemblySchedule.nextAt);
   assemblySchedule.intervalMonths = 60;
   assemblySchedule.label = 'State Assembly elections';
-  assemblySchedule.nextAt = currentGameMonth + 8;
+  assemblySchedule.nextAt = currentGameMonth + 7;
   const activeAssemblyElection = state.elections.active;
   if (activeAssemblyElection &&
       activeAssemblyElection.typeId === 'assembly' &&
@@ -260,7 +260,7 @@ function assignPartyElectionSeats(typeId, members, scheduledAt) {
     return {
       stateName,
       district,
-      constituency: `${district} Constituency ${String(seatNumber).padStart(2,'0')}`,
+      constituency: `Assembly Constituency ${String(index+1).padStart(3,'0')}`,
       constituencyAssignment: 'AI-assigned simulated seat · automatically distributed',
       seatType: member.seatType || 'Not specified'
     };
@@ -285,11 +285,44 @@ function migratePartyManagementSave() {
     state.partyLeadership['Founder & National President'] = 'founder';
     saveState();
   }
+  let partySaveMigrated = false;
   state.partyMemberRecords.forEach((member,index) => {
-    if (!Number.isFinite(Number(member.campaignFunds))) member.campaignFunds = member.isFounder ? 0 : 50000000;
-    if (isGeneratedPlaceholderName(member.name)) member.name = fictionalPartyMemberName(Math.max(0,index-1));
-    if (!member.role) member.role = 'General Member';
+    if (!Number.isFinite(Number(member.campaignFunds))) { member.campaignFunds = member.isFounder ? 0 : 50000000; partySaveMigrated = true; }
+    if (isGeneratedPlaceholderName(member.name)) { member.name = fictionalPartyMemberName(Math.max(0,index-1)); partySaveMigrated = true; }
+    if (!member.role) { member.role = 'General Member'; partySaveMigrated = true; }
   });
+  // Update saved candidate display names and party roles from the linked member record.
+  const savedSlate = state.elections?.partySlate;
+  if (Array.isArray(savedSlate)) {
+    const assignable = savedSlate.filter(item => ['Proposed','Party Approved','Funded'].includes(item.status));
+    const groups = new Map();
+    assignable.forEach(item => {
+      const key = `${item.typeId}:${item.scheduledAt}`;
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push(item);
+    });
+    groups.forEach(items => {
+      const members = items.map(item => state.partyMemberRecords.find(member => String(member.id) === String(item.memberId))).filter(Boolean);
+      const assignments = assignPartyElectionSeats(items[0]?.typeId || 'assembly', members, items[0]?.scheduledAt || Math.max(0,(Number(state.year||1)-1)*12+(Number(state.month||1)-1)));
+      items.forEach((item,index) => {
+        const member = state.partyMemberRecords.find(person => String(person.id) === String(item.memberId));
+        if (!member) return;
+        if (item.candidateName !== member.name) partySaveMigrated = true;
+        item.candidateName = member.name;
+        item.partyName = state.party || item.partyName || 'Bharat Pragati Party';
+        item.role = Object.entries(state.partyLeadership || {}).find(([,memberId]) => String(memberId) === String(member.id))?.[0] || member.role || 'General Member';
+        const seat = assignments[index];
+        if (seat) {
+          item.stateName = seat.stateName;
+          item.district = seat.district;
+          item.constituency = seat.constituency;
+          item.constituencyAssignment = seat.constituencyAssignment;
+          partySaveMigrated = true;
+        }
+      });
+    });
+  }
+  if (partySaveMigrated) saveState();
 }
 
 migratePartyManagementSave();
@@ -2848,7 +2881,7 @@ function proposePartySlate(typeId = 'assembly') {
       id: `slate-${Date.now()}-${typeId}-${index}-${String(member.id).replace(/[^a-zA-Z0-9_-]/g,'').slice(-12)}`,
       typeId, typeName: type?.name || schedule.label || 'Election',
       scheduledAt, memberId: member.id, candidateName: member.name,
-      role: member.role || 'General Member',
+      role: Object.entries(state.partyLeadership || {}).find(([,memberId]) => String(memberId) === String(member.id))?.[0] || member.role || 'General Member',
       partyName: state.party || 'Bharat Pragati Party',
       stateName: seat.stateName,
       district: seat.district,
@@ -3011,6 +3044,45 @@ function electionPage() {
       <h2>Upcoming election cycles</h2>
       ${electionScheduleHtml}
       <p class="panel-description">The calendar is authoritative: prepare in advance, nominations open four months before polling, official campaigning opens two months before polling, and results are declared only after all counting rounds.</p>
+      ${(() => {
+        const allAssembly = ensurePartySlate().filter(item => item.typeId === 'assembly');
+        const latestCycle = allAssembly.length ? Math.max(...allAssembly.map(item => Number(item.scheduledAt)||0)) : null;
+        const cycle = latestCycle === null ? [] : allAssembly.filter(item => Number(item.scheduledAt) === latestCycle);
+        const won = cycle.filter(item => item.status === 'Elected').length;
+        const lost = cycle.filter(item => item.status === 'Not Elected').length;
+        const funded = cycle.filter(item => item.status === 'Funded').length;
+        const contested = cycle.filter(item => item.status === 'Elected' || item.status === 'Not Elected').length;
+        const approved = cycle.filter(item => item.status === 'Party Approved').length;
+        const pending = cycle.filter(item => item.status === 'Proposed').length;
+        const notEntered = approved;
+        const tally = state.elections?.lastAssemblySeatTally;
+        const partySeatsWon = tally ? Number(tally.seatsWon || 0) : (cycle.filter(item => item.status === 'Elected').length);
+        return `<div class="panel party-election-summary" style="margin:16px 0">
+          <span class="eyebrow">PARTY ASSEMBLY ELECTION TRACKER</span>
+          <h3>${latestCycle === null ? 'No party-wide Assembly slate yet' : 'Your party candidates'}</h3>
+          <div class="election-metrics">
+            <div><small>BPP ASSEMBLY SEATS WON</small><b>${partySeatsWon}/224</b></div>
+            <div><small>MAJORITY REQUIRED</small><b>113</b></div>
+          </div>
+          ${latestCycle === null ? '<p class="panel-description">Generate the Assembly candidate list below to track who is selected, funded and contested. Your own MLA victory counts as one party seat.</p>' : `
+            <div class="election-metrics">
+              <div><small>WON</small><b>${won}</b></div>
+              <div><small>LOST</small><b>${lost}</b></div>
+              <div><small>FUNDED · AWAITING POLL</small><b>${funded}</b></div>
+              <div><small>CONTESTS COMPLETED</small><b>${contested}</b></div>
+              <div><small>APPROVED, NOT FUNDED</small><b>${notEntered}</b></div>
+              <div><small>AWAITING APPROVAL</small><b>${pending}</b></div>
+            </div>
+            <p class="panel-description">Your own victory counts as one Assembly seat. Other BPP members contest only after you approve their party ticket and authorise their 50/50 campaign funding. Approved but unfunded members have not contested. Their simulated constituency results are added when your election counting is completed.</p>
+          `}
+          ${cycle.length ? `<div class="party-election-result-list">${cycle.map(item => {
+            const label = item.status === 'Elected' ? 'WON' : item.status === 'Not Elected' ? 'LOST' : item.status === 'Funded' ? 'FUNDED · AWAITING POLL' : item.status === 'Party Approved' ? 'NOT CONTESTED · FUNDING PENDING' : item.status === 'Rejected' ? 'REJECTED' : 'AWAITING APPROVAL';
+            const member = (state.partyMemberRecords||[]).find(person=>String(person.id)===String(item.memberId));
+            const role = Object.entries(state.partyLeadership||{}).find(([,memberId])=>String(memberId)===String(item.memberId))?.[0] || item.role || member?.role || 'General Member';
+            return `<div class="finance-history"><span><b>${escapeHtml(item.candidateName||member?.name||'Candidate')}</b><br><small>${escapeHtml(role)} · ${escapeHtml(item.district||'District pending')} · ${escapeHtml(item.constituency||'Constituency pending')}</small></span><b>${label}</b></div>`;
+          }).join('')}</div>` : ''}
+        </div>`;
+      })()}
       <h2>AI candidate nomination review</h2>
       <p class="panel-description">This queue covers scheduled nomination recommendations. Party-wide candidate deployment below is where you approve or reject the automatically assigned party tickets. Neither approval action files an official nomination.</p>
       <div class="election-metrics">
