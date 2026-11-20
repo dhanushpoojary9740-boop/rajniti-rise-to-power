@@ -202,6 +202,7 @@ function loadState() {
 }
 
 let state = loadState();
+if (!state.mapLayer) state.mapLayer = 'states';
 
 // RAJNITI 2.2.1: move the next State Assembly election to eight months
 // from the player's current game month, without resetting other election cycles.
@@ -755,7 +756,7 @@ function shell(content) {
   // Secondary modules remain available through contextual section navigation.
   const nav = [
     'Dashboard', 'Career', 'Party', 'Elections', 'Parliament',
-    'Government', 'Political Life', 'Constituency', 'Intelligence', 'Finance', 'News', 'Profile'
+    'Government', 'Political Life', 'India Map', 'Constituency', 'Intelligence', 'Finance', 'News', 'Profile'
   ];
 
   return `
@@ -813,7 +814,7 @@ function shell(content) {
       </main>
 
       <nav class="mobile-nav">
-        ${['Dashboard', 'Party', 'Elections', 'Parliament', 'Government', 'Political Life', 'Profile']
+        ${['Dashboard', 'Party', 'Elections', 'India Map', 'Parliament', 'Government', 'Political Life', 'Profile']
           .map(name => `
             <button class="${activeTab === name ? 'active' : ''}"
               data-tab="${name}">
@@ -2466,6 +2467,7 @@ function simulatePartyConstituencyResult(active, item, member, index, cycle) {
     candidateName: item.candidateName,
     constituency: item.constituency,
     stateName: item.stateName || 'India',
+    district: item.district || item.districtName || '',
     party: state.party || 'BPP',
     votes: candidate.votes,
     voteShare: Math.round(candidate.votes / Math.max(1, turnout) * 1000) / 10,
@@ -2501,6 +2503,7 @@ function buildPartyWideElectionResults(active, playerResult) {
     candidateName: active.candidateName || state.playerName || 'Player',
     constituency: active.constituency || 'Player constituency',
     stateName: active.stateName || state.stateName || 'Karnataka',
+    district: active.district || state.constituency?.district || '',
     party: partyName,
     isPlayer: true,
     isManualMember: false,
@@ -4913,7 +4916,7 @@ function electedMemberRegister(level='assembly') {
     const name=String(row.candidateName||row.winner||row.winnerName||'').trim();
     const party=String(row.partyName||row.party||row.winnerParty||'').trim();
     if(!name||!party)return;
-    members.push({id:String(row.candidateId||row.memberId||`${level}-${source}-${name}-${row.constituency||row.seatCode||''}`),name,party,constituency:String(row.constituency||row.seatCode||'Constituency not recorded'),stateName:String(row.stateName||''),level,source,memberId:row.candidateId||row.memberId||null});
+    members.push({id:String(row.candidateId||row.memberId||`${level}-${source}-${name}-${row.constituency||row.seatCode||''}`),name,party,constituency:String(row.constituency||row.seatCode||'Constituency not recorded'),stateName:String(row.stateName||''),districtName:String(row.district||row.districtName||''),level,source,memberId:row.candidateId||row.memberId||null});
   };
   if(level==='assembly'){
     (state.elections?.partyAssemblyResults||[]).filter(row=>row.result==='Won'||row.winnerName||row.details?.winnerName).forEach(row=>{
@@ -5710,8 +5713,11 @@ const atlasDistrictTotal = indiaDistrictData.sourceDistrictCount;
 const atlasStateTotal = indiaAtlas.reduce((sum, region) => sum + region.states.length, 0);
 
 function getAtlasState(name) {
+  const aliases = { 'nctofdelhi':'Delhi', 'andamanandnicobarisland':'Andaman and Nicobar Islands', 'dadraandnagarhavelianddamananddiu':'Dadra and Nagar Haveli and Daman and Diu' };
+  const normalized = atlasNormalize ? atlasNormalize(name) : String(name || '').toLowerCase().replace(/[^a-z0-9]/g,'');
+  const wanted = aliases[normalized] || normalized;
   for (const region of indiaAtlas) {
-    const found = region.states.find(item => item.name === name);
+    const found = region.states.find(item => item.name === name || String(item.name).toLowerCase().replace(/&/g,'and').replace(/[^a-z0-9]/g,'') === wanted);
     if (found) return found;
   }
   return indiaAtlas.find(region => region.region === 'South').states.find(item => item.name === 'Karnataka');
@@ -5740,12 +5746,179 @@ function atlasDistrictProfile(stateName, districtName) {
   };
 }
 
+const atlasGeoCache = Object.create(null);
+const atlasIndiaGeoUrl = 'https://cdn.jsdelivr.net/gh/udit-001/india-maps-data@2884453/geojson/india.geojson';
+const atlasStateSlug = {
+  'Andhra Pradesh':'andhra-pradesh','Arunachal Pradesh':'arunachal-pradesh','Assam':'assam','Bihar':'bihar',
+  'Chhattisgarh':'chhattisgarh','Goa':'goa','Gujarat':'gujarat','Haryana':'haryana','Himachal Pradesh':'himachal-pradesh',
+  'Jharkhand':'jharkhand','Karnataka':'karnataka','Kerala':'kerala','Madhya Pradesh':'madhya-pradesh','Maharashtra':'maharashtra',
+  'Manipur':'manipur','Meghalaya':'meghalaya','Mizoram':'mizoram','Nagaland':'nagaland','Odisha':'odisha','Punjab':'punjab',
+  'Rajasthan':'rajasthan','Sikkim':'sikkim','Tamil Nadu':'tamil-nadu','Telangana':'telangana','Tripura':'tripura',
+  'Uttar Pradesh':'uttar-pradesh','Uttarakhand':'uttarakhand','West Bengal':'west-bengal',
+  'Andaman and Nicobar Islands':'andaman-and-nicobar-islands','Chandigarh':'chandigarh',
+  'Dadra and Nagar Haveli and Daman and Diu':'dnh-and-dd','Delhi':'delhi','Jammu and Kashmir':'jammu-and-kashmir',
+  'Ladakh':'ladakh','Lakshadweep':'lakshadweep','Puducherry':'puducherry'
+};
+function atlasNormalize(value) {
+  return String(value || '').toLowerCase().replace(/&/g,'and').replace(/[^a-z0-9]/g,'');
+}
+function atlasFeatureName(feature, keys) {
+  const props = feature?.properties || {};
+  for (const wanted of keys) {
+    const key = Object.keys(props).find(k => atlasNormalize(k) === atlasNormalize(wanted));
+    if (key && props[key] != null) return String(props[key]);
+  }
+  return '';
+}
+async function loadAtlasGeoJson(key, url) {
+  if (atlasGeoCache[key]) return atlasGeoCache[key];
+  const cacheKey = `rajniti_atlas_geo_${key}`;
+  try {
+    const cached = localStorage.getItem(cacheKey);
+    if (cached) {
+      const parsed = JSON.parse(cached);
+      if (parsed?.type === 'FeatureCollection' && Array.isArray(parsed.features)) {
+        atlasGeoCache[key] = parsed; return parsed;
+      }
+    }
+  } catch (_) {}
+  const response = await fetch(url, { cache: 'force-cache' });
+  if (!response.ok) throw new Error(`Map data request failed (${response.status})`);
+  const data = await response.json();
+  if (!data || !Array.isArray(data.features)) throw new Error('Map boundary file is invalid');
+  atlasGeoCache[key] = data;
+  try { localStorage.setItem(cacheKey, JSON.stringify(data)); } catch (_) { /* Keep in-memory map if device storage is full. */ }
+  return data;
+}
+function atlasGeometryPoints(geometry, output=[]) {
+  if (!geometry) return output;
+  const walk = value => {
+    if (!Array.isArray(value)) return;
+    if (value.length >= 2 && typeof value[0] === 'number' && typeof value[1] === 'number') output.push(value);
+    else value.forEach(walk);
+  };
+  walk(geometry.coordinates);
+  return output;
+}
+function atlasMapSvgPath(geometry, project) {
+  if (!geometry) return '';
+  const rings = [];
+  const addPolygon = polygon => polygon.forEach(ring => rings.push(ring));
+  if (geometry.type === 'Polygon') addPolygon(geometry.coordinates);
+  else if (geometry.type === 'MultiPolygon') geometry.coordinates.forEach(addPolygon);
+  else return '';
+  return rings.map(ring => ring.map((point,index) => {
+    const [x,y] = project(point);
+    return `${index ? 'L' : 'M'}${x.toFixed(2)},${y.toFixed(2)}`;
+  }).join(' ') + ' Z').join(' ');
+}
+function atlasPartyColor(party) {
+  const key = String(party || '').toLowerCase();
+  const known = [
+    [/bharatiya janata|\bbjp\b/,'#f28c28'],[/indian national congress|\binc\b|\bcongress\b/,'#2587d8'],
+    [/aam aadmi|\baap\b/,'#159c91'],[/dravida munnetra|\bdmk\b/,'#c92f42'],[/all india anna|\baiadmk\b/,'#1596a6'],
+    [/trinamool|\btmc\b/,'#28a65a'],[/communist|\bcpi\b|\bcpim\b/,'#d43d3d'],[/telugu desam|\btdp\b/,'#e6c22e'],
+    [/janata dal|\bjds\b/,'#15966a'],[/shiv sena/,'#e17c24'],[/bpp/,'#c9a45c']
+  ];
+  const match = known.find(([regex]) => regex.test(key));
+  if (match) return match[1];
+  let hash=0; for(let i=0;i<key.length;i++) hash=(hash*31+key.charCodeAt(i))>>>0;
+  return `hsl(${hash%360} 58% 48%)`;
+}
+function atlasStateGovernmentParty(stateName) {
+  const normalized = atlasNormalize(stateName);
+  const knownState = indiaAtlas.flatMap(region => region.states).find(item => atlasNormalize(item.name) === normalized || (normalized === 'nctofdelhi' && item.name === 'Delhi'));
+  if (!knownState) return '';
+  stateName = knownState.name;
+  const custom = state.regionalGovernments?.[stateName] || state.stateGovernments?.[stateName] || {};
+  const customParty = custom.rulingParty || custom.party || custom.governingParty || custom.coalitionLead;
+  if (customParty) return String(customParty);
+  if (stateName === 'Karnataka' && state.government?.formed) {
+    const party = state.government.party || state.government.rulingParty || state.party;
+    if (party) return String(party);
+    const tally = electedPartySeatRegister('assembly');
+    if (tally[0]?.seats >= 113) return tally[0].party;
+  }
+  return '';
+}
+function atlasCanonicalDistrict(stateName, districtName) {
+  const directory = getAtlasState(stateName).districts || [];
+  return directory.find(name => atlasNormalize(name) === atlasNormalize(districtName)) || districtName;
+}
+function atlasDistrictParty(stateName, districtName) {
+  const members = electedMemberRegister('assembly').filter(m => m.stateName && atlasNormalize(m.stateName) === atlasNormalize(stateName));
+  const districtWinners = members.filter(m => m.districtName && atlasNormalize(m.districtName) === atlasNormalize(districtName));
+  if (districtWinners.length) {
+    const counts = {};
+    districtWinners.forEach(m => counts[m.party]=(counts[m.party]||0)+1);
+    return Object.entries(counts).sort((a,b)=>b[1]-a[1])[0][0];
+  }
+  return atlasStateGovernmentParty(stateName);
+}
+async function renderAtlasGeometry() {
+  const host = document.getElementById('indiaPoliticalMap');
+  if (!host || activeTab !== 'India Map') return;
+  const selectedState = getAtlasState(state.mapState || 'Karnataka');
+  const layer = state.mapLayer === 'districts' ? 'districts' : 'states';
+  host.innerHTML = '<div class="atlas-map-loading">Loading interactive boundary data…</div>';
+  const token = `${layer}|${selectedState.name}|${Date.now()}`;
+  host.dataset.loadToken = token;
+  try {
+    let data, features;
+    if (layer === 'states') {
+      data = await loadAtlasGeoJson('india-states', atlasIndiaGeoUrl);
+      features = data.features;
+    } else {
+      const slug = atlasStateSlug[selectedState.name];
+      if (!slug) throw new Error('Boundary data is not available for this administrative unit yet.');
+      const url = `https://cdn.jsdelivr.net/gh/udit-001/india-maps-data@2884453/geojson/states/${slug}.geojson`;
+      data = await loadAtlasGeoJson(`districts-${slug}`, url);
+      features = data.features;
+    }
+    if (!host.isConnected || host.dataset.loadToken !== token) return;
+    const width=720,height=layer==='states'?620:540,pad=24;
+    const points=features.flatMap(f=>atlasGeometryPoints(f.geometry));
+    if (!points.length) throw new Error('No geographic coordinates found in this boundary file.');
+    const bounds=points.reduce((b,p)=>({minLon:Math.min(b.minLon,p[0]),maxLon:Math.max(b.maxLon,p[0]),minLat:Math.min(b.minLat,p[1]),maxLat:Math.max(b.maxLat,p[1])}),{minLon:Infinity,maxLon:-Infinity,minLat:Infinity,maxLat:-Infinity});
+    let {minLon,maxLon,minLat,maxLat}=bounds;
+    if (layer==='states') { minLon=Math.min(minLon,67.5);maxLon=Math.max(maxLon,98.5);minLat=Math.min(minLat,5.5);maxLat=Math.max(maxLat,38.8); }
+    const scale=Math.min((width-pad*2)/(maxLon-minLon||1),(height-pad*2)/(maxLat-minLat||1));
+    const mapW=(maxLon-minLon)*scale,mapH=(maxLat-minLat)*scale,offsetX=(width-mapW)/2,offsetY=(height-mapH)/2;
+    const project=([lon,lat])=>[offsetX+(lon-minLon)*scale,height-offsetY-(lat-minLat)*scale];
+    const paths=features.map((feature,index)=>{
+      const name=layer==='states'?atlasFeatureName(feature,['ST_NM','state','NAME_1','name','NAME']):atlasFeatureName(feature,['DISTRICT','district','DTNAME','NAME_2','name','NAME']);
+      const stateName=layer==='states'?(name||'Unknown'):selectedState.name;
+      const districtName=layer==='districts'?(name||`District ${index+1}`):'';
+      const party=layer==='states'?atlasStateGovernmentParty(stateName):atlasDistrictParty(stateName,districtName);
+      const fill=party?atlasPartyColor(party):'#53657c';
+      const selected=layer==='states'?atlasNormalize(state.mapState)===atlasNormalize(stateName):atlasNormalize(state.mapDistrict)===atlasNormalize(districtName);
+      const attr=layer==='states'?`data-geo-state="${escapeHtml(stateName)}"`:`data-geo-district="${escapeHtml(districtName)}"`;
+      const label=party?`${name} · ${party}`: `${name} · No in-game government data`;
+      return `<path class="atlas-geo-shape ${selected?'selected':''}" d="${atlasMapSvgPath(feature.geometry,project)}" fill="${fill}" ${attr} tabindex="0" role="button" aria-label="${escapeHtml(label)}"><title>${escapeHtml(label)}</title></path>`;
+    }).join('');
+    host.innerHTML=`<svg class="atlas-geo-svg" viewBox="0 0 ${width} ${height}" role="img" aria-label="Interactive India ${layer} political map">${paths}</svg>`;
+    const legend=document.getElementById('atlasPoliticalLegend');
+    if(legend){
+      const parties=layer==='states'?Array.from(new Set(features.map(f=>atlasFeatureName(f,['ST_NM','state','NAME_1','name','NAME'])).map(atlasStateGovernmentParty).filter(Boolean))):Array.from(new Set(features.map(f=>atlasDistrictParty(selectedState.name,atlasFeatureName(f,['DISTRICT','district','DTNAME','NAME_2','name','NAME']))).filter(Boolean)));
+      legend.innerHTML=parties.length?parties.map(p=>`<span><i style="background:${atlasPartyColor(p)}"></i>${escapeHtml(p)}</span>`).join(''):'<span><i style="background:#53657c"></i>No in-game ruling-party data recorded for these regions</span>';
+    }
+  } catch(error) {
+    if (!host.isConnected || host.dataset.loadToken !== token) return;
+    host.innerHTML=`<div class="atlas-map-error"><b>Map boundaries could not be loaded.</b><span>${escapeHtml(error.message||'Check your internet connection and try again.')}</span><button class="secondary-btn" data-atlas-map-retry="1">RETRY MAP LOAD</button></div>`;
+  }
+}
+
 function indiaMapPage() {
   const selectedState = getAtlasState(state.mapState || state.constituency?.state || 'Karnataka');
-  const selectedDistrict = selectedState.districts.includes(state.mapDistrict)
-    ? state.mapDistrict
-    : selectedState.districts[0];
+  const canonicalDistrict = atlasCanonicalDistrict(selectedState.name, state.mapDistrict);
+  const selectedDistrict = selectedState.districts.includes(canonicalDistrict) ? canonicalDistrict : selectedState.districts[0];
   const profile = atlasDistrictProfile(selectedState.name, selectedDistrict);
+  const rulingParty = atlasStateGovernmentParty(selectedState.name);
+  const regionGovernment = state.regionalGovernments?.[selectedState.name] || state.stateGovernments?.[selectedState.name] || (selectedState.name === 'Karnataka' ? state.government : {});
+  const stateSeatTally = selectedState.name === 'Karnataka' ? electedPartySeatRegister('assembly') : (Array.isArray(regionGovernment.partySeatTally) ? regionGovernment.partySeatTally : []);
+  const rulingSeatCount = stateSeatTally.find(row => row.party === rulingParty)?.seats || 0;
+  const regionalCM = regionGovernment.chiefMinister || regionGovernment.cm || (selectedState.name === 'Karnataka' ? state.government?.chiefMinister : '') || 'Not recorded';
+  const regionalOppositionLeader = regionGovernment.oppositionLeader || regionGovernment.leaderOfOpposition || 'Not recorded';
   const districtProjects = Array.isArray(state.atlasProjects)
     ? state.atlasProjects.filter(item => item.state === selectedState.name && item.district === selectedDistrict)
     : [];
@@ -5761,9 +5934,9 @@ function indiaMapPage() {
   return `
     <div class="page-heading india-atlas-heading">
       <div>
-        <div class="eyebrow">NATIONAL POLITICAL GEOGRAPHY · OFFLINE SIMULATION</div>
+        <div class="eyebrow">NATIONAL POLITICAL GEOGRAPHY · INTERACTIVE ATLAS</div>
         <h1>India <em>state atlas</em></h1>
-        <p>Browse the national district directory by state and search the official LGD district names.</p>
+        <p>Explore state and district boundaries, ruling-party colours and regional political information.</p>
       </div>
       <div class="date-card">
         <span>ATLAS COVERAGE</span>
@@ -5772,13 +5945,23 @@ function indiaMapPage() {
       </div>
     </div>
 
+    <section class="panel atlas-political-map-panel">
+      <div class="command-section-head">
+        <div><span class="eyebrow">LIVE POLITICAL GEOGRAPHY</span><h2>Indian political map</h2><p class="panel-description">Tap a state to explore its districts. Colours follow recorded in-game government data; districts inherit the state colour where district winners are not recorded.</p></div>
+        <div class="atlas-map-layer-switch"><button class="${state.mapLayer !== 'districts' ? 'active' : ''}" data-map-layer="states">STATES / UTs</button><button class="${state.mapLayer === 'districts' ? 'active' : ''}" data-map-layer="districts">DISTRICTS</button></div>
+      </div>
+      <div class="atlas-political-map-frame"><div id="indiaPoliticalMap" class="atlas-political-map"><div class="atlas-map-loading">Preparing interactive map…</div></div></div>
+      <div class="atlas-political-legend" id="atlasPoliticalLegend"><span><i style="background:#53657c"></i>Loading party legend…</span></div>
+      <p class="atlas-map-source-note">Boundary layer: community-curated India GeoJSON, pinned to a published dataset revision. Internet is needed for the first boundary download; data is cached on the device where storage permits. This is a visual reference, not an official Survey of India legal boundary product. Regions without recorded in-game government results remain neutral.</p>
+    </section>
+
     <div class="india-atlas-layout">
       <section class="panel atlas-map-panel">
         <div class="command-section-head">
           <div><span class="eyebrow">INDIA · REGIONAL SELECTOR</span><h2>Choose your state</h2></div>
           <span class="command-symbol">⌖</span>
         </div>
-        <p class="panel-description">District names are loaded from the supplied Ministry of Panchayati Raj LGD extract (12 Oct 2026). The extract contains 781 district records across 35 administrative units. Chandigarh is retained from the previous atlas because it is absent from this extract. Development indicators are simulated, not official statistics.</p>
+        <p class="panel-description">District names are loaded from the project district directory. Use the interactive map above or select a state and district below. Development indicators are simulated, not official statistics.</p>
         <div class="atlas-region-grid">
           ${indiaAtlas.map(region => `
             <section class="atlas-region">
@@ -5802,6 +5985,9 @@ function indiaMapPage() {
           <span class="gold-tag">${escapeHtml(selectedState.name.toUpperCase())}</span>
           <h2>${escapeHtml(selectedState.name)}</h2>
           <p class="panel-description">Regional political overview and district selection.</p>
+          <div class="atlas-ruling-party-line"><span class="atlas-party-swatch" style="background:${rulingParty ? atlasPartyColor(rulingParty) : '#53657c'}"></span><div><small>IN-GAME RULING PARTY</small><b>${escapeHtml(rulingParty || 'No government data recorded')}</b></div>${rulingParty && rulingSeatCount ? `<strong>${rulingSeatCount} seats</strong>` : ''}</div>
+          <div class="atlas-region-office-grid"><div><small>CHIEF MINISTER</small><b>${escapeHtml(regionalCM)}</b></div><div><small>OPPOSITION LEADER</small><b>${escapeHtml(regionalOppositionLeader)}</b></div></div>
+          ${stateSeatTally.length ? `<div class="atlas-party-seat-list"><small>RECORDED ASSEMBLY SEAT DISTRIBUTION</small>${stateSeatTally.map(row=>`<div><span><i style="background:${atlasPartyColor(row.party)}"></i>${escapeHtml(row.party)}</span><b>${Number(row.seats||0)}</b></div>`).join('')}</div>` : ''}
           <div class="atlas-stat-grid">
             <div><small>PLAYER INFLUENCE</small><b>${Math.max(0, Math.min(100, Number(state.influence || 0)))}/100</b></div>
             <div><small>PUBLIC SUPPORT</small><b>${Math.max(0, Math.min(100, Number(state.publicSupport || 0)))}%</b></div>
@@ -6958,9 +7144,16 @@ function render() {
 
   content = sectionNavigation(activeTab) + content;
   document.querySelector('#app').innerHTML = shell(content);
+  if (activeTab === 'India Map') renderAtlasGeometry();
 }
 
 /* EVENT HANDLERS */
+
+document.addEventListener('keydown', event => {
+  if (event.key !== 'Enter' && event.key !== ' ') return;
+  const target = event.target.closest?.('[data-geo-state], [data-geo-district]');
+  if (target) { event.preventDefault(); target.dispatchEvent(new MouseEvent('click', { bubbles: true })); }
+});
 
 document.addEventListener('input', event => {
   if (event.target?.id === 'electionArchiveSearch') {
@@ -7159,6 +7352,26 @@ document.addEventListener('click', event => {
     rel.stability = Math.max(0, Math.min(100, Math.round(allies.reduce((sum,p)=>sum+p.loyalty,0)/Math.max(1,allies.length)*0.65+(100-rel.oppositionPressure)*0.35)));
     saveState(); render(); return;
   }
+
+  const mapLayerButton = event.target.closest('[data-map-layer]');
+  if (mapLayerButton) {
+    state.mapLayer = mapLayerButton.dataset.mapLayer === 'districts' ? 'districts' : 'states';
+    saveState(); render(); return;
+  }
+  const geoState = event.target.closest('[data-geo-state]');
+  if (geoState) {
+    state.mapState = getAtlasState(geoState.dataset.geoState).name;
+    const selected = getAtlasState(state.mapState);
+    state.mapDistrict = selected.districts[0];
+    state.mapLayer = 'districts';
+    saveState(); render(); return;
+  }
+  const geoDistrict = event.target.closest('[data-geo-district]');
+  if (geoDistrict) {
+    state.mapDistrict = atlasCanonicalDistrict(state.mapState || 'Karnataka', geoDistrict.dataset.geoDistrict);
+    saveState(); render(); return;
+  }
+  if (event.target.closest('[data-atlas-map-retry]')) { renderAtlasGeometry(); return; }
 
   const mapStateButton = event.target.closest('[data-map-state]');
   if (mapStateButton) {

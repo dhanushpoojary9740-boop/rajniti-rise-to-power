@@ -2511,3 +2511,37 @@ input, select, textarea {
   .election-category-tab b { font-size: 12px; }
   .local-election-level-grid { grid-template-columns: 1fr; }
 }
+
+/* RAJNITI 6.2.0 — INTERACTIVE INDIA POLITICAL MAP */
+.atlas-political-map-panel{margin-bottom:16px;min-width:0}
+.atlas-map-layer-switch{display:flex;gap:6px;flex-wrap:wrap}
+.atlas-map-layer-switch button{border:1px solid var(--line);background:#111e30;color:var(--muted);border-radius:7px;padding:9px 11px;font-size:9px;font-weight:800;letter-spacing:.7px}
+.atlas-map-layer-switch button.active{border-color:var(--gold);color:#f1d28c;background:rgba(201,164,92,.16)}
+.atlas-political-map-frame{border:1px solid var(--line);border-radius:12px;background:radial-gradient(ellipse at 50% 45%,rgba(64,92,124,.18),rgba(7,15,27,.65));overflow:hidden;margin-top:13px}
+.atlas-political-map{min-height:310px;display:grid;place-items:center;padding:8px;overflow:hidden}
+.atlas-geo-svg{display:block;width:100%;height:auto;max-height:590px;min-height:280px;touch-action:pan-y}
+.atlas-geo-shape{stroke:#101a29;stroke-width:1.05;stroke-linejoin:round;stroke-linecap:round;vector-effect:non-scaling-stroke;cursor:pointer;transition:filter .12s ease,stroke-width .12s ease;outline:none}
+.atlas-geo-shape:hover,.atlas-geo-shape:focus{filter:brightness(1.35);stroke:#f2d48e;stroke-width:2.4}
+.atlas-geo-shape.selected{stroke:#fff0bd;stroke-width:2.2;filter:brightness(1.2)}
+.atlas-map-loading,.atlas-map-error{min-height:280px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;color:var(--muted);font-size:12px;text-align:center;padding:25px}
+.atlas-map-error b{color:#f0d69a}
+.atlas-map-error span{max-width:460px;line-height:1.5}
+.atlas-political-legend{display:flex;gap:9px 16px;flex-wrap:wrap;margin-top:12px;color:var(--muted);font-size:10px}
+.atlas-political-legend span{display:inline-flex;align-items:center;gap:7px}
+.atlas-political-legend i{display:inline-block;width:10px;height:10px;border-radius:3px;border:1px solid rgba(255,255,255,.28)}
+.atlas-map-source-note{font-size:9px;line-height:1.5;color:var(--muted);margin:12px 0 0}
+@media(max-width:600px){.atlas-political-map{min-height:245px;padding:4px}.atlas-geo-svg{min-height:230px}.atlas-map-layer-switch button{padding:8px 9px}.atlas-political-map-panel .command-section-head{align-items:flex-start;flex-direction:column}}
+.atlas-ruling-party-line{display:flex;align-items:center;gap:10px;margin-top:13px;padding:11px;border:1px solid var(--line);border-radius:9px;background:rgba(255,255,255,.025)}
+.atlas-ruling-party-line>div{display:grid;gap:4px;flex:1;min-width:0}
+.atlas-ruling-party-line small{font-size:8px;letter-spacing:1px;color:var(--muted)}
+.atlas-ruling-party-line b{font-size:12px;overflow-wrap:anywhere}
+.atlas-ruling-party-line>strong{font-size:11px;color:var(--gold2)}
+.atlas-party-swatch{width:13px;height:28px;border-radius:4px;flex:none}
+.atlas-region-office-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-top:12px}
+.atlas-region-office-grid>div{display:grid;gap:5px;padding:10px;border:1px solid var(--line);border-radius:8px;background:rgba(255,255,255,.02);min-width:0}
+.atlas-region-office-grid small,.atlas-party-seat-list>small{font-size:8px;letter-spacing:.9px;color:var(--muted)}
+.atlas-region-office-grid b{font-size:11px;overflow-wrap:anywhere}
+.atlas-party-seat-list{display:grid;gap:7px;margin-top:12px;padding:11px;border:1px solid var(--line);border-radius:9px}
+.atlas-party-seat-list>div{display:flex;justify-content:space-between;align-items:center;font-size:10px}
+.atlas-party-seat-list span{display:flex;align-items:center;gap:7px}
+.atlas-party-seat-list i{width:9px;height:9px;border-radius:2px;display:inline-block}
