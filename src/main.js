@@ -755,7 +755,7 @@ function shell(content) {
   // Secondary modules remain available through contextual section navigation.
   const nav = [
     'Dashboard', 'Career', 'Party', 'Elections', 'Parliament',
-    'Government', 'Constituency', 'Intelligence', 'Finance', 'News', 'Profile'
+    'Government', 'Political Life', 'Constituency', 'Intelligence', 'Finance', 'News', 'Profile'
   ];
 
   return `
@@ -813,7 +813,7 @@ function shell(content) {
       </main>
 
       <nav class="mobile-nav">
-        ${['Dashboard', 'Party', 'Elections', 'Parliament', 'Government', 'Intelligence', 'Profile']
+        ${['Dashboard', 'Party', 'Elections', 'Parliament', 'Government', 'Political Life', 'Profile']
           .map(name => `
             <button class="${activeTab === name ? 'active' : ''}"
               data-tab="${name}">
@@ -6708,6 +6708,163 @@ function updateRivalPartyIntelligence(action, id) {
   saveState(); render();
 }
 
+
+/* RAJNITI 6.1.0 · Integrated Political Life Expansion
+   Additive systems: party democracy, election regulation, legislative scrutiny,
+   administration, courts, federal relations, public movements and career progression.
+   Existing save data is preserved; this namespace is migrated lazily. */
+function ensurePoliticalExpansion() {
+  if (!state.politicalExpansion || typeof state.politicalExpansion !== 'object') state.politicalExpansion = {};
+  const x = state.politicalExpansion;
+  for (const [key, fallback] of Object.entries({
+    partyFactions: [], internalElections: [], electionCases: [], campaignAccounts: [],
+    committees: [], parliamentaryQuestions: [], courtCases: [], adminAudits: [],
+    procurement: [], federalMeetings: [], publicMovements: [], careerMilestones: [],
+    actionLog: [], nextId: 1, governanceScore: 50, institutionalTrust: 50
+  })) if (!Array.isArray(fallback) ? x[key] === undefined : !Array.isArray(x[key])) x[key] = Array.isArray(fallback) ? [] : fallback;
+  x.governanceScore = Math.max(0, Math.min(100, Number(x.governanceScore || 50)));
+  x.institutionalTrust = Math.max(0, Math.min(100, Number(x.institutionalTrust || 50)));
+  return x;
+}
+function politicalExpansionRecord(type, title, detail, impact = {}) {
+  const x = ensurePoliticalExpansion();
+  const entry = { id: `pe-${x.nextId++}`, type, title, detail, date: dateText(), ...impact };
+  x.actionLog.unshift(entry); x.actionLog = x.actionLog.slice(0, 80);
+  if (impact.governance) x.governanceScore = Math.max(0, Math.min(100, x.governanceScore + impact.governance));
+  if (impact.trust) x.institutionalTrust = Math.max(0, Math.min(100, x.institutionalTrust + impact.trust));
+  if (impact.reputation) state.reputation = Math.max(0, Math.min(100, Number(state.reputation || 0) + impact.reputation));
+  if (impact.support) state.publicSupport = Math.max(0, Math.min(100, Number(state.publicSupport || 0) + impact.support));
+  if (impact.money) state.money = Math.max(0, Number(state.money || 0) + impact.money);
+  if (state.media) {
+    if (impact.approval) state.media.approval = Math.max(0, Math.min(100, Number(state.media.approval || 0) + impact.approval));
+    if (impact.mediaTrust) state.media.trust = Math.max(0, Math.min(100, Number(state.media.trust || 0) + impact.mediaTrust));
+  }
+  saveState(); render();
+  toast(title);
+}
+function politicalExpansionAction(action) {
+  const x = ensurePoliticalExpansion();
+  const ask = (label, initial='') => { const v = prompt(label, initial); return v === null ? null : v.trim(); };
+  const add = (arr, item) => { arr.unshift({ id:`pe-${x.nextId++}`, date:dateText(), ...item }); arr.splice(40); };
+  if (action === 'party-faction') {
+    const name=ask('Name this internal party faction or policy group:'); if(!name)return;
+    add(x.partyFactions,{name,position:ask('What is its main policy demand?','Greater regional representation')||'Policy reform',status:'Active',influence:10});
+    politicalExpansionRecord('Party organisation',`Created ${name}`,`An internal faction/policy group was recorded. It does not automatically become a separate registered party.`,{governance:1}); return;
+  }
+  if (action === 'party-election') {
+    const office=ask('Party internal election: which office is being contested?','State President'); if(!office)return;
+    const candidate=ask('Name the candidate you support:'); if(!candidate)return;
+    add(x.internalElections,{office,candidate,status:'Scheduled for party vote',result:'Pending'});
+    politicalExpansionRecord('Party democracy',`${office} election scheduled`,`Candidate: ${candidate}. Internal voting and party rules determine the result.`,{governance:2}); return;
+  }
+  if (action === 'party-discipline') {
+    const member=ask('Name the party member facing a disciplinary notice:'); if(!member)return;
+    const reason=ask('State the alleged conduct / rule concern:'); if(!reason)return;
+    add(x.partyFactions,{name:`Disciplinary file: ${member}`,position:reason,status:'Notice issued · reply pending',influence:0});
+    politicalExpansionRecord('Party discipline',`Notice issued to ${member}`,`A notice was recorded; no guilt or removal is presumed before a response and party procedure.`,{governance:1}); return;
+  }
+  if (action === 'election-expense') {
+    const amount=Number(ask('Record campaign expenditure in rupees:','50000')); if(!Number.isFinite(amount)||amount<=0){toast('Enter a valid expenditure amount.');return;}
+    const purpose=ask('Expense purpose:','Public meeting, travel and permitted publicity')||'Campaign expenditure';
+    add(x.campaignAccounts,{amount:Math.floor(amount),purpose,status:'Recorded · supporting documents pending'});
+    politicalExpansionRecord('Election regulation','Campaign expenditure recorded',`₹${Math.floor(amount).toLocaleString('en-IN')} recorded for ${purpose}. Applicable limits and disclosure rules depend on election type and candidate status.`,{governance:1}); return;
+  }
+  if (action === 'election-petition') {
+    const election=ask('Which election is challenged?','Assembly election'); if(!election)return;
+    const ground=ask('Ground alleged (for example, nomination irregularity or corrupt practice):'); if(!ground)return;
+    add(x.electionCases,{election,ground,status:'Filed · judicial determination pending',outcome:'Pending'});
+    politicalExpansionRecord('Election petition',`Challenge recorded: ${election}`,`Allegation: ${ground}. Filing does not itself change the declared result; competent court decision is required.`,{governance:1}); return;
+  }
+  if (action === 'committee') {
+    const name=ask('Committee name:','Public Accounts Committee'); if(!name)return;
+    const subject=ask('Matter referred for scrutiny:'); if(!subject)return;
+    add(x.committees,{name,subject,status:'Constituted · evidence gathering',recommendations:'Pending'});
+    politicalExpansionRecord('Legislature',`${name} constituted`,`Scrutiny opened on: ${subject}. Committee recommendations require consideration by the House / government.`,{governance:2}); return;
+  }
+  if (action === 'question') {
+    const minister=ask('Minister / department to be questioned:','Minister for Public Works'); if(!minister)return;
+    const question=ask('Question for the House:'); if(!question)return;
+    add(x.parliamentaryQuestions,{minister,question,status:'Admitted for simulated Question Hour',reply:'Awaiting ministerial reply'});
+    politicalExpansionRecord('Parliamentary accountability',`Question submitted to ${minister}`,question,{governance:1}); return;
+  }
+  if (action === 'public-consultation') {
+    const subject=ask('Policy / bill for public consultation:'); if(!subject)return;
+    const response=ask('Consultation method:','District hearings and written submissions')||'Public consultation';
+    add(x.committees,{name:'Public consultation',subject,method:response,status:'Consultation open',recommendations:'Submissions to be reviewed'});
+    politicalExpansionRecord('Public participation',`Consultation opened: ${subject}`,`Method: ${response}. Feedback is advisory and must be evaluated before policy decisions.`,{governance:2,support:1}); return;
+  }
+  if (action === 'admin-audit') {
+    const department=ask('Department to audit:','Public Works'); if(!department)return;
+    const scope=ask('Audit scope:','Project expenditure, tender process and delivery milestones')||'Departmental performance';
+    add(x.adminAudits,{department,scope,status:'Audit ordered · records requested',finding:'Not yet established'});
+    politicalExpansionRecord('Public administration',`${department} audit initiated`,scope,{governance:2,trust:1}); return;
+  }
+  if (action === 'tender') {
+    const project=ask('Public procurement / tender title:'); if(!project)return;
+    const value=Number(ask('Estimated tender value in rupees:','1000000')); if(!Number.isFinite(value)||value<=0){toast('Enter a valid tender value.');return;}
+    add(x.procurement,{project,value:Math.floor(value),status:'Tender announced · bidding open',bids:0,awardee:''});
+    politicalExpansionRecord('Procurement',`Tender announced: ${project}`,`Estimated value ₹${Math.floor(value).toLocaleString('en-IN')}. Award should follow transparent eligibility and evaluation.`,{governance:1}); return;
+  }
+  if (action === 'court-case') {
+    const forum=ask('Competent court / tribunal:','High Court'); if(!forum)return;
+    const issue=ask('Legal issue / relief sought:'); if(!issue)return;
+    add(x.courtCases,{forum,issue,status:'Filed · notice / hearing pending',order:'No interim order'});
+    politicalExpansionRecord('Judicial process',`Case registered: ${issue}`,`Forum: ${forum}. Filing does not imply a stay, finding of guilt or automatic invalidation of government action.`,{governance:1}); return;
+  }
+  if (action === 'federal-meeting') {
+    const counterpart=ask('Counterpart government / institution:','Union Government'); if(!counterpart)return;
+    const agenda=ask('Federal agenda:','State funding and project approvals')||'Intergovernmental coordination';
+    add(x.federalMeetings,{counterpart,agenda,status:'Meeting held · minutes pending',agreement:'No agreement recorded'});
+    politicalExpansionRecord('Federal relations',`Meeting with ${counterpart}`,`Agenda: ${agenda}. Any agreement remains subject to constitutional powers, finance rules and formal approvals.`,{governance:2,support:1}); return;
+  }
+  if (action === 'movement') {
+    const issue=ask('Public movement / protest issue:'); if(!issue)return;
+    const response=ask('Government response:','Open dialogue, protect peaceful assembly and appoint a review team')||'Dialogue and review';
+    add(x.publicMovements,{issue,response,status:'Dialogue initiated · review pending',impact:'Unassessed'});
+    politicalExpansionRecord('Public movements',`Response to movement: ${issue}`,response,{governance:2,trust:2,approval:1}); return;
+  }
+  if (action === 'career') {
+    const milestone=ask('Career milestone / responsibility achieved:'); if(!milestone)return;
+    const proof=ask('Record the basis (election, appointment, party vote, public service):'); if(!proof)return;
+    add(x.careerMilestones,{milestone,proof,status:'Recorded · eligibility not automatically granted'});
+    politicalExpansionRecord('Political career',`Career milestone: ${milestone}`,proof,{reputation:1}); return;
+  }
+  if (action === 'ethics') {
+    const disclosure=ask('Asset, interest or potential conflict to disclose:'); if(!disclosure)return;
+    add(x.adminAudits,{department:'Ethics and disclosure',scope:disclosure,status:'Disclosure recorded · verification pending',finding:'Not adjudicated'});
+    politicalExpansionRecord('Ethics and transparency','Disclosure entered',`Recorded disclosure: ${disclosure}. A declaration is not a substitute for statutory filing where required.`,{governance:2,trust:2}); return;
+  }
+}
+function politicalLifePage() {
+  const x=ensurePoliticalExpansion();
+  const card=(eyebrow,title,desc,buttons)=>`<section class="panel"><span class="eyebrow">${eyebrow}</span><h2>${title}</h2><p class="panel-description">${desc}</p><div class="row-actions">${buttons.map(([label,key])=>`<button class="secondary-btn" data-political-action="${key}">${label}</button>`).join('')}</div></section>`;
+  const list=(title,items,empty)=>`<section class="panel"><span class="eyebrow">LIVE REGISTER</span><h2>${title}</h2>${items.length?items.slice(0,5).map(v=>`<div class="history-row"><div><b>${escapeHtml(v.name||v.title||v.issue||v.project||v.milestone||v.office||v.department||v.election||'Political record')}</b><small>${escapeHtml(v.status||'Recorded')} · ${escapeHtml(v.date||'')}</small><small>${escapeHtml(v.subject||v.ground||v.scope||v.agenda||v.question||v.proof||v.position||'')}</small></div></div>`).join(''):`<p class="muted">${empty}</p>`}</section>`;
+  return `<div class="page-heading"><div><span class="eyebrow">RAJNITI 6.1 · NATIONAL POLITICAL LIFE EXPANSION</span><h1>Political <em>Institutions & Public Life</em></h1><p>Connected systems for party democracy, elections, Parliament, administration, courts, federalism and public accountability.</p></div></div>
+  <div class="stats-grid">${statCard('Governance score',x.governanceScore,'Simulation indicator','⚖')}${statCard('Institutional trust',x.institutionalTrust,'Simulation indicator','🏛')}${statCard('Party factions',x.partyFactions.length,'Groups and discipline files','♟')}${statCard('Open cases',x.courtCases.filter(v=>!String(v.status).includes('Disposed')).length+x.electionCases.filter(v=>String(v.status).includes('pending')).length,'Judicial / election matters','▤')}</div>
+  <div class="dashboard-grid">
+  ${card('PARTY ORGANISATION','Internal democracy & discipline','Create policy factions, record internal leadership elections and issue fair disciplinary notices.',[['CREATE PARTY FACTION','party-faction'],['SCHEDULE INTERNAL ELECTION','party-election'],['ISSUE DISCIPLINARY NOTICE','party-discipline']])}
+  ${card('ELECTION COMMISSION & CAMPAIGNS','Election compliance','Record campaign expenses and election petitions. Records do not alter results without due process.',[['RECORD CAMPAIGN EXPENSE','election-expense'],['FILE ELECTION PETITION','election-petition']])}
+  ${card('PARLIAMENT','Legislative scrutiny','Constitute committees, ask ministers questions and invite public submissions on policy.',[['CONSTITUTE COMMITTEE','committee'],['SUBMIT HOUSE QUESTION','question'],['OPEN PUBLIC CONSULTATION','public-consultation']])}
+  ${card('CIVIL SERVICE & PUBLIC FINANCE','Administration and procurement','Initiate departmental audits and transparent public procurement records.',[['ORDER DEPARTMENT AUDIT','admin-audit'],['ANNOUNCE PUBLIC TENDER','tender'],['MAKE ETHICS DISCLOSURE','ethics']])}
+  ${card('JUDICIARY','Courts and constitutional review','Record legal challenges and pending hearings without assuming judicial outcomes.',[['FILE COURT CASE','court-case']])}
+  ${card('FEDERALISM','Centre–State relations','Record intergovernmental meetings, funding negotiations and coordination agendas.',[['HOLD FEDERAL MEETING','federal-meeting']])}
+  ${card('CIVIL SOCIETY','Public movements and protest response','Respond to public demands through dialogue, lawful assembly protections and review.',[['RESPOND TO PUBLIC MOVEMENT','movement']])}
+  ${card('POLITICAL CAREER','Career and public service','Record milestones and the real-world basis for each responsibility or advancement.',[['RECORD CAREER MILESTONE','career']])}
+  </div>
+  <div class="dashboard-grid">
+  ${list('Party factions & internal proceedings',x.partyFactions,'No party faction or disciplinary file recorded.')}
+  ${list('Election compliance & petitions',[...x.campaignAccounts,...x.electionCases],'No election compliance records yet.')}
+  ${list('Committees & public consultations',x.committees,'No committee or consultation has been opened.')}
+  ${list('Administrative audits',x.adminAudits,'No departmental audit has been ordered.')}
+  ${list('Procurement register',x.procurement,'No public tenders recorded.')}
+  ${list('Court and election cases',[...x.courtCases,...x.electionCases],'No pending court matters recorded.')}
+  ${list('Federal relations',x.federalMeetings,'No Centre–State meeting recorded.')}
+  ${list('Public movements',x.publicMovements,'No public movement response recorded.')}
+  </div>
+  <section class="panel"><span class="eyebrow">POLITICAL HISTORY</span><h2>Institutional action log</h2>${x.actionLog.slice(0,12).map(v=>`<div class="history-row"><div><b>${escapeHtml(v.title)}</b><small>${escapeHtml(v.type)} · ${escapeHtml(v.date)}</small><small>${escapeHtml(v.detail)}</small></div></div>`).join('')||'<p class="muted">Your political institutional actions will appear here.</p>'}</section>
+  <p class="creator-note">Simulation note: this is a political role-playing model, not a legal filing system. Election, parliamentary, judicial and procurement outcomes remain subject to applicable laws, institutional procedures and scenario rules.</p>`;
+}
+
 function sectionNavigation(tab) {
   const groups = {
     Career: [{ label: 'Career overview', tab: 'Career' }, { label: 'Daily activities', tab: 'Activities' }],
@@ -6788,6 +6945,9 @@ function render() {
       break;
     case 'Parliament':
       content = parliamentPage();
+      break;
+    case 'Political Life':
+      content = politicalLifePage();
       break;
     case 'Alliances':
       content = alliancesPage();
@@ -7096,6 +7256,9 @@ if (!Array.isArray(state.media.history)) state.media.history = [];
 
   const partyCampaignButton = event.target.closest('[data-party-campaign]');
   if (partyCampaignButton) { authorisePartyCampaign(partyCampaignButton.dataset.partyCampaign); return; }
+
+  const politicalAction = event.target.closest('[data-political-action]');
+  if (politicalAction) { politicalExpansionAction(politicalAction.dataset.politicalAction); return; }
 
   const tab = event.target.closest('[data-tab]');
 
