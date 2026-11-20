@@ -249,24 +249,75 @@ function isGeneratedPlaceholderName(name) {
   return /^(Party Member|New Party Member)\s+\d+$/i.test(String(name || '').trim());
 }
 function assignPartyElectionSeats(typeId, members, scheduledAt) {
-  const stateName = String(state.stateName || members.find(member => member.state || member.stateName)?.state || members.find(member => member.stateName)?.stateName || '').trim();
+  if (typeId === 'assembly') return members.map((member,index)=>({
+    stateName:'Karnataka', district:'Karnataka', constituencyNumber:index+1,
+    constituency:karnatakaAssemblyConstituencies[index] || `Assembly Constituency ${String(index+1).padStart(3,'0')}`,
+    constituencyAssignment:'Official Karnataka Assembly constituency list · 2023 reference',
+    seatType:member.seatType || 'Verify reservation category'
+  }));
+  const stateName = String(state.stateName || 'Karnataka');
   const districtMap = districtDirectory?.districtCodes?.[stateName] || {};
   const districts = Object.keys(districtMap);
   const fallbackDistrict = String(state.constituency?.district || state.hometown || 'State-wide').trim();
   const pool = districts.length ? districts : [fallbackDistrict];
-  return members.map((member, index) => {
-    const district = pool[index % pool.length];
-    const seatNumber = Math.floor(index / pool.length) + 1;
-    return {
-      stateName,
-      district,
-      constituency: `Assembly Constituency ${String(index+1).padStart(3,'0')}`,
-      constituencyAssignment: 'AI-assigned simulated seat · automatically distributed',
-      seatType: member.seatType || 'Not specified'
-    };
-  });
+  return members.map((member,index)=>({
+    stateName, district:pool[index%pool.length],
+    constituency:`${typeId === 'local' ? 'Local' : 'Parliamentary'} Seat ${String(index+1).padStart(3,'0')}`,
+    constituencyAssignment:'AI-proposed constituency · review before approval',
+    seatType:member.seatType || 'Not specified'
+  }));
 }
 
+const karnatakaAssemblyConstituencies = ["Nippani", "Chikkodi-Sadalga", "Athani", "Kagwad", "Kudachi", "Raybag", "Hukkeri", "Arabhavi", "Gokak", "Yemkanmardi", "Belgaum Uttar", "Belgaum Dakshin", "Belgaum Rural", "Khanapur", "Kittur", "Bailhongal", "Saundatti Yellamma", "Ramdurg", "Mudhol", "Terdal", "Jamkhandi", "Bilgi", "Badami", "Bagalkot", "Hungund", "Muddebihal", "Devar Hippargi", "Basavana Bagevadi", "Babaleshwar", "Bijapur City", "Nagthan", "Indi", "Sindgi", "Afzalpur", "Jevargi", "Shorapur", "Shahapur", "Yadgir", "Gurmitkal", "Chittapur", "Sedam", "Chincholi", "Gulbarga Rural", "Gulbarga Dakshin", "Gulbarga Uttar", "Aland", "Basavakalyan", "Homnabad", "Bidar South", "Bidar", "Bhalki", "Aurad", "Raichur Rural", "Raichur", "Manvi", "Devadurga", "Lingsugur", "Sindhanur", "Maski", "Kushtagi", "Kanakagiri", "Gangawati", "Yelburga", "Koppal", "Shirahatti", "Gadag", "Ron", "Nargund", "Navalgund", "Kundgol", "Dharwad", "Hubli-Dharwad East", "Hubli-Dharwad Central", "Hubli-Dharwad West", "Kalghatgi", "Haliyal", "Karwar", "Kumta", "Bhatkal", "Sirsi", "Yellapur", "Hangal", "Shiggaon", "Haveri", "Byadgi", "Hirekerur", "Ranibennur", "Hadagalli", "Hagaribommanahalli", "Vijayanagara", "Kampli", "Siruguppa", "Bellary", "Bellary City", "Sandur", "Kudligi", "Molakalmuru", "Challakere", "Chitradurga", "Hiriyur", "Hosadurga", "Holalkere", "Jagalur", "Harapanahalli", "Harihar", "Davanagere North", "Davanagere South", "Mayakonda", "Channagiri", "Honnali", "Shimoga Rural", "Bhadravati", "Shimoga", "Tirthahalli", "Shikaripura", "Sorab", "Sagar", "Byndoor", "Kundapura", "Udupi", "Kapu", "Karkal", "Sringeri", "Mudigere", "Chikmagalur", "Tarikere", "Kadur", "Chiknayakanhalli", "Tiptur", "Turuvekere", "Kunigal", "Tumkur City", "Tumkur Rural", "Koratagere", "Gubbi", "Sira", "Pavagada", "Madhugiri", "Gauribidanur", "Bagepalli", "Chikkaballapur", "Sidlaghatta", "Chintamani", "Srinivaspur", "Mulbagal", "Kolar Gold Field", "Bangarapet", "Kolar", "Malur", "Yelahanka", "K.R. Pura", "Byatarayanapura", "Yeshvanthapura", "Rajarajeshwarinagar", "Dasarahalli", "Mahalakshmi Layout", "Malleshwaram", "Hebbal", "Pulakeshinagar", "Sarvagnanagar", "C.V. Raman Nagar", "Shivajinagar", "Shanti Nagar", "Gandhi Nagar", "Rajaji Nagar", "Govindraj Nagar", "Vijay Nagar", "Chamrajpet", "Chickpet", "Basavanagudi", "Padmanabha Nagar", "B.T.M. Layout", "Jayanagar", "Mahadevapura", "Bommanahalli", "Bangalore South", "Anekal", "Hosakote", "Devanahalli", "Doddaballapur", "Nelamangala", "Magadi", "Ramanagaram", "Kanakapura", "Channapatna", "Malavalli", "Maddur", "Melukote", "Mandya", "Shrirangapattana", "Nagamangala", "Krishnarajpet", "Shravanabelagola", "Arsikere", "Belur", "Hassan", "Holenarasipur", "Arkalgud", "Sakleshpur", "Belthangady", "Moodabidri", "Mangalore City North", "Mangalore City South", "Mangalore", "Bantval", "Puttur", "Sullia", "Madikeri", "Virajpet", "Periyapatna", "Krishnarajanagara", "Hunsur", "Heggadadevankote", "Nanjangud", "Chamundeshwari", "Krishnaraja", "Chamaraja", "Narasimharaja", "Varuna", "T. Narasipur", "Hanur", "Kollegal", "Chamarajanagar", "Gundlupet"];
+
+const generatedPartyRoles = [
+  'State Vice-President','State General Secretary','State Treasurer','Organisation Secretary',
+  'Youth Wing President','Women Wing Secretary','State Spokesperson','Policy Committee Member',
+  'District President','District General Secretary','Constituency Organiser'
+];
+function ensureKarnataka224PartyRoster() {
+  if (!Array.isArray(state.partyMemberRecords)) state.partyMemberRecords = [];
+  const members = state.partyMemberRecords.filter(member => member && member.id !== 'founder');
+  const usedNames = new Set(members.map(member => String(member.name||'').toLowerCase()));
+  for (let i = 0; i < 224; i++) {
+    let member = members[i];
+    if (!member) {
+      let name = fictionalIndianPartyNames[i % fictionalIndianPartyNames.length];
+      const cycle = Math.floor(i / fictionalIndianPartyNames.length);
+      if (cycle) name = `${name} ${cycle+1}`;
+      while (usedNames.has(name.toLowerCase())) name += ' Kumar';
+      usedNames.add(name.toLowerCase());
+      member = {
+        id: `assembly-member-${String(i+1).padStart(3,'0')}`,
+        name, role: generatedPartyRoles[i % generatedPartyRoles.length],
+        loyalty: 55 + (i % 36), experience: 10 + ((i * 7) % 90),
+        joined: 'AI party organisation roster', isFounder: false,
+        campaignFunds: 2000000, state: 'Karnataka'
+      };
+      state.partyMemberRecords.push(member);
+      members.push(member);
+    } else {
+      if (!String(member.name||'').trim() || isGeneratedPlaceholderName(member.name)) member.name = fictionalIndianPartyNames[i % fictionalIndianPartyNames.length] + (i >= fictionalIndianPartyNames.length ? ` ${Math.floor(i/fictionalIndianPartyNames.length)+1}` : '');
+      if (!member.role || /^general member$/i.test(String(member.role))) member.role = generatedPartyRoles[i % generatedPartyRoles.length];
+      if (!Number.isFinite(Number(member.campaignFunds))) member.campaignFunds = 2000000;
+    }
+  }
+  state.partyMembers = state.partyMemberRecords.length;
+  return members.slice(0,224);
+}
+function ensureAssemblyElectionCountdown() {
+  const elections = ensureElectionCalendar();
+  const schedule = elections.calendar.assembly;
+  if (schedule && !elections.assembly224ScheduleV240Applied) {
+    schedule.nextAt = currentMonthIndex() + 7;
+    schedule.intervalMonths = 60;
+    schedule.label = 'State Assembly Election';
+    delete schedule.proposalKey;
+    elections.assembly224ScheduleV240Applied = true;
+    saveState();
+  }
+  return schedule;
+}
 function migratePartyManagementSave() {
   if (!Array.isArray(state.partyMemberRecords)) state.partyMemberRecords = [];
   if (!state.partyLeadership || typeof state.partyLeadership !== 'object') state.partyLeadership = {};
@@ -1845,6 +1896,7 @@ function electionPhase(active) {
 }
 function processElectionCalendar() {
   const elections = ensureElectionCalendar();
+  ensureAssemblyElectionCountdown();
   const now = currentMonthIndex();
   const types = [
     { id: 'local', label: 'Local Body Election', interval: 60, offset: 36 },
@@ -1863,9 +1915,9 @@ function processElectionCalendar() {
     }
     const monthsUntil = Number(schedule.nextAt) - now;
     const proposalKey = `${type.id}-${schedule.nextAt}`;
-    if (monthsUntil <= 4 && monthsUntil >= 0 && schedule.proposalKey !== proposalKey) {
+    if (type.id !== 'assembly' && monthsUntil <= 4 && monthsUntil >= 0 && schedule.proposalKey !== proposalKey) {
       const members = Array.isArray(state.partyMemberRecords) ? state.partyMemberRecords : [];
-      const proposals = members.filter(member => member && member.name).slice(0, 8);
+      const proposals = type.id === 'assembly' ? members.filter(member => member && member.name).slice(0, 224) : members.filter(member => member && member.name).slice(0, 8);
       if (proposals.length) proposals.forEach((member, index) => elections.nominationQueue.push({
         id: `${proposalKey}-${index}`, typeId: type.id, typeName: type.label,
         scheduledAt: Number(schedule.nextAt), candidateName: member.name,
@@ -2849,28 +2901,35 @@ function ensurePartySlate() {
 function proposePartySlate(typeId = 'assembly') {
   if (state.partyId === 'independent') return toast('Join or establish a party before creating a party-wide candidate slate.');
   const slate = ensurePartySlate();
+  if (typeId === 'assembly') ensureAssemblyElectionCountdown();
   const schedule = ensureElectionCalendar().calendar[typeId];
   if (!schedule) return toast('Select a valid election cycle.');
   const scheduledAt = Number(schedule.nextAt || currentMonthIndex());
   const type = electionTypes.find(item => item.id === typeId);
-  const members = (state.partyMemberRecords || []).filter(member => member && member.name && member.id !== 'founder');
+  const members = typeId === 'assembly'
+    ? ensureKarnataka224PartyRoster()
+    : (state.partyMemberRecords || []).filter(member => member && member.name && member.id !== 'founder');
   if (!members.length) return toast('Recruit party members before proposing candidates.');
-  members.forEach((member,index) => {
-    if (isGeneratedPlaceholderName(member.name)) member.name = fictionalPartyMemberName(index);
-  });
-  const assignments = assignPartyElectionSeats(typeId,members,scheduledAt);
+  const assignments = typeId === 'assembly'
+    ? karnatakaAssemblyConstituencies.map((_,index)=>({stateName:'Karnataka',district:'Karnataka',constituencyNumber:index+1,constituency:karnatakaAssemblyConstituencies[index],constituencyAssignment:'Official Karnataka Assembly constituency list · 2023 reference',seatType:'Verify reservation category'}))
+    : assignPartyElectionSeats(typeId,members,scheduledAt);
   let added = 0, refreshed = 0;
   members.forEach((member,index) => {
-    let existing = slate.find(item => item.memberId === member.id && Number(item.scheduledAt) === scheduledAt && item.typeId === typeId);
     const seat = assignments[index];
+    if (!seat) return;
+    let existing = slate.find(item => item.typeId === typeId && Number(item.scheduledAt) === scheduledAt &&
+      (item.memberId === member.id || String(item.constituency||'').toLowerCase() === seat.constituency.toLowerCase()));
+    const role = Object.entries(state.partyLeadership || {}).find(([,memberId]) => String(memberId) === String(member.id))?.[0] || member.role || 'Constituency Organiser';
     if (existing) {
-      if (existing.status === 'Proposed') {
+      if (['Proposed','Party Approved'].includes(existing.status)) {
+        existing.memberId = member.id;
         existing.candidateName = member.name;
-        existing.role = Object.entries(state.partyLeadership || {}).find(([,memberId]) => String(memberId) === String(member.id))?.[0] || member.role || 'General Member';
         existing.partyName = state.party || 'Bharat Pragati Party';
+        existing.role = role;
         existing.stateName = seat.stateName;
         existing.district = seat.district;
         existing.constituency = seat.constituency;
+        existing.constituencyNumber = seat.constituencyNumber || index+1;
         existing.constituencyAssignment = seat.constituencyAssignment;
         existing.updatedAt = dateText();
         refreshed++;
@@ -2878,27 +2937,25 @@ function proposePartySlate(typeId = 'assembly') {
       return;
     }
     slate.push({
-      id: `slate-${Date.now()}-${typeId}-${index}-${String(member.id).replace(/[^a-zA-Z0-9_-]/g,'').slice(-12)}`,
+      id: `slate-${typeId}-${scheduledAt}-${String(index+1).padStart(3,'0')}`,
       typeId, typeName: type?.name || schedule.label || 'Election',
       scheduledAt, memberId: member.id, candidateName: member.name,
-      role: Object.entries(state.partyLeadership || {}).find(([,memberId]) => String(memberId) === String(member.id))?.[0] || member.role || 'General Member',
-      partyName: state.party || 'Bharat Pragati Party',
-      stateName: seat.stateName,
-      district: seat.district,
-      constituency: seat.constituency,
-      constituencyAssignment: seat.constituencyAssignment,
-      seatType: seat.seatType,
-      age: Number(member.age) || '',
-      politicalHistory: member.politicalHistory || '',
-      manifesto: member.manifesto || '',
-      status: 'Proposed', campaignManager: 'AI Party Organisation',
-      approvedBudget: 0, campaignSpent: 0, createdAt: dateText()
+      role, partyName: state.party || 'Bharat Pragati Party',
+      stateName: seat.stateName, district: seat.district,
+      constituency: seat.constituency, constituencyNumber: seat.constituencyNumber || index+1,
+      constituencyAssignment: seat.constituencyAssignment, seatType: seat.seatType,
+      age: Number(member.age) || '', politicalHistory: member.politicalHistory || '',
+      manifesto: member.manifesto || '', status: 'Proposed',
+      campaignManager: 'AI Party Organisation', approvedBudget: 0, campaignSpent: 0,
+      createdAt: dateText()
     });
     added++;
   });
   state.partyMembers = state.partyMemberRecords.length;
   saveState(); render();
-  toast(`${added} candidate(s) added and ${refreshed} pending assignment(s) refreshed for ${type?.name || schedule.label}.`);
+  toast(typeId === 'assembly'
+    ? `Karnataka Assembly list ready: ${members.length} party candidates for 224 constituencies.`
+    : `${added} candidate(s) added and ${refreshed} updated for ${type?.name || schedule.label}.`);
 }
 
 function editPartySlateCandidate(id) {
@@ -2906,23 +2963,23 @@ function editPartySlateCandidate(id) {
   if (!item || !['Proposed','Party Approved'].includes(item.status)) return toast('Only proposed or party-approved candidates can be edited.');
   const fields = [
     ['Candidate full name', item.candidateName || ''],
-    ['Election type (local / assembly / lok-sabha)', item.typeId || 'assembly'],
-    ['State', item.stateName || state.stateName || ''],
-    ['District', item.district || ''],
-    ['Constituency / Ward / Seat', item.constituency || ''],
-    ['Seat type (General / SC / ST / Not specified)', item.seatType || 'Not specified'],
-    ['Age', item.age || ''],
-    ['Political experience / history', item.politicalHistory || ''],
-    ['Candidate manifesto / priorities', item.manifesto || '']
+    ['Party role', item.role || 'Constituency Organiser'],
+    ['Constituency', item.constituency || ''],
+    ['District', item.district || 'Karnataka']
   ];
   const values = fields.map(([label,value]) => prompt(label, String(value)));
   if (values.some(value => value === null)) return;
-  const [name,typeId,stateName,district,constituency,seatType,age,history,manifesto] = values.map(value=>String(value).trim());
+  const [name,role,constituency,district] = values.map(value=>String(value).trim());
+  const typeId = item.typeId, stateName = item.stateName || 'Karnataka';
+  const seatType = item.seatType || 'Verify reservation category';
+  const age = item.age || '', history = item.politicalHistory || '', manifesto = item.manifesto || '';
   if (name.length < 2 || !['local','assembly','lok-sabha'].includes(typeId) || !stateName || !district || !constituency) {
     return toast('Candidate not saved. Name, valid election type, state, district and constituency are required.');
   }
   if (age && (!Number.isFinite(Number(age)) || Number(age) < 18 || Number(age) > 100)) return toast('Enter a valid candidate age.');
-  item.candidateName=name; item.typeId=typeId;
+  item.candidateName=name; item.role=role || 'Constituency Organiser'; item.typeId=typeId;
+  const linkedMember = (state.partyMemberRecords||[]).find(person=>String(person.id)===String(item.memberId));
+  if (linkedMember) { linkedMember.name=name; linkedMember.role=item.role; }
   item.typeName=electionTypes.find(type=>type.id===typeId)?.name || typeId;
   item.stateName=stateName; item.district=district; item.constituency=constituency;
   item.seatType=seatType; item.age=age ? Number(age) : '';
@@ -2942,7 +2999,8 @@ function partySlateConflict(item, slate) {
 }
 function bulkApprovePartySlate() {
   const slate=ensurePartySlate();
-  const pending=slate.filter(item=>item.status==='Proposed');
+  const cycle = Number(ensureElectionCalendar().calendar.assembly?.nextAt || currentMonthIndex());
+  const pending=slate.filter(item=>item.typeId==='assembly' && Number(item.scheduledAt)===cycle && item.status==='Proposed');
   let approved=0, skipped=0;
   pending.forEach(item=>{
     const valid=String(item.candidateName||'').trim().length>=2 &&
@@ -2986,6 +3044,35 @@ function allocatePartyCandidateBudget(id) {
   saveState(); render();
   toast(`Campaign funded 50/50: party ${money(partyShare)} · candidate ${money(candidateShare)}.`);
 }
+function bulkFundPartySlate() {
+  const schedule = ensureElectionCalendar().calendar.assembly;
+  const cycle = Number(schedule?.nextAt || currentMonthIndex());
+  const candidates = ensurePartySlate().filter(item => item.typeId === 'assembly' && Number(item.scheduledAt) === cycle && item.status === 'Party Approved');
+  let funded = 0, skipped = 0, partyCost = 0;
+  const total = 4000000, partyShare = 2000000, candidateShare = 2000000;
+  candidates.forEach(item => {
+    const member = (state.partyMemberRecords || []).find(person => String(person.id) === String(item.memberId));
+    if (!member || Number(state.partyFunds || 0) - partyCost < partyShare || Number(member.campaignFunds || 0) < candidateShare) { skipped++; return; }
+    member.campaignFunds = Number(member.campaignFunds) - candidateShare;
+    item.approvedBudget = total;
+    item.partyContribution = partyShare;
+    item.candidateContribution = candidateShare;
+    item.status = 'Funded';
+    item.fundedAt = dateText();
+    partyCost += partyShare;
+    funded++;
+  });
+  if (partyCost > 0) {
+    state.partyFunds -= partyCost;
+    state.partyTreasury = state.partyTreasury || { incomeTotal:0, expenseTotal:0, ledger:[] };
+    state.partyTreasury.expenseTotal = (Number(state.partyTreasury.expenseTotal)||0) + partyCost;
+    state.partyTreasury.ledger = Array.isArray(state.partyTreasury.ledger) ? state.partyTreasury.ledger : [];
+    state.partyTreasury.ledger.unshift({type:'Expense',amount:partyCost,note:`50% BPP Assembly campaign funding for ${funded} candidates`,date:dateText()});
+    state.partyTreasury.ledger = state.partyTreasury.ledger.slice(0,60);
+  }
+  saveState(); render();
+  toast(`Campaign funding: ${funded} funded; ${skipped} skipped. Party share ${money(partyCost)}; candidates contributed matching funds.`);
+}
 function decidePartySlate(id, decision) {
   const item = ensurePartySlate().find(entry => entry.id === id);
   if (!item || item.status !== 'Proposed') return toast('This candidate proposal is no longer awaiting review.');
@@ -3005,6 +3092,7 @@ function decidePartySlate(id, decision) {
 }
 
 function electionPage() {
+  ensureAssemblyElectionCountdown();
   const e = state.elections;
   const active = e.active;
   const candidateList = electionCandidates();
@@ -3013,7 +3101,7 @@ function electionPage() {
   const winRate = e.totalContested ? Math.round(e.totalWon / e.totalContested * 100) : 0;
 
   const electionCalendar = ensureElectionCalendar();
-  const pendingNominations = electionCalendar.nominationQueue.filter(item => item.status === 'Pending');
+  const pendingNominations = electionCalendar.nominationQueue.filter(item => item.typeId !== 'assembly' && item.status === 'Pending');
   const electionScheduleHtml = Object.entries(electionCalendar.calendar).map(([id, item]) => {
     const remaining = Math.max(0, Number(item.nextAt || 0) - currentMonthIndex());
     const stage = remaining <= 0 ? 'Scheduled now' : remaining <= 2 ? 'Campaign window soon' : remaining <= 4 ? 'Nomination window soon' : 'Preparation period';
@@ -3079,7 +3167,7 @@ function electionPage() {
             const label = item.status === 'Elected' ? 'WON' : item.status === 'Not Elected' ? 'LOST' : item.status === 'Funded' ? 'FUNDED · AWAITING POLL' : item.status === 'Party Approved' ? 'NOT CONTESTED · FUNDING PENDING' : item.status === 'Rejected' ? 'REJECTED' : 'AWAITING APPROVAL';
             const member = (state.partyMemberRecords||[]).find(person=>String(person.id)===String(item.memberId));
             const role = Object.entries(state.partyLeadership||{}).find(([,memberId])=>String(memberId)===String(item.memberId))?.[0] || item.role || member?.role || 'General Member';
-            return `<div class="finance-history"><span><b>${escapeHtml(item.candidateName||member?.name||'Candidate')}</b><br><small>${escapeHtml(role)} · ${escapeHtml(item.district||'District pending')} · ${escapeHtml(item.constituency||'Constituency pending')}</small></span><b>${label}</b></div>`;
+            return `<div class="finance-history"><span><b>${escapeHtml(item.candidateName||member?.name||'Candidate')}</b><br><small>${escapeHtml(role)} · Seat ${String(item.constituencyNumber||'—')} · ${escapeHtml(item.constituency||'Constituency pending')}</small></span><b>${label}</b></div>`;
           }).join('')}</div>` : ''}
         </div>`;
       })()}
@@ -3087,25 +3175,28 @@ function electionPage() {
       <p class="panel-description">This queue covers scheduled nomination recommendations. Party-wide candidate deployment below is where you approve or reject the automatically assigned party tickets. Neither approval action files an official nomination.</p>
       <div class="election-metrics">
         <div><small>PENDING REVIEW</small><b>${pendingNominations.length}</b></div>
-        <div><small>APPROVED BY YOU</small><b>${electionCalendar.nominationQueue.filter(item => item.status === 'Approved').length}</b></div>
-        <div><small>REJECTED</small><b>${electionCalendar.nominationQueue.filter(item => item.status === 'Rejected').length}</b></div>
+        <div><small>APPROVED BY YOU</small><b>${electionCalendar.nominationQueue.filter(item => item.typeId !== 'assembly' && item.status === 'Approved').length}</b></div>
+        <div><small>REJECTED</small><b>${electionCalendar.nominationQueue.filter(item => item.typeId !== 'assembly' && item.status === 'Rejected').length}</b></div>
       </div>
       ${nominationHtml}
-      <div class="section-heading-row"><div><h2>Party-wide candidate deployment</h2><p class="panel-description">Choose the election and generate candidates. The game automatically distributes party members across different simulated constituencies and shows each person's name, party and role. You only need to approve or reject. Campaign funding is split 50/50 between party treasury and candidate reserve.</p></div></div>
-      <div class="creator-panel"><div class="creator-grid"><div class="creator-field"><label for="partySlateElectionType">Election cycle</label><select id="partySlateElectionType"><option value="local">Local body</option><option value="assembly" selected>State Assembly</option><option value="lok-sabha">Lok Sabha</option></select></div><div class="creator-field"><label>Party treasury available</label><input value="${escapeHtml(money(state.partyFunds || 0))}" readonly></div></div><button class="primary-btn" data-party-slate-generate>Generate member proposals</button></div>
+      <div class="section-heading-row"><div><h2>Party-wide candidate deployment</h2><p class="panel-description">Generate one candidate for each of Karnataka's 224 Assembly constituencies. AI selects 224 party members and assigns the official constituency names. Review or edit a candidate, then approve individually or approve all eligible candidates. Campaign funding can then be authorised in one 50/50 bulk action.</p></div></div>
+      <div class="assembly-candidate-banner"><strong>KARNATAKA LEGISLATIVE ASSEMBLY · 224 SEATS</strong><p class="panel-description">AI prepares one BPP candidate for each official constituency. Review and edit the list, then approve eligible candidates together. Party approval is not the same as official nomination.</p></div>
+      <div class="creator-panel"><div class="creator-grid"><div class="creator-field"><label for="partySlateElectionType">Election cycle</label><select id="partySlateElectionType"><option value="assembly" selected>State Assembly · Karnataka · 224 seats</option></select></div><div class="creator-field"><label>Party treasury available</label><input value="${escapeHtml(money(state.partyFunds || 0))}" readonly></div></div><button class="primary-btn" data-party-slate-generate>Generate member proposals</button></div>
       ${(() => {
         const slate = ensurePartySlate();
-        const ordered = slate.slice().sort((a,b)=>Number(b.scheduledAt||0)-Number(a.scheduledAt||0));
+        const selectedAssemblySchedule = ensureAssemblyElectionCountdown();
+        const ordered = slate.filter(item => item.typeId === 'assembly' && Number(item.scheduledAt) === Number(selectedAssemblySchedule?.nextAt)).slice().sort((a,b)=>Number(a.constituencyNumber||0)-Number(b.constituencyNumber||0));
         const proposed = ordered.filter(item=>item.status==='Proposed').length;
         const eligible = ordered.filter(item=>item.status==='Proposed' && item.candidateName && item.stateName && item.district && item.constituency && !partySlateConflict(item,ordered)).length;
-        return slate.length ? `
+        return ordered.length ? `
           <div class="election-metrics">
-            <div><small>TOTAL CANDIDATES</small><b>${slate.length}</b></div>
+            <div><small>TOTAL CANDIDATES</small><b>${ordered.length}/224</b></div>
             <div><small>AWAITING REVIEW</small><b>${proposed}</b></div>
             <div><small>READY FOR BULK APPROVAL</small><b>${eligible}</b></div>
           </div>
-          <p class="panel-description">Review the short candidate list. Each member is assigned a different simulated seat where possible. Approving a ticket does not allocate campaign funds or submit official nominations.</p>
+          <p class="panel-description">Review all 224 Karnataka Assembly constituencies. Each constituency appears exactly once. Approving a ticket does not allocate campaign funds or submit official nominations.</p>
           <button class="primary-btn" data-party-slate-bulk-approve ${eligible===0?'disabled':''}>APPROVE ALL ELIGIBLE CANDIDATES (${eligible})</button>
+          <button class="secondary-btn full" data-party-slate-bulk-fund ${approved===0?'disabled':''}>FUND ALL APPROVED CAMPAIGNS 50/50 (${approved})</button>
           <div class="creator-field" style="margin-top:12px"><label for="candidateRegisterSearch">Search candidate / constituency / district / state</label><input id="candidateRegisterSearch" type="search" placeholder="Search the full candidate register..."></div>
           <div class="candidate-register-list" style="max-height:620px;overflow:auto">
             ${ordered.map(item => {
@@ -3115,9 +3206,9 @@ function electionPage() {
               return `<article class="finance-history candidate-register-card candidate-simple-card" data-candidate-register-row="${escapeHtml([item.candidateName,partyName,item.role,item.typeName,item.stateName,item.district,item.constituency].join(' ').toLowerCase())}" style="display:block;padding:13px;margin:9px 0">
                 <div class="candidate-simple-top"><b>${escapeHtml(item.candidateName||'Unnamed candidate')}</b><span class="candidate-status">${escapeHtml(item.status)}</span></div>
                 <div class="candidate-simple-party">${escapeHtml(partyName)} · ${escapeHtml(item.role||member?.role||'General Member')}</div>
-                <div class="candidate-simple-seat">${escapeHtml(item.typeName||item.typeId||'Election')} · ${escapeHtml(item.district||'District pending')} · ${escapeHtml(item.constituency||'Seat pending')}</div>
+                <div class="candidate-simple-seat">Karnataka · Constituency ${String(item.constituencyNumber||'—')} · <b>${escapeHtml(item.constituency||'Seat pending')}</b></div>
                 <div class="candidate-simple-actions">
-                  ${item.status==='Proposed'?`<button class="secondary-btn" data-party-slate-action="approve" data-party-slate-id="${escapeHtml(item.id)}" ${complete?'':'disabled'}>Approve</button><button class="secondary-btn" data-party-slate-action="reject" data-party-slate-id="${escapeHtml(item.id)}">Reject</button>`:''}
+                  ${item.status==='Proposed'?`<button class="secondary-btn" data-party-slate-edit="${escapeHtml(item.id)}">Edit</button><button class="secondary-btn" data-party-slate-action="approve" data-party-slate-id="${escapeHtml(item.id)}" ${complete?'':'disabled'}>Approve</button><button class="secondary-btn" data-party-slate-action="reject" data-party-slate-id="${escapeHtml(item.id)}">Reject</button>`:''}
                   ${item.status==='Party Approved'?`<button class="secondary-btn" data-party-slate-fund="${escapeHtml(item.id)}">Fund campaign 50/50</button>`:''}
                   ${['Elected','Not Elected'].includes(item.status)?`<span class="current-label">${escapeHtml(item.status)}</span>`:''}
                 </div>
@@ -3331,8 +3422,10 @@ function showElectionResult(result) {
 }
 
 const governmentPortfolios = [
-  'Finance', 'Home Affairs', 'Education', 'Health & Family Welfare',
-  'Rural Development', 'Infrastructure', 'Agriculture'
+  'Finance','Home Affairs','Revenue','Education','Health & Family Welfare',
+  'Rural Development & Panchayat Raj','Public Works','Agriculture',
+  'Water Resources','Energy','Transport','Industries & Commerce',
+  'Social Welfare','Law & Parliamentary Affairs'
 ];
 
 function governmentMandateCount() {
@@ -3368,26 +3461,63 @@ function ensureGovernmentState() {
   return g;
 }
 
+function eligibleElectedMinisters() {
+  const slate = ensurePartySlate();
+  const elected = slate.filter(item => item.typeId === 'assembly' && item.status === 'Elected' && item.memberId);
+  return elected.map(item => {
+    const member = (state.partyMemberRecords || []).find(person => String(person.id) === String(item.memberId));
+    return member ? { id:member.id, name:member.name, role:item.role || member.role || 'MLA', loyalty:Number(member.loyalty||50), experience:Number(member.experience||0), constituency:item.constituency } : null;
+  }).filter(Boolean);
+}
+function cabinetCandidateScore(candidate, portfolio) {
+  const role = String(candidate.role||'').toLowerCase();
+  const key = String(portfolio||'').toLowerCase();
+  const affinity = key.includes('finance') ? /treasur|finance|account/.test(role)
+    : key.includes('home') ? /security|organisation|organis/.test(role)
+    : key.includes('education') ? /education|youth|student/.test(role)
+    : key.includes('health') ? /health|medical|welfare/.test(role)
+    : key.includes('agriculture') || key.includes('water') || key.includes('rural') ? /farmer|agri|rural|district/.test(role)
+    : key.includes('industr') ? /industry|business|commerce/.test(role)
+    : /general secretary|vice-president|district president/.test(role);
+  return candidate.experience * 0.55 + candidate.loyalty * 0.35 + (affinity ? 25 : 0);
+}
+function autoAppointStateCabinet() {
+  const g = ensureGovernmentState();
+  const eligible = eligibleElectedMinisters();
+  const used = new Set(Object.values(g.ministers));
+  governmentPortfolios.forEach(portfolio => {
+    if (g.ministers[portfolio]) return;
+    const candidate = eligible.filter(person => !used.has(person.name))
+      .sort((a,b)=>cabinetCandidateScore(b,portfolio)-cabinetCandidateScore(a,portfolio))[0];
+    if (candidate) {
+      g.ministers[portfolio] = candidate.name;
+      used.add(candidate.name);
+      g.history.unshift({ day:state.day,month:state.month,year:state.year,event:`${candidate.name} appointed Minister for ${portfolio} · MLA from ${candidate.constituency}` });
+    }
+  });
+}
 function formGovernment() {
   const g = ensureGovernmentState();
   if (governmentMandateCount() < governmentMajorityMark()) return toast(`Your party has ${governmentMandateCount()} Assembly seat(s). A majority of 113 seats is required before forming the government.`);
   if (g.formed) return toast('Your state government is already formed.');
   g.formed = true;
   g.chiefMinister = state.playerName;
-  g.history.unshift({ day: state.day, month: state.month, year: state.year, event: 'State government formed' });
-  saveState(); render(); toast('Your state government has been formed!');
+  autoAppointStateCabinet();
+  g.history.unshift({ day: state.day, month: state.month, year: state.year, event: 'State government formed; elected BPP MLAs assigned to the cabinet' });
+  saveState(); render(); toast(`Government formed. ${Object.keys(g.ministers).length} elected MLA(s) assigned to ministerial portfolios where available.`);
 }
 
 function appointMinister(portfolio) {
   const g = ensureGovernmentState();
   if (!g.formed) return toast('Form your government first.');
   if (!governmentPortfolios.includes(portfolio)) return;
-  const candidates = ['Ananya Rao', 'Vikram Shetty', 'Meera Nair', 'Arjun Deshmukh', 'Kavita Sharma', 'Rahul Menon', 'Sanjay Patil'];
-  const used = Object.values(g.ministers);
-  const candidate = candidates.find(name => !used.includes(name)) || 'Independent Expert';
-  g.ministers[portfolio] = candidate;
-  g.history.unshift({ day: state.day, month: state.month, year: state.year, event: `${portfolio} Minister appointed` });
-  saveState(); render(); toast(`${candidate} appointed to ${portfolio}.`);
+  const used = Object.values(g.ministers).filter(name => name !== g.ministers[portfolio]);
+  const candidate = eligibleElectedMinisters().filter(person => !used.includes(person.name))
+    .sort((a,b)=>cabinetCandidateScore(b,portfolio)-cabinetCandidateScore(a,portfolio))[0];
+  if (!candidate) return toast('No unassigned elected BPP MLA is available for this ministry.');
+  g.ministers[portfolio] = candidate.name;
+  g.history.unshift({ day: state.day, month: state.month, year: state.year, event: `${candidate.name} appointed Minister for ${portfolio} from ${candidate.constituency}` });
+  saveState(); render(); toast(`${candidate.name}, elected from ${candidate.constituency}, appointed to ${portfolio}.`);
 }
 
 function allocateDepartment(department, delta) {
@@ -4615,6 +4745,11 @@ document.addEventListener('click', event => {
 
   const slateGenerateButton = event.target.closest('[data-party-slate-generate]');
   if (slateGenerateButton) { proposePartySlate(document.querySelector('#partySlateElectionType')?.value || 'assembly'); return; }
+  const slateBulkFundButton = event.target.closest('[data-party-slate-bulk-fund]');
+  if (slateBulkFundButton) {
+    if (confirm('Fund every approved Karnataka Assembly candidate using the 50/50 party and candidate contribution rule?')) bulkFundPartySlate();
+    return;
+  }
   const slateBulkApproveButton = event.target.closest('[data-party-slate-bulk-approve]');
   if (slateBulkApproveButton) {
     if (confirm('Approve every complete, conflict-free proposed candidate in the BPP candidate register? No campaign funds will be allocated.')) bulkApprovePartySlate();
