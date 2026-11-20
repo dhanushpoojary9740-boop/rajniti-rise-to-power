@@ -4901,6 +4901,12 @@ function advanceGovernmentProject(id) {
 
 
 
+function ensureMemberPolitics() {
+  const p=ensureParliamentState();
+  if(!p.memberPolitics || typeof p.memberPolitics!=='object') p.memberPolitics={};
+  if(!Array.isArray(p.leadershipHistory)) p.leadershipHistory=[];
+  return p;
+}
 function electedMemberRegister(level='assembly') {
   const members=[];
   const add=(row,source)=>{
@@ -4923,7 +4929,9 @@ function electedMemberRegister(level='assembly') {
     (state.elections?.history||[]).filter(x=>x.typeId==='lok-sabha').forEach(e=>(e.partyCandidateResults||[]).filter(x=>x.result==='Won').forEach(x=>add({...x,partyName:x.winnerParty||x.party||e.party},'Lok Sabha history')));
   }
   const seen=new Set();
-  return members.filter(m=>{const key=`${m.level}|${m.party.toLowerCase()}|${m.name.toLowerCase()}|${m.constituency.toLowerCase()}`;if(seen.has(key))return false;seen.add(key);return true;});
+  const unique=members.filter(m=>{const key=`${m.level}|${m.party.toLowerCase()}|${m.name.toLowerCase()}|${m.constituency.toLowerCase()}`;if(seen.has(key))return false;seen.add(key);return true;});
+  const politics=ensureMemberPolitics().memberPolitics;
+  return unique.map(m=>{const saved=politics[`${m.level}:${m.id}`]||{};return {...m,...saved,id:m.id,originalParty:m.originalParty||m.party};});
 }
 function electedPartySeatRegister(level='assembly'){
   const members=electedMemberRegister(level), counts={};
@@ -6057,8 +6065,13 @@ function ensureParliamentState() {
     ? state.alliances.partners.reduce((sum, partner) => sum + Math.max(0, Number(partner.seats) || 0), 0)
     : 0;
   const supportedSeats = Math.max(0, Math.min(p.seats, partySeats + allianceSeats));
-  p.rulingSeats = supportedSeats;
-  p.oppositionSeats = Math.max(0, p.seats - supportedSeats);
+  // 5.9.0: recorded Assembly defections, rebellions and abstentions weaken declared floor-test support.
+  const memberPolitics=p.memberPolitics&&typeof p.memberPolitics==='object'?p.memberPolitics:{};
+  const governingParties=new Set([String(state.party||'').toLowerCase(),...(state.alliances?.partners||[]).map(x=>String(x.name||'').toLowerCase())]);
+  const lostMemberSupport=Object.values(memberPolitics).filter(m=>m&&governingParties.has(String(m.originalParty||m.party||'').toLowerCase())&&['Rebel','Abstaining','Defected'].includes(m.status)).length;
+  p.memberSupportLosses=Math.min(supportedSeats,lostMemberSupport);
+  p.rulingSeats = Math.max(0,supportedSeats-p.memberSupportLosses);
+  p.oppositionSeats = Math.max(0, p.seats - p.rulingSeats);
   return p;
 }
 function parliamentBillActionLabel(bill) {
@@ -6115,6 +6128,66 @@ function syncParliamentGovernment(event, details = {}) {
   return g;
 }
 
+function updateOppositionLeader(level='assembly') {
+  const p=ensureMemberPolitics();
+  const members=electedMemberRegister(level).filter(m=>m.party!==state.party && m.status!=='Defected' && m.status!=='Resigned');
+  const counts={}; members.forEach(m=>{counts[m.party]=(counts[m.party]||0)+1;});
+  const leadingParty=Object.entries(counts).sort((a,b)=>b[1]-a[1])[0]?.[0];
+  const candidate=members.filter(m=>m.party===leadingParty).sort((a,b)=>Number(b.loyalty??75)-Number(a.loyalty??75))[0];
+  const prefix=level==='lok-sabha'?'lokSabhaOpposition':'opposition';
+  if(candidate){p[`${prefix}Leader`]=candidate.name;p[`${prefix}LeaderParty`]=candidate.party;p[`${prefix}LeaderMemberId`]=candidate.id;return candidate;}
+  p[`${prefix}Leader`]='Leader of the Opposition';p[`${prefix}LeaderParty`]='';p[`${prefix}LeaderMemberId`]='';return null;
+}
+function politicalLeadershipPanel(p) {
+  const assemblyMembers=electedMemberRegister('assembly');
+  const lokSabhaMembers=electedMemberRegister('lok-sabha');
+  const members=[...assemblyMembers,...lokSabhaMembers];
+  const rebelCount=members.filter(m=>m.status==='Rebel').length;
+  const abstainCount=members.filter(m=>m.status==='Abstaining').length;
+  const memberRows=(list,level)=>list.slice(0,10).map(m=>`<div class="history-row"><div><b>${escapeHtml(m.name)}</b><small>${escapeHtml(m.party)} · ${escapeHtml(m.constituency)} · Loyalty ${Number(m.loyalty??75)}% · ${escapeHtml(m.status||'Aligned')}</small></div><div class="row-actions"><button class="text-btn" data-member-action="rebel" data-member-level="${level}" data-member-id="${escapeHtml(m.id)}">REBEL</button><button class="text-btn" data-member-action="abstain" data-member-level="${level}" data-member-id="${escapeHtml(m.id)}">ABSTAIN</button><button class="text-btn" data-member-action="defect" data-member-level="${level}" data-member-id="${escapeHtml(m.id)}">DEFECT</button></div></div>`).join('')||'<p class="muted">No elected-member records are available. Complete an election with candidate-level winner records first.</p>';
+  const cabinet=ensureGovernmentState();
+  const cabinetRows=governmentPortfolios.filter(portfolio=>cabinet.ministers?.[portfolio]).map(portfolio=>`<div class="history-row"><b>${escapeHtml(portfolio)}</b><span>${escapeHtml(cabinet.ministers[portfolio])}</span><button class="text-btn" data-reshuffle-portfolio="${escapeHtml(portfolio)}">RESHUFFLE</button></div>`).join('');
+  return `<section class="panel"><span class="eyebrow">RAJNITI 5.9.0 · POLITICAL LEADERSHIP</span><h2>Member loyalty & party discipline</h2><div class="stats-grid">${statCard('Elected members',members.length,'Assembly + Lok Sabha records','♟')}${statCard('Rebels',rebelCount,'Members opposing party line','⚑')}${statCard('Abstaining',abstainCount,'Members not voting with party','◌')}${statCard('Assembly opposition leader',escapeHtml(p.oppositionLeader||'Not selected'),'Automatic selection','♜')}</div><h3>State Assembly · MLAs</h3><button class="secondary-btn" data-leadership-action="select-opposition-leader" data-member-level="assembly">SELECT ASSEMBLY OPPOSITION LEADER</button>${memberRows(assemblyMembers,'assembly')}<h3>Lok Sabha · MPs</h3><p><b>Opposition Leader:</b> ${escapeHtml(p.lokSabhaOppositionLeader||'Not selected')}</p><button class="secondary-btn" data-leadership-action="select-opposition-leader" data-member-level="lok-sabha">SELECT LOK SABHA OPPOSITION LEADER</button>${memberRows(lokSabhaMembers,'lok-sabha')}<p class="muted">Rebels, abstaining members and defectors reduce declared Assembly support when their records belong to the governing coalition. Defection changes simulated affiliation without rewriting historical election results.</p></section><section class="panel"><span class="eyebrow">EXECUTIVE MANAGEMENT</span><h2>State cabinet reshuffle</h2><p>Change a serving minister while keeping the portfolio and government record.</p>${cabinetRows||'<p class="muted">No state cabinet appointments are currently recorded.</p>'}</section>`;
+}
+
+function politicalMemberAction(action,id,level='assembly') {
+  const p=ensureMemberPolitics();
+  const member=electedMemberRegister(level).find(m=>String(m.id)===String(id));
+  if(!member)return toast('This elected-member record is no longer available.');
+  const key=`${level}:${member.id}`;
+  const saved=p.memberPolitics[key]||{loyalty:75,status:'Aligned',party:member.party,originalParty:member.originalParty||member.party};
+  if(action==='rebel'){saved.status=saved.status==='Rebel'?'Aligned':'Rebel';saved.loyalty=Math.max(0,Math.min(100,Number(saved.loyalty||75)-10));}
+  else if(action==='abstain'){saved.status=saved.status==='Abstaining'?'Aligned':'Abstaining';saved.loyalty=Math.max(0,Math.min(100,Number(saved.loyalty||75)-5));}
+  else if(action==='defect'){
+    const target=prompt(`Enter the party ${member.name} defects to:`,state.party||'Independent');
+    if(!target||!target.trim())return;
+    saved.party=target.trim().slice(0,60);saved.status='Defected';saved.loyalty=Math.max(0,Number(saved.loyalty||75)-20);
+  }
+  p.memberPolitics[key]={...saved};
+  p.leadershipHistory.unshift({event:`${member.name}: ${saved.status}${saved.status==='Defected'?` to ${saved.party}`:''}`,date:dateText()});
+  if(level==='assembly'){
+    const chamber=ensureParliamentState();
+    chamber.confidence=chamber.rulingSeats>=113?'Majority retained · Member support updated':'Support below Assembly majority · Confidence vote required';
+    const government=ensureGovernmentState();
+    if(chamber.rulingSeats<113)government.confidence=chamber.confidence;
+    if(state.alliances)state.alliances.stability=Math.max(0,Math.min(100,Math.round(chamber.rulingSeats/Math.max(1,chamber.seats)*100)));
+  }
+  updateOppositionLeader(level);saveState();render();toast(`${member.name}: ${saved.status}.`);
+}
+function reshuffleStateCabinet(portfolio) {
+  const g=ensureGovernmentState();
+  if(!governmentPortfolios.includes(portfolio))return;
+  const elected=electedMemberRegister('assembly').filter(m=>m.party===state.party&&m.status!=='Defected');
+  const current=String(g.ministers?.[portfolio]||'');
+  const suggested=elected.find(m=>m.name!==current)?.name||'';
+  const name=prompt(`Appoint a new minister for ${portfolio}:`,suggested);
+  if(!name||!name.trim())return;
+  if(!g.ministers||typeof g.ministers!=='object')g.ministers={};
+  g.ministers[portfolio]=name.trim().slice(0,60);
+  g.history.unshift({day:state.day,month:state.month,year:state.year,event:`Cabinet reshuffle: ${portfolio} reassigned to ${name.trim()}`});
+  saveState();render();toast(`${portfolio} portfolio reassigned.`);
+}
+
 function parliamentPage() {
   const p = ensureParliamentState();
   const majority = Math.floor(p.seats/2)+1;
@@ -6131,6 +6204,7 @@ function parliamentPage() {
   <div class="dashboard-grid">
   <section class="panel"><span class="eyebrow">OPPOSITION & SCRUTINY</span><h2>Opposition Bench</h2><p><b>Opposition Leader:</b> ${escapeHtml(p.oppositionLeader)}</p><p>${p.oppositionSeats} opposition seats can scrutinise government decisions, question ministers and move motions.</p><button class="secondary-btn" data-parliament-action="question">RAISE MINISTERIAL QUESTION</button><button class="secondary-btn" data-parliament-action="debate">HOLD OPPOSITION DEBATE</button><button class="secondary-btn" data-parliament-action="review">REVIEW MINISTER PERFORMANCE</button></section>
   <section class="panel"><span class="eyebrow">GOVERNMENT ACCOUNTABILITY</span><h2>Confidence & Motions</h2><p><b>Latest motion:</b> ${escapeHtml(p.lastMotionResult)}</p><button class="secondary-btn" data-parliament-action="no-confidence">MOVE NO-CONFIDENCE MOTION</button><button class="secondary-btn" data-parliament-action="confidence">HOLD CONFIDENCE VOTE</button><button class="secondary-btn" data-parliament-action="withdraw">WITHDRAW LAST ALLIANCE</button></section></div>
+  ${politicalLeadershipPanel(p)}
   <section class="panel"><span class="eyebrow">ACCOUNTABILITY REGISTER</span><h2>House Scrutiny Record</h2>${p.questionsLog.slice(-5).reverse().map(x=>`<div class="history-row"><b>${escapeHtml(x.event)}</b><small>${escapeHtml(x.date)}</small></div>`).join('') || '<p class="muted">Ministerial questions and opposition scrutiny will appear here.</p>'}${p.motions.slice(-5).reverse().map(x=>`<div class="history-row"><b>${escapeHtml(x.title)}</b><span>${escapeHtml(x.result)}</span></div>`).join('')}</section>
   <section class="panel"><span class="eyebrow">BILL REGISTER</span><h2>Legislative Records</h2>${billRows}</section>
   <section class="panel"><span class="eyebrow">COALITION MANAGEMENT</span><h2>Alliance Partners</h2><button class="secondary-btn" data-parliament-action="alliance">NEGOTIATE ALLIANCE</button>${p.alliances.map(a=>`<div class="history-row"><b>${escapeHtml(a.name)}</b><span>+${a.seats} seats</span></div>`).join('')}</section>`;
@@ -7074,6 +7148,12 @@ if (!Array.isArray(state.media.history)) state.media.history = [];
   const alternativeGovernmentButton = event.target.closest('[data-alt-government]');
   if (alternativeGovernmentButton) { alternativeGovernmentAction(alternativeGovernmentButton.dataset.altGovernment); return; }
 
+  const memberActionButton=event.target.closest('[data-member-action]');
+  if(memberActionButton){politicalMemberAction(memberActionButton.dataset.memberAction,memberActionButton.dataset.memberId,memberActionButton.dataset.memberLevel||'assembly');return;}
+  const leadershipActionButton=event.target.closest('[data-leadership-action]');
+  if(leadershipActionButton){const leader=updateOppositionLeader(leadershipActionButton.dataset.memberLevel||'assembly');saveState();render();toast(leader?`Opposition Leader selected: ${leader.name}`:'No eligible opposition elected member records found.');return;}
+  const reshuffleButton=event.target.closest('[data-reshuffle-portfolio]');
+  if(reshuffleButton){reshuffleStateCabinet(reshuffleButton.dataset.reshufflePortfolio);return;}
   const parliamentButton = event.target.closest('[data-parliament-action]');
   if (parliamentButton) { parliamentAction(parliamentButton.dataset.parliamentAction); return; }
 
