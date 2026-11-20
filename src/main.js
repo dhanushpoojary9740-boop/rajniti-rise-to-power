@@ -2243,8 +2243,8 @@ function buildPartyWideElectionResults(active, playerResult) {
     const rivalTwoVotes = remaining - rivalOneVotes;
     const competitors = [
       {name:item.candidateName,party:partyName,votes:candidateVotes,share:Math.round(candidateVotes/Math.max(1,turnout)*100)},
-      {name:`${['Arun Kumar','Meera Nair','Ravi Shetty','Farah Khan','Vikram Das'][index%5]}`,party:`${['National Democratic Front','People's Alliance','Regional Congress','Jan Shakti Party'][index%4]}`,votes:rivalOneVotes,share:Math.round(rivalOneVotes/Math.max(1,turnout)*100)},
-      {name:`${['Suresh Rao','Anita Devi','Imran Ali','Joseph Mathew'][index%4]}`,party:`${['People's Front','Democratic Union','Lok Jan Party'][index%3]}`,votes:rivalTwoVotes,share:Math.round(rivalTwoVotes/Math.max(1,turnout)*100)}
+      {name:`${['Arun Kumar','Meera Nair','Ravi Shetty','Farah Khan','Vikram Das'][index%5]}`,party:`${['National Democratic Front','People’s Alliance','Regional Congress','Jan Shakti Party'][index%4]}`,votes:rivalOneVotes,share:Math.round(rivalOneVotes/Math.max(1,turnout)*100)},
+      {name:`${['Suresh Rao','Anita Devi','Imran Ali','Joseph Mathew'][index%4]}`,party:`${['People’s Front','Democratic Union','Lok Jan Party'][index%3]}`,votes:rivalTwoVotes,share:Math.round(rivalTwoVotes/Math.max(1,turnout)*100)}
     ].sort((a,b)=>b.votes-a.votes);
     const won = competitors[0].party === partyName && competitors[0].name === item.candidateName;
     const ownVotes = competitors.find(candidate => candidate.name === item.candidateName && candidate.party === partyName)?.votes || 0;
