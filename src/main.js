@@ -3187,6 +3187,7 @@ function electionPage() {
         const selectedAssemblySchedule = ensureAssemblyElectionCountdown();
         const ordered = slate.filter(item => item.typeId === 'assembly' && Number(item.scheduledAt) === Number(selectedAssemblySchedule?.nextAt)).slice().sort((a,b)=>Number(a.constituencyNumber||0)-Number(b.constituencyNumber||0));
         const proposed = ordered.filter(item=>item.status==='Proposed').length;
+        const approvedCount = ordered.filter(item=>item.status==='Party Approved').length;
         const eligible = ordered.filter(item=>item.status==='Proposed' && item.candidateName && item.stateName && item.district && item.constituency && !partySlateConflict(item,ordered)).length;
         return ordered.length ? `
           <div class="election-metrics">
