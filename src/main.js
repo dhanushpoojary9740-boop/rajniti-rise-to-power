@@ -5715,7 +5715,9 @@ function ensureParliamentState() {
     state.parliament = { seats: 224, rulingSeats: 0, oppositionSeats: 0, bills: [], sessions: 0, questions: 0, confidence: 'Not tested', alliances: [], history: [] };
   }
   const p = state.parliament;
-  for (const key of ['bills','alliances','history']) if (!Array.isArray(p[key])) p[key] = [];
+  for (const key of ['bills','alliances','history','motions','ministerReviews','questionsLog']) if (!Array.isArray(p[key])) p[key] = [];
+  if (!p.oppositionLeader) p.oppositionLeader = 'Leader of the Opposition';
+  if (!p.lastMotionResult) p.lastMotionResult = 'No confidence motion submitted';
   p.seats = Number(p.seats) || 224;
   p.rulingSeats = Math.max(0, Number(p.rulingSeats) || governmentMandateCount() || 0);
   p.oppositionSeats = Math.max(0, Number(p.oppositionSeats) || Math.max(0, p.seats-p.rulingSeats));
@@ -5747,6 +5749,10 @@ function parliamentPage() {
   <div class="stats-grid">${statCard('Total seats',p.seats,'Illustrative Assembly model','▤')}${statCard('Ruling seats',p.rulingSeats,`Majority needed: ${majority}`,'🏛')}${statCard('Opposition seats',p.oppositionSeats,'Opposition benches','⚑')}${statCard('Sessions held',p.sessions,'Legislative sessions','◷')}</div>
   <div class="dashboard-grid"><section class="panel"><span class="eyebrow">LEGISLATIVE SESSION</span><h2>House Business</h2><p>Open a session before conducting formal debate and voting.</p><button class="primary-btn" data-parliament-action="session">OPEN LEGISLATIVE SESSION</button><button class="secondary-btn" data-parliament-action="question">CONDUCT QUESTION HOUR</button><button class="secondary-btn" data-parliament-action="confidence">TEST CONFIDENCE</button><p><b>Government confidence:</b> ${escapeHtml(p.confidence)}</p></section>
   <section class="panel"><span class="eyebrow">INTRODUCE LEGISLATION</span><h2>New Bill</h2><input id="parliamentBillTitle" class="text-input" maxlength="70" placeholder="Enter bill title"><select id="parliamentBillType" class="text-input"><option>Development Bill</option><option>Education Bill</option><option>Healthcare Bill</option><option>Infrastructure Bill</option><option>Finance Bill</option><option>Welfare Bill</option></select><button class="primary-btn" data-parliament-action="bill">INTRODUCE BILL · FIRST READING</button><small class="creator-note">A bill is not automatically law. It must complete the simulated legislative stages and receive assent.</small></section></div>
+  <div class="dashboard-grid">
+  <section class="panel"><span class="eyebrow">OPPOSITION & SCRUTINY</span><h2>Opposition Bench</h2><p><b>Opposition Leader:</b> ${escapeHtml(p.oppositionLeader)}</p><p>${p.oppositionSeats} opposition seats can scrutinise government decisions, question ministers and move motions.</p><button class="secondary-btn" data-parliament-action="question">RAISE MINISTERIAL QUESTION</button><button class="secondary-btn" data-parliament-action="debate">HOLD OPPOSITION DEBATE</button><button class="secondary-btn" data-parliament-action="review">REVIEW MINISTER PERFORMANCE</button></section>
+  <section class="panel"><span class="eyebrow">GOVERNMENT ACCOUNTABILITY</span><h2>Confidence & Motions</h2><p><b>Latest motion:</b> ${escapeHtml(p.lastMotionResult)}</p><button class="secondary-btn" data-parliament-action="no-confidence">MOVE NO-CONFIDENCE MOTION</button><button class="secondary-btn" data-parliament-action="confidence">HOLD CONFIDENCE VOTE</button><button class="secondary-btn" data-parliament-action="withdraw">WITHDRAW LAST ALLIANCE</button></section></div>
+  <section class="panel"><span class="eyebrow">ACCOUNTABILITY REGISTER</span><h2>House Scrutiny Record</h2>${p.questionsLog.slice(-5).reverse().map(x=>`<div class="history-row"><b>${escapeHtml(x.event)}</b><small>${escapeHtml(x.date)}</small></div>`).join('') || '<p class="muted">Ministerial questions and opposition scrutiny will appear here.</p>'}${p.motions.slice(-5).reverse().map(x=>`<div class="history-row"><b>${escapeHtml(x.title)}</b><span>${escapeHtml(x.result)}</span></div>`).join('')}</section>
   <section class="panel"><span class="eyebrow">BILL REGISTER</span><h2>Legislative Records</h2>${billRows}</section>
   <section class="panel"><span class="eyebrow">COALITION MANAGEMENT</span><h2>Alliance Partners</h2><button class="secondary-btn" data-parliament-action="alliance">NEGOTIATE ALLIANCE</button>${p.alliances.map(a=>`<div class="history-row"><b>${escapeHtml(a.name)}</b><span>+${a.seats} seats</span></div>`).join('')}</section>`;
 }
@@ -5791,8 +5797,32 @@ function advanceParliamentBill(id) {
 function parliamentAction(action) {
   const p = ensureParliamentState();
   if (action === 'session') { p.sessions++; p.history.push({event:'Session opened',date:dateText()}); toast('Legislative session opened.'); }
-  if (action === 'question') { p.questions++; p.history.push({event:'Question Hour conducted',date:dateText()}); toast('Question Hour completed.'); }
-  if (action === 'confidence') { p.confidence = p.rulingSeats >= Math.floor(p.seats/2)+1 ? 'Majority maintained' : 'Government at risk'; toast(p.confidence); }
+  if (action === 'question') { p.questions++; const item={event:`Opposition question raised to the government (${p.questions} total)`,date:dateText()}; p.questionsLog.push(item); p.history.push(item); toast('Ministerial question recorded for House scrutiny.'); }
+  if (action === 'debate') { const item={event:'Opposition debate held on government performance',date:dateText()}; p.questionsLog.push(item); p.history.push(item); toast('Opposition debate recorded.'); }
+  if (action === 'review') { const item={event:'Minister performance review requested by the House',date:dateText()}; p.ministerReviews.push(item); p.questionsLog.push(item); toast('Ministerial review recorded.'); }
+  if (action === 'confidence' || action === 'no-confidence') {
+    const motionType = action === 'confidence' ? 'Confidence motion' : 'No-confidence motion';
+    const totalSupport = Math.max(0, Number(p.rulingSeats||0));
+    const majorityNeeded = Math.floor(Number(p.seats||224)/2)+1;
+    const passed = action === 'confidence' ? totalSupport >= majorityNeeded : totalSupport < majorityNeeded;
+    const result = action === 'confidence'
+      ? (passed ? 'Government wins confidence vote' : 'Government loses confidence vote')
+      : (passed ? 'No-confidence motion succeeds · Government loses majority' : 'No-confidence motion defeated · Government retains majority');
+    p.confidence = passed ? (action === 'confidence' ? 'Majority demonstrated' : 'Government at risk · Majority lost') : (action === 'confidence' ? 'Confidence not established' : 'Majority maintained');
+    p.lastMotionResult = result;
+    p.motions.push({title:motionType,result,date:dateText(),support:totalSupport,majorityNeeded});
+    p.history.push({event:`${motionType}: ${result}`,date:dateText()});
+    if (action === 'no-confidence' && passed) { const g=ensureGovernmentState(); g.formed=false; g.status='Government lost confidence'; g.history.unshift({day:state.day,month:state.month,year:state.year,event:'Government lost Assembly confidence in a simulated no-confidence vote'}); }
+    toast(result);
+  }
+  if (action === 'withdraw') {
+    const partner=p.alliances.pop();
+    if (!partner) { toast('No recorded alliance partner is available to withdraw.'); return; }
+    p.rulingSeats=Math.max(0,p.rulingSeats-Math.max(0,Number(partner.seats)||0));
+    p.oppositionSeats=Math.min(p.seats,p.oppositionSeats+Math.max(0,Number(partner.seats)||0));
+    const item={title:`Alliance withdrawal: ${partner.name}`,result:'Support withdrawn',date:dateText()};
+    p.motions.push(item); p.history.push({event:item.title,date:dateText()}); toast(`${partner.name} withdrew support.`);
+  }
   if (action === 'bill') {
     const title = document.querySelector('#parliamentBillTitle')?.value.trim();
     const type = document.querySelector('#parliamentBillType')?.value || 'Development Bill';
