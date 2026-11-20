@@ -813,7 +813,7 @@ function shell(content) {
       </main>
 
       <nav class="mobile-nav">
-        ${['Dashboard', 'Party', 'Elections', 'Government', 'Intelligence', 'Profile']
+        ${['Dashboard', 'Party', 'Elections', 'Parliament', 'Government', 'Intelligence', 'Profile']
           .map(name => `
             <button class="${activeTab === name ? 'active' : ''}"
               data-tab="${name}">
