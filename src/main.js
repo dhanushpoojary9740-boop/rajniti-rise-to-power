@@ -318,6 +318,45 @@ function ensureAssemblyElectionCountdown() {
   }
   return schedule;
 }
+function migrateAssemblyCountdownV260() {
+  if (state.assemblyCountdownV260Applied) return;
+  const elections = ensureElectionCalendar();
+  const schedule = elections.calendar.assembly;
+  if (schedule) {
+    const active = elections.active;
+    if (!active || active.typeId !== 'assembly' || !['voting','counting'].includes(active.phase)) {
+      schedule.nextAt = currentMonthIndex() + 7;
+      schedule.intervalMonths = 60;
+      schedule.label = 'State Assembly Election';
+      delete schedule.proposalKey;
+    }
+  }
+  state.assemblyCountdownV260Applied = true;
+  saveState();
+}
+function archiveExpiredPartySlateCycles() {
+  const elections = ensureElectionCalendar();
+  const currentCycle = Number(elections.calendar.assembly?.nextAt || currentMonthIndex());
+  const slate = Array.isArray(elections.partySlate) ? elections.partySlate : [];
+  let changed = false;
+  slate.forEach(item => {
+    if (!item || item.typeId !== 'assembly' || Number(item.scheduledAt || 0) >= currentCycle) return;
+    if (['Proposed','Party Approved','Funded'].includes(item.status)) {
+      const previousStatus = item.status;
+      item.status = 'Not Contested';
+      item.previousStatus = previousStatus;
+      item.archivedAt = item.archivedAt || dateText();
+      item.archiveReason = previousStatus === 'Funded'
+        ? 'Election cycle closed without a recorded constituency result; campaign funding history retained.'
+        : 'Election cycle closed before the candidate entered a funded contest.';
+      item.cycleArchive = true;
+      changed = true;
+    }
+  });
+  if (changed) saveState();
+  return slate.filter(item => item && item.typeId === 'assembly' && Number(item.scheduledAt || 0) < currentCycle);
+}
+
 function migrateAssemblySeatCapAndSchedule250() {
   if (state.assemblySeatCapScheduleV250Applied) return;
   const now = currentMonthIndex();
@@ -1946,6 +1985,7 @@ function electionPhase(active) {
   return 'preparation';
 }
 function processElectionCalendar() {
+  migrateAssemblyCountdownV260();
   const elections = ensureElectionCalendar();
   migrateAssemblySeatCapAndSchedule250();
   ensureAssemblyElectionCountdown();
@@ -3168,6 +3208,8 @@ function decidePartySlate(id, decision) {
 }
 
 function electionPage() {
+  migrateAssemblyCountdownV260();
+  archiveExpiredPartySlateCycles();
   ensureAssemblyElectionCountdown();
   migrateAssemblySeatCapAndSchedule250();
   const e = state.elections;
@@ -3211,8 +3253,10 @@ function electionPage() {
       <p class="panel-description">The calendar is authoritative: prepare in advance, nominations open four months before polling, official campaigning opens two months before polling, and results are declared only after all counting rounds.</p>
       ${(() => {
         const allAssembly = ensurePartySlate().filter(item => item.typeId === 'assembly');
-        const latestCycle = allAssembly.length ? Math.max(...allAssembly.map(item => Number(item.scheduledAt)||0)) : null;
-        const cycle = latestCycle === null ? [] : allAssembly.filter(item => Number(item.scheduledAt) === latestCycle);
+        const activeAssemblyCycle = Number(ensureElectionCalendar().calendar.assembly?.nextAt || currentMonthIndex());
+        const archivedAssembly = allAssembly.filter(item => Number(item.scheduledAt || 0) < activeAssemblyCycle);
+        const latestCycle = activeAssemblyCycle;
+        const cycle = allAssembly.filter(item => Number(item.scheduledAt) === activeAssemblyCycle);
         const won = cycle.filter(item => item.status === 'Elected').length;
         const lost = cycle.filter(item => item.status === 'Not Elected').length;
         const funded = cycle.filter(item => item.status === 'Funded').length;
@@ -3220,7 +3264,8 @@ function electionPage() {
         const approved = cycle.filter(item => item.status === 'Party Approved').length;
         const pending = cycle.filter(item => item.status === 'Proposed').length;
         const notEntered = approved;
-        const tally = state.elections?.lastAssemblySeatTally;
+        const savedTally = state.elections?.lastAssemblySeatTally;
+        const tally = savedTally && Number(savedTally.scheduledAt) === activeAssemblyCycle ? savedTally : null;
         const partySeatsWon = Math.min(224,Math.max(0,tally ? Number(tally.seatsWon || 0) : cycle.filter(item => item.status === 'Elected').length));
         const partySeatsLost = Math.min(224-partySeatsWon,Math.max(0,tally ? Number(tally.seatsLost || lost) : lost));
         const liveActive = state.elections?.active;
@@ -3233,7 +3278,7 @@ function electionPage() {
         const roundLabel = liveCounting ? `Round ${liveActive.counting.round}/${liveActive.counting.totalRounds} · ${Math.round(Number(liveActive.counting.counted||0)/Math.max(1,Number(liveActive.counting.turnout||1))*100)}% of votes counted` : (tally?.countingComplete ? 'Counting completed' : 'No live counting session');
         return `<div class="panel party-election-summary" style="margin:16px 0">
           <span class="eyebrow">PARTY ASSEMBLY ELECTION TRACKER</span>
-          <h3>${latestCycle === null ? 'No party-wide Assembly slate yet' : 'Your party candidates'}</h3>
+          <h3>${cycle.length ? 'Upcoming Assembly election candidates' : 'No candidates generated for the upcoming election yet'}</h3>
           <div class="election-metrics">
             <div><small>BPP ASSEMBLY SEATS WON</small><b>${partySeatsWon}/224</b></div>
             <div><small>MAJORITY REQUIRED</small><b>113</b></div>
@@ -3254,7 +3299,7 @@ function electionPage() {
             </div>
             <div class="assembly-counting-detail"><b>${roundLabel}</b><span>Majority ${partySeatsWon>=113?'secured':`${113-partySeatsWon} seats needed`}</span></div>
           </div>
-          ${latestCycle === null ? '<p class="panel-description">Generate the Assembly candidate list below to track who is selected, funded and contested. Your own MLA victory counts as one party seat.</p>' : `
+          ${!cycle.length ? '<p class="panel-description">This panel now shows only the upcoming election. Past election candidates are kept in the archive below. Your own MLA constituency counts as one of the 224 Assembly seats.</p>' : `
             <div class="election-metrics">
               <div><small>WON</small><b>${won}</b></div>
               <div><small>LOST</small><b>${lost}</b></div>
@@ -3271,8 +3316,29 @@ function electionPage() {
             const role = Object.entries(state.partyLeadership||{}).find(([,memberId])=>String(memberId)===String(item.memberId))?.[0] || item.role || member?.role || 'General Member';
             return `<div class="finance-history"><span><b>${escapeHtml(item.candidateName||member?.name||'Candidate')}</b><br><small>${escapeHtml(role)} · Seat ${String(item.constituencyNumber||'—')} · ${escapeHtml(item.constituency||'Constituency pending')}</small></span><b>${label}</b></div>`;
           }).join('')}</div>` : ''}
+          ${archivedAssembly.length ? `<details class="party-election-archive" style="margin-top:14px">
+            <summary>Past election archive · ${archivedAssembly.length} candidate records</summary>
+            ${[...new Set(archivedAssembly.map(item=>Number(item.scheduledAt||0)))].sort((a,b)=>b-a).map(cycleMonth=>{
+              const records=archivedAssembly.filter(item=>Number(item.scheduledAt||0)===cycleMonth);
+              const wonCount=records.filter(item=>item.status==='Elected').length;
+              const lostCount=records.filter(item=>item.status==='Not Elected').length;
+              const notContested=records.filter(item=>item.status==='Not Contested').length;
+              return `<div class="archive-cycle"><b>Election cycle · Month ${cycleMonth}</b><small>Won ${wonCount} · Lost ${lostCount} · Not contested ${notContested}</small>
+                ${records.map(item=>`<div class="archive-candidate"><span><b>${escapeHtml(item.candidateName||'Candidate')}</b><small>${escapeHtml(item.constituency||'Seat not recorded')} · ${escapeHtml(item.role||'Party member')}</small></span><em>${escapeHtml(item.status||'Archived')}</em></div>`).join('')}
+              </div>`;
+            }).join('')}
+          </details>` : ''}
         </div>`;
       })()}
+      <section class="panel nomination-compliance-panel" style="margin-top:16px">
+        <span class="gold-tag">REAL-WORLD ELECTION PROCESS</span>
+        <h3>Official nomination readiness</h3>
+        <p class="panel-description">Internal party approval is only ticket selection. Before a candidate can officially contest, the simulated Returning Officer checks legal eligibility and filing documents.</p>
+        <div class="compliance-check-row"><b>Candidate eligibility</b><span>Indian citizen · registered elector · minimum age 25 for Assembly election</span></div>
+        <div class="compliance-check-row"><b>Nomination paperwork</b><span>Form 2B nomination paper · Form 26 affidavit · party Forms A and B where applicable</span></div>
+        <div class="compliance-check-row"><b>Election administration</b><span>Applicable security deposit · separate election-expense bank account · scrutiny by Returning Officer</span></div>
+        <p class="panel-description">The game will treat party approval, official filing, scrutiny and final contest status as separate stages. Rules and deposits can change; this is a gameplay checklist, not legal advice.</p>
+      </section>
       <h2>AI candidate nomination review</h2>
       <p class="panel-description">This queue covers scheduled nomination recommendations. Party-wide candidate deployment below is where you approve or reject the automatically assigned party tickets. Neither approval action files an official nomination.</p>
       <div class="election-metrics">
@@ -3281,8 +3347,8 @@ function electionPage() {
         <div><small>REJECTED</small><b>${electionCalendar.nominationQueue.filter(item => item.typeId !== 'assembly' && item.status === 'Rejected').length}</b></div>
       </div>
       ${nominationHtml}
-      <div class="section-heading-row"><div><h2>Party-wide candidate deployment</h2><p class="panel-description">Generate one candidate for each of Karnataka's 224 Assembly constituencies. AI selects 224 party members and assigns the official constituency names. Review or edit a candidate, then approve individually or approve all eligible candidates. Campaign funding can then be authorised in one 50/50 bulk action.</p></div></div>
-      <div class="assembly-candidate-banner"><strong>KARNATAKA LEGISLATIVE ASSEMBLY · 224 SEATS</strong><p class="panel-description">AI prepares one BPP candidate for each official constituency. Review and edit the list, then approve eligible candidates together. Party approval is not the same as official nomination.</p></div>
+      <div class="section-heading-row"><div><h2>Party-wide candidate deployment</h2><p class="panel-description">Generate candidates for the upcoming Karnataka Assembly election. The player occupies one constituency, so the party roster supplies the remaining 223 seats. Review or edit a candidate, then approve individually or approve all eligible candidates. Campaign funding can then be authorised in one 50/50 bulk action.</p></div></div>
+      <div class="assembly-candidate-banner"><strong>KARNATAKA LEGISLATIVE ASSEMBLY · 224 SEATS</strong><p class="panel-description">AI prepares BPP candidates for the 223 constituencies other than your own seat. Review and edit the list, then approve eligible candidates together. Party approval is not the same as official nomination.</p></div>
       <div class="creator-panel"><div class="creator-grid"><div class="creator-field"><label for="partySlateElectionType">Election cycle</label><select id="partySlateElectionType"><option value="assembly" selected>State Assembly · Karnataka · 224 seats</option></select></div><div class="creator-field"><label>Party treasury available</label><input value="${escapeHtml(money(state.partyFunds || 0))}" readonly></div></div><button class="primary-btn" data-party-slate-generate>Generate member proposals</button></div>
       ${(() => {
         const slate = ensurePartySlate();

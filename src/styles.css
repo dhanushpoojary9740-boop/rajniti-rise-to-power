@@ -2188,3 +2188,21 @@ input, select, textarea {
   .assembly-seat-legend { gap:8px; }
   .assembly-seat-legend span { font-size:9px; }
 }
+
+
+/* RAJNITI 2.6.0 — election-cycle archive and nomination process clarity */
+.party-election-archive { border:1px solid #31435a; border-radius:10px; padding:12px; background:#0b1523; }
+.party-election-archive summary { cursor:pointer; color:#dfc78f; font-weight:700; font-size:12px; }
+.archive-cycle { border-top:1px solid #29384d; padding-top:10px; margin-top:10px; }
+.archive-cycle > b { display:block; font-size:12px; }
+.archive-cycle > small { display:block; color:#9eacbf; margin:4px 0 8px; }
+.archive-candidate { display:flex; justify-content:space-between; gap:12px; padding:8px 0; border-top:1px solid #253449; }
+.archive-candidate span { min-width:0; }
+.archive-candidate span b, .archive-candidate span small { display:block; }
+.archive-candidate span b { font-size:11px; }
+.archive-candidate span small { color:#9eacbf; font-size:10px; margin-top:3px; }
+.archive-candidate em { color:#d9c28d; font-size:9px; font-style:normal; text-align:right; }
+.nomination-compliance-panel { border-color:#34465e; }
+.compliance-check-row { display:flex; flex-direction:column; gap:3px; padding:10px 0; border-top:1px solid #29384d; }
+.compliance-check-row b { font-size:12px; }
+.compliance-check-row span { color:#aab7c8; font-size:11px; line-height:1.5; }
