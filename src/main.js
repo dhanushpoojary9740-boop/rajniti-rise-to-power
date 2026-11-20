@@ -2338,7 +2338,8 @@ function completeElectionCounting(active) {
       countedForSeatTally: validSeatResults.includes(item)
     }));
   }
-  result.partyCandidateResults = buildPartyWideElectionResults(active, result);\n  const type=electionTypes.find(item=>item.id===active.typeId);
+  result.partyCandidateResults = buildPartyWideElectionResults(active, result);
+  const type=electionTypes.find(item=>item.id===active.typeId);
   state.elections.history.unshift(result); state.elections.history=state.elections.history.slice(0,30);
   state.elections.totalContested++; if(won){state.elections.totalWon++;state.reputation=Math.min(100,state.reputation+8);state.influence=Math.min(100,state.influence+10);state.publicSupport=Math.min(100,state.publicSupport+8);state.experience+=100;if(active.candidateId==='player'){state.role=type?.winRole||state.role;state.level=Math.max(state.level,active.typeId==='local'?2:active.typeId==='assembly'?5:8);}if(state.partyId!=='independent')state.partyPopularity=Math.min(100,state.partyPopularity+8);if(active.typeId==='assembly'){const government=ensureGovernmentState();government.manifestoPromises.unshift({id:'promise-'+Date.now(),text:active.manifesto,status:'Pending',progress:0,announcedAt:dateText(),electionId:active.id});government.manifestoPromises=government.manifestoPromises.slice(0,20);}}
   else {state.elections.totalLost++;state.reputation=Math.max(0,state.reputation-2);state.experience+=25;}
