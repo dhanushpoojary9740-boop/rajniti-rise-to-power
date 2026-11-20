@@ -1,6 +1,61 @@
 import './styles.css';
 import districtDirectory from './data/india-districts.json';
 
+// Startup diagnostics: show a readable error instead of leaving Android WebView blank.
+// This never clears, replaces, or resets the player's saved game data.
+function showStartupError(error, source = 'Application startup') {
+  const app = document.getElementById('app');
+  if (!app) return;
+  const message = error instanceof Error ? `${error.name}: ${error.message}` : String(error ?? 'Unknown error');
+  const details = error instanceof Error && error.stack ? error.stack : message;
+  app.replaceChildren();
+
+  const panel = document.createElement('main');
+  panel.style.cssText = 'min-height:100vh;box-sizing:border-box;padding:28px 20px;background:#09111f;color:#edf2fb;font-family:system-ui,sans-serif;display:flex;align-items:center;justify-content:center;';
+  const content = document.createElement('section');
+  content.style.cssText = 'width:100%;max-width:560px;border:1px solid #344258;border-radius:18px;padding:22px;background:#111d2d;';
+  const title = document.createElement('h1');
+  title.textContent = 'RAJNITI could not start';
+  title.style.cssText = 'font-size:23px;margin:0 0 10px;';
+  const intro = document.createElement('p');
+  intro.textContent = 'A startup error interrupted the game. Your saved game data has not been intentionally cleared.';
+  intro.style.cssText = 'color:#b8c4d6;line-height:1.6;';
+  const label = document.createElement('p');
+  label.textContent = `${source}: ${message}`;
+  label.style.cssText = 'color:#f2c879;overflow-wrap:anywhere;line-height:1.5;';
+  const pre = document.createElement('pre');
+  pre.textContent = details;
+  pre.style.cssText = 'white-space:pre-wrap;overflow-wrap:anywhere;max-height:34vh;overflow:auto;background:#08111e;padding:12px;border-radius:10px;color:#c7d3e3;font-size:11px;';
+  const actions = document.createElement('div');
+  actions.style.cssText = 'display:flex;gap:10px;flex-wrap:wrap;margin-top:16px;';
+  const reload = document.createElement('button');
+  reload.textContent = 'RELOAD GAME';
+  reload.style.cssText = 'border:0;border-radius:9px;padding:12px 16px;background:#d5bd83;color:#172033;font-weight:700;';
+  reload.addEventListener('click', () => window.location.reload());
+  const copy = document.createElement('button');
+  copy.textContent = 'COPY ERROR DETAILS';
+  copy.style.cssText = 'border:1px solid #52627a;border-radius:9px;padding:12px 16px;background:transparent;color:#edf2fb;font-weight:700;';
+  copy.addEventListener('click', async () => {
+    try {
+      await navigator.clipboard.writeText(`${source}: ${message}\n\n${details}`);
+      copy.textContent = 'COPIED';
+    } catch {
+      pre.style.userSelect = 'text';
+      copy.textContent = 'SELECT ERROR TEXT ABOVE';
+    }
+  });
+  actions.append(reload, copy);
+  content.append(title, intro, label, pre, actions);
+  panel.append(content);
+  app.append(panel);
+}
+
+window.addEventListener('error', event => {
+  showStartupError(event.error || event.message, 'JavaScript error');
+});
+window.addEventListener('unhandledrejection', event => {
+  showStartupError(event.reason, 'Unhandled promise rejection');
+});
 
 const STORE_KEY = 'rajniti-save-v1';
 
@@ -6334,4 +6389,8 @@ document.addEventListener('submit', event => {
   }
 });
 
-render();
+try {
+  render();
+} catch (error) {
+  showStartupError(error, 'Initial render');
+}
