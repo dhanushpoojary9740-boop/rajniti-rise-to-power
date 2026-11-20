@@ -4453,7 +4453,7 @@ function governmentMandateCount() {
 }
 function governmentMajorityMark() { return 113; }
 // Correct saves from earlier builds that treated one Assembly victory as a full majority.
-if (state.government?.formed && governmentMandateCount() < governmentMajorityMark()) {
+if (state.government?.formed && state.government?.succession?.stage !== 'floor-test-passed' && governmentMandateCount() < governmentMajorityMark()) {
   state.government.formed = false;
   state.government.chiefMinister = '';
   state.government.history = Array.isArray(state.government.history) ? state.government.history : [];
@@ -4777,7 +4777,7 @@ function governmentPage() {
   let formed = !!g.formed;
   // Reconcile legacy/stale saves before displaying government powers.
   // A saved "formed" flag must never override the current Assembly seat tally.
-  if (formed && !majorityReached) {
+  if (formed && !majorityReached && g.succession?.stage !== 'floor-test-passed') {
     g.formed = false;
     g.chiefMinister = '';
     g.formationLeaderId = null;
@@ -4823,7 +4823,25 @@ function governmentPage() {
       <div class="gov-budget-track"><i style="width:${Math.max(0,Math.min(100,Number(value)))}%"></i></div>
       <div class="gov-budget-actions"><button data-gov-budget="${escapeHtml(name)}" data-delta="-5" ${!formed || value <= 5 ? 'disabled' : ''}>−5%</button><button data-gov-budget="${escapeHtml(name)}" data-delta="5" ${!formed || totalAllocation >= 100 ? 'disabled' : ''}>+5%</button></div>
     </div>`).join('');
+  const succession = g.succession || {stage:'inactive',caretaker:false,supportPartners:[]};
+  const successionLabels = {inactive:'No government succession process is active', 'awaiting-governor':'Awaiting Governor invitation', 'invited':'Governor invited a leader to demonstrate majority', 'negotiating':'Coalition negotiations in progress', 'leader-appointed':'Leader appointed; floor test pending', 'floor-test-passed':'New government established after floor test', 'assembly-dissolved':'Assembly dissolved; fresh election required'};
+  const successionPanel = succession.stage !== 'inactive' ? `
+    <section class="panel"><span class="eyebrow">GOVERNMENT SUCCESSION</span><h2>${succession.caretaker ? 'Caretaker Administration' : 'Government Formation'}</h2>
+      <p><b>Status:</b> ${escapeHtml(successionLabels[succession.stage] || succession.stage)}</p>
+      <p>Outgoing government: ${escapeHtml(g.chiefMinister || 'Previous Chief Minister')} · Caretaker restrictions apply until a new ministry passes its floor test.</p>
+      <p>Assembly seats remain unchanged: ${ensureParliamentState().rulingSeats} ruling · ${ensureParliamentState().oppositionSeats} opposition. Coalition support is recorded separately and does not transfer MLAs.</p>
+      ${succession.invitedLeader ? `<p><b>Invited leader:</b> ${escapeHtml(succession.invitedLeader)}</p>` : ''}
+      <p><b>Declared support:</b> ${Number(succession.proposedSupport||0)} / ${governmentMajorityMark()} required</p>
+      ${(succession.supportPartners||[]).map(partner=>`<div class="history-row"><b>${escapeHtml(partner.name)}</b><small>${Number(partner.seats)} committed support seats</small></div>`).join('')}
+      <button class="secondary-btn" data-succession-action="invite" ${['floor-test-passed','assembly-dissolved'].includes(succession.stage)?'disabled':''}>GOVERNOR INVITES LEADER</button>
+      <button class="secondary-btn" data-succession-action="negotiate" ${!succession.invitedLeader || ['floor-test-passed','assembly-dissolved'].includes(succession.stage)?'disabled':''}>NEGOTIATE SUPPORT</button>
+      <button class="secondary-btn" data-succession-action="appoint" ${!succession.invitedLeader || Number(succession.proposedSupport||0)<governmentMajorityMark() || ['floor-test-passed','assembly-dissolved'].includes(succession.stage)?'disabled':''}>APPOINT NEW CHIEF MINISTER</button>
+      <button class="primary-btn" data-succession-action="floor-test" ${succession.stage!=='leader-appointed'?'disabled':''}>CONDUCT FLOOR TEST</button>
+      <button class="secondary-btn" data-succession-action="dissolve" ${['floor-test-passed','assembly-dissolved'].includes(succession.stage)?'disabled':''}>DISSOLVE ASSEMBLY & CALL ELECTION</button>
+      ${succession.floorTest ? `<p><b>Last floor test:</b> ${escapeHtml(succession.floorTest.result)} · ${Number(succession.floorTest.support)} supporting votes</p>` : ''}
+    </section>` : '';
   return `
+    ${successionPanel}
     <section class="panel"><span class="eyebrow">PARLIAMENTARY OVERSIGHT</span><h2>Decisions affecting Government</h2>
       ${(g.parliamentaryRecord || []).slice(0,5).map(item=>`<div class="history-row"><b>${escapeHtml(item.event === 'bill-assented' ? `Enacted law: ${item.bill?.title || 'Bill'}` : item.event === 'confidence-won' ? 'Confidence established' : item.event === 'confidence-lost' || item.event === 'no-confidence-passed' ? 'Government lost Assembly confidence' : item.event === 'alliance-withdrawn' ? `Alliance support withdrawn: ${item.partner || 'Partner'}` : item.event === 'minister-review' ? 'Minister performance review requested' : item.event === 'question' ? 'Ministerial question raised' : item.event === 'debate' ? 'Opposition debate held' : item.event)}</b><small>${escapeHtml(item.date || '')}</small></div>`).join('') || '<p class="muted">Parliamentary decisions and their effects will appear here.</p>'}
     </section>
@@ -5754,6 +5772,8 @@ function syncParliamentGovernment(event, details = {}) {
   if (!Array.isArray(g.parliamentaryRecord)) g.parliamentaryRecord = [];
   if (!Array.isArray(g.enactedLaws)) g.enactedLaws = [];
   if (!Array.isArray(g.accountabilityLog)) g.accountabilityLog = [];
+  if (!g.succession || typeof g.succession !== 'object') g.succession = {stage:'inactive', caretaker:false, invitedLeader:'', proposedSupport:0, supportPartners:[], appointedLeader:'', floorTest:null};
+  if (!Array.isArray(g.succession.supportPartners)) g.succession.supportPartners = [];
   const record = { event, date: dateText(), ...details };
   g.parliamentaryRecord.unshift(record);
   g.parliamentaryRecord = g.parliamentaryRecord.slice(0, 40);
@@ -5771,9 +5791,10 @@ function syncParliamentGovernment(event, details = {}) {
     p.confidence = 'Government has lost Assembly confidence';
     g.confidence = p.confidence;
     g.formed = false;
-    g.status = 'Government lost confidence';
+    g.status = 'Caretaker Government · Lost Assembly confidence';
     if (g.formation) g.formation.stage = 'floor-test-failed';
-    g.history.unshift({ day:state.day, month:state.month, year:state.year, event:'Parliament decision: government lost Assembly confidence' });
+    g.succession = { ...(g.succession || {}), stage:'awaiting-governor', caretaker:true, invitedLeader:'', proposedSupport:0, supportPartners:[], appointedLeader:'', floorTest:null, triggeredAt:dateText() };
+    g.history.unshift({ day:state.day, month:state.month, year:state.year, event:'Government lost Assembly confidence; existing ministry continues in caretaker capacity pending succession' });
   } else if (event === 'bill-assented' && details.bill) {
     if (!g.enactedLaws.some(item => String(item.id) === String(details.bill.id))) {
       g.enactedLaws.unshift({ id:details.bill.id, title:details.bill.title, type:details.bill.type, date:dateText(), status:'Enacted · Awaiting implementation' });
@@ -5841,6 +5862,75 @@ function advanceParliamentBill(id) {
     p.history.push({event:`Bill enacted after assent: ${bill.title}`,date:dateText()});
     syncParliamentGovernment('bill-assented', { bill:{id:bill.id,title:bill.title,type:bill.type} });
     toast('Assent recorded. The enacted law is now listed in Government for implementation.');
+  }
+  saveState(); render();
+}
+
+function governmentSuccessionAction(action) {
+  const g = ensureGovernmentState();
+  const p = ensureParliamentState();
+  const s = g.succession || (g.succession = {stage:'awaiting-governor',caretaker:true,invitedLeader:'',proposedSupport:0,supportPartners:[],appointedLeader:'',floorTest:null});
+  const majority = governmentMajorityMark();
+  if (action === 'invite') {
+    if (s.stage === 'floor-test-passed' || s.stage === 'assembly-dissolved') return toast('The succession process is already complete.');
+    const leader = prompt('Enter the opposition or coalition leader invited by the Governor:');
+    if (!leader || !leader.trim()) return;
+    s.invitedLeader = leader.trim();
+    s.stage = 'invited';
+    s.proposedSupport = 0;
+    s.supportPartners = [];
+    g.history.unshift({day:state.day,month:state.month,year:state.year,event:`Governor invited ${s.invitedLeader} to explore formation of a government`});
+    toast(`${s.invitedLeader} has been invited to demonstrate majority support.`);
+  } else if (action === 'negotiate') {
+    if (!s.invitedLeader) return toast('The Governor must invite a leader first.');
+    const name = prompt('Enter supporting party or alliance name:');
+    if (!name || !name.trim()) return;
+    const remaining = Math.max(0, p.oppositionSeats - s.supportPartners.reduce((sum,x)=>sum+Number(x.seats||0),0));
+    if (remaining <= 0) return toast('No uncommitted opposition seats remain in this simplified negotiation model.');
+    const raw = prompt(`How many seats does ${name.trim()} commit? Available opposition seats: ${remaining}`);
+    if (raw === null) return;
+    const seats = Math.floor(Number(raw));
+    if (!Number.isFinite(seats) || seats <= 0 || seats > remaining) return toast('Enter a valid number of seats within the available opposition strength.');
+    s.supportPartners.push({name:name.trim(),seats});
+    s.proposedSupport = s.supportPartners.reduce((sum,x)=>sum+Number(x.seats||0),0);
+    s.stage = 'negotiating';
+    g.history.unshift({day:state.day,month:state.month,year:state.year,event:`${name.trim()} committed ${seats} support seats to ${s.invitedLeader}`});
+    toast(`Support recorded. Total declared support: ${s.proposedSupport} seats.`);
+  } else if (action === 'appoint') {
+    if (!s.invitedLeader || Number(s.proposedSupport||0) < majority) return toast(`At least ${majority} declared support seats are required.`);
+    s.appointedLeader = s.invitedLeader;
+    s.stage = 'leader-appointed';
+    g.chiefMinister = s.appointedLeader;
+    g.formed = false;
+    g.status = 'Chief Minister appointed · Floor test pending';
+    g.history.unshift({day:state.day,month:state.month,year:state.year,event:`${s.appointedLeader} appointed as Chief Minister subject to floor test`});
+    toast(`${s.appointedLeader} appointed subject to the Assembly floor test.`);
+  } else if (action === 'floor-test') {
+    if (s.stage !== 'leader-appointed') return toast('Appoint a leader before the floor test.');
+    const support = Math.min(p.seats, Number(s.proposedSupport||0));
+    const passed = support >= majority;
+    s.floorTest = {support,majority,result:passed?'Floor test passed':'Floor test failed',date:dateText()};
+    if (passed) {
+      s.stage = 'floor-test-passed'; s.caretaker = false;
+      g.formed = true; g.status = 'Government in office'; g.confidence = 'Majority demonstrated';
+      g.formation = g.formation || {};
+      g.formation.stage = 'government-formed';
+      p.confidence = 'Majority demonstrated';
+      g.history.unshift({day:state.day,month:state.month,year:state.year,event:`New government led by ${s.appointedLeader} passed floor test with ${support} declared support seats`});
+      syncParliamentGovernment('confidence-won',{support,majorityNeeded:majority,result:'New government passed floor test'});
+      toast('Floor test passed. The new government has taken office.');
+    } else {
+      s.stage = 'invited'; s.caretaker = true;
+      g.formed = false; g.status = 'Caretaker Government · Floor test failed';
+      g.history.unshift({day:state.day,month:state.month,year:state.year,event:`${s.appointedLeader} failed floor test with ${support} support seats`});
+      toast('Floor test failed. Caretaker administration continues while another formation attempt is considered.');
+    }
+  } else if (action === 'dissolve') {
+    if (!confirm('Dissolve the Assembly and trigger a fresh election in the simulation?')) return;
+    s.stage = 'assembly-dissolved'; s.caretaker = true;
+    g.formed = false; g.status = 'Caretaker Government · Assembly dissolved';
+    g.history.unshift({day:state.day,month:state.month,year:state.year,event:'Assembly dissolved; fresh election process required'});
+    toast('Assembly dissolution recorded. Fresh election process is now required.');
   }
   saveState(); render();
 }
@@ -6560,6 +6650,9 @@ if (!Array.isArray(state.media.history)) state.media.history = [];
 
   const billActionButton = event.target.closest('[data-bill-action]');
   if (billActionButton) { advanceParliamentBill(billActionButton.dataset.billAction); return; }
+
+  const successionButton = event.target.closest('[data-succession-action]');
+  if (successionButton) { governmentSuccessionAction(successionButton.dataset.successionAction); return; }
 
   const parliamentButton = event.target.closest('[data-parliament-action]');
   if (parliamentButton) { parliamentAction(parliamentButton.dataset.parliamentAction); return; }
