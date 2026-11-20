@@ -2206,3 +2206,29 @@ input, select, textarea {
 .compliance-check-row { display:flex; flex-direction:column; gap:3px; padding:10px 0; border-top:1px solid #29384d; }
 .compliance-check-row b { font-size:12px; }
 .compliance-check-row span { color:#aab7c8; font-size:11px; line-height:1.5; }
+
+
+/* RAJNITI 2.7.0 — legislative party meeting and searchable appointments */
+.legislative-meeting-panel, .cabinet-selection-panel { border-color:#35465e; background:linear-gradient(145deg,#132238,#0e1928); }
+.meeting-status { display:flex; justify-content:space-between; align-items:center; gap:10px; padding:12px; border:1px solid #34465e; border-radius:10px; background:#0b1523; margin:12px 0; }
+.meeting-status b { color:#dfc486; }
+.meeting-status small { color:#9eacc0; text-align:right; }
+.meeting-member-list { display:flex; flex-direction:column; gap:8px; margin-top:12px; max-height:520px; overflow:auto; }
+.meeting-member { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:12px; border:1px solid #2b3b50; border-radius:10px; background:#0c1726; }
+.meeting-member > div:first-child { min-width:0; display:flex; flex-direction:column; gap:4px; }
+.meeting-member b { color:#f0f3f8; font-size:13px; }
+.meeting-member small { color:#a5b2c4; font-size:10px; line-height:1.45; }
+.meeting-member-actions { display:flex; gap:7px; flex-wrap:wrap; justify-content:flex-end; }
+.meeting-member-actions button, .meeting-member > button { min-height:36px; padding:8px 10px; font-size:9px; }
+.meeting-resolution, .meeting-ballot-result { margin:12px 0; padding:13px; border:1px solid #6d5b38; border-radius:10px; background:#241f16; }
+.meeting-resolution h3 { margin:6px 0; color:#f1dba4; }
+.meeting-resolution small, .meeting-ballot-result p { color:#c4b99f; }
+.search-input { width:100%; min-height:43px; margin:7px 0 14px; padding:10px 12px; color:#eef2f8; background:#0a1422; border:1px solid #35465e; border-radius:9px; }
+.field-label { display:block; color:#b7c2d1; font-size:11px; margin-top:10px; }
+@media(max-width:700px) {
+  .meeting-member { align-items:flex-start; flex-direction:column; }
+  .meeting-member-actions { width:100%; justify-content:flex-start; }
+  .meeting-member-actions button, .meeting-member > button { flex:1 1 110px; }
+  .meeting-status { align-items:flex-start; flex-direction:column; }
+  .meeting-status small { text-align:left; }
+}

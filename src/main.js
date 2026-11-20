@@ -3625,6 +3625,9 @@ function ensureGovernmentState() {
   if (!Array.isArray(g.manifestoPromises)) g.manifestoPromises = [];
   if (!Array.isArray(g.coalitionPartners)) g.coalitionPartners = [];
   if (!Array.isArray(g.history)) g.history = [];
+  if (!g.formationMeeting || typeof g.formationMeeting !== 'object') g.formationMeeting = { status:'Not convened', nominees:[], selectedLeaderId:null, votes:{}, resolution:null };
+  if (!Array.isArray(g.formationMeeting.nominees)) g.formationMeeting.nominees = [];
+  if (!g.formationMeeting.votes || typeof g.formationMeeting.votes !== 'object') g.formationMeeting.votes = {};
   if (!Number.isFinite(Number(g.treasury))) g.treasury = 50000000;
   if (!Number.isFinite(Number(g.performance))) g.performance = 50;
   return g;
@@ -3650,43 +3653,121 @@ function cabinetCandidateScore(candidate, portfolio) {
     : /general secretary|vice-president|district president/.test(role);
   return candidate.experience * 0.55 + candidate.loyalty * 0.35 + (affinity ? 25 : 0);
 }
-function autoAppointStateCabinet() {
+function ensureFormationMeeting() {
   const g = ensureGovernmentState();
+  if (!g.formationMeeting || typeof g.formationMeeting !== 'object') g.formationMeeting = { status:'Not convened', nominees:[], selectedLeaderId:null, votes:{}, resolution:null };
+  return g.formationMeeting;
+}
+function callLegislativePartyMeeting() {
+  const g = ensureGovernmentState();
+  if (governmentMandateCount() < governmentMajorityMark()) return toast('A single-party majority or recorded coalition support is required before calling the government-formation meeting.');
+  if (g.formed) return toast('The government has already been formed.');
+  const meeting = ensureFormationMeeting();
   const eligible = eligibleElectedMinisters();
-  const used = new Set(Object.values(g.ministers));
-  governmentPortfolios.forEach(portfolio => {
-    if (g.ministers[portfolio]) return;
-    const candidate = eligible.filter(person => !used.has(person.name))
-      .sort((a,b)=>cabinetCandidateScore(b,portfolio)-cabinetCandidateScore(a,portfolio))[0];
-    if (candidate) {
-      g.ministers[portfolio] = candidate.name;
-      used.add(candidate.name);
-      g.history.unshift({ day:state.day,month:state.month,year:state.year,event:`${candidate.name} appointed Minister for ${portfolio} · MLA from ${candidate.constituency}` });
-    }
-  });
+  if (!eligible.length) return toast('No elected BPP MLA records are available for the meeting. Verify the Assembly candidate results first.');
+  meeting.status = 'In session';
+  meeting.calledAt = dateText();
+  meeting.attendance = eligible.map(person=>person.id);
+  meeting.nominees = eligible.map(person=>({ id:person.id, name:person.name, constituency:person.constituency, role:person.role, nominated:false, votes:0 }));
+  meeting.selectedLeaderId = null;
+  meeting.votes = {};
+  meeting.resolution = null;
+  g.history.unshift({day:state.day,month:state.month,year:state.year,event:`BPP Legislative Party Meeting convened with ${eligible.length} elected MLA(s)`});
+  saveState(); render(); toast('BPP Legislative Party Meeting convened. Nominate and elect your Legislative Party Leader.');
+}
+function nominateLegislativeLeader(memberId) {
+  const meeting = ensureFormationMeeting();
+  if (meeting.status !== 'In session') return toast('Call the legislative party meeting first.');
+  const candidate = eligibleElectedMinisters().find(person=>String(person.id)===String(memberId));
+  if (!candidate) return toast('Only an elected BPP MLA can be nominated as Legislative Party Leader.');
+  if (!meeting.nominees.some(item=>String(item.id)===String(memberId))) meeting.nominees.push({id:candidate.id,name:candidate.name,constituency:candidate.constituency,role:candidate.role,nominated:true,votes:0});
+  else meeting.nominees.find(item=>String(item.id)===String(memberId)).nominated = true;
+  saveState(); render(); toast(`${candidate.name} nominated for Legislative Party Leader.`);
+}
+function electLegislativeLeader(memberId) {
+  const g = ensureGovernmentState();
+  const meeting = ensureFormationMeeting();
+  if (meeting.status !== 'In session') return toast('The party meeting is not in session.');
+  const nominee = meeting.nominees.find(item=>String(item.id)===String(memberId) && item.nominated);
+  if (!nominee) return toast('Nominate this MLA before recording the leadership decision.');
+  const eligible = eligibleElectedMinisters();
+  const required = Math.floor(eligible.length/2)+1;
+  const votes = Number(meeting.votes[String(memberId)] || 0);
+  if (votes < required) return toast(`This nominee needs at least ${required} recorded MLA vote(s). Use the meeting vote controls first.`);
+  meeting.selectedLeaderId = nominee.id;
+  meeting.selectedLeaderName = nominee.name;
+  meeting.status = 'Leader elected';
+  meeting.resolution = `${nominee.name} elected Legislative Party Leader with ${votes} of ${eligible.length} recorded votes.`;
+  g.history.unshift({day:state.day,month:state.month,year:state.year,event:meeting.resolution});
+  saveState(); render(); toast(meeting.resolution);
+}
+function recordMeetingVote(memberId, nomineeId) {
+  const meeting = ensureFormationMeeting();
+  if (meeting.status !== 'In session') return toast('The party meeting is not in session.');
+  const eligible = eligibleElectedMinisters();
+  if (!eligible.some(person=>String(person.id)===String(memberId))) return toast('Only elected BPP MLAs can vote.');
+  if (!meeting.nominees.some(item=>String(item.id)===String(nomineeId) && item.nominated)) return toast('Select a nominated leader.');
+  meeting.votes[String(nomineeId)] = Number(meeting.votes[String(nomineeId)]||0)+1;
+  meeting.voteRecords = Array.isArray(meeting.voteRecords) ? meeting.voteRecords : [];
+  meeting.voteRecords.push({voterId:memberId,nomineeId,date:dateText()});
+  saveState(); render();
 }
 function formGovernment() {
   const g = ensureGovernmentState();
+  const meeting = ensureFormationMeeting();
   if (governmentMandateCount() < governmentMajorityMark()) return toast(`Your party has ${governmentMandateCount()} Assembly seat(s). A majority of 113 seats is required before forming the government.`);
   if (g.formed) return toast('Your state government is already formed.');
+  if (meeting.status !== 'Leader elected' || !meeting.selectedLeaderName) return toast('Hold the BPP Legislative Party Meeting and elect a Legislative Party Leader before government formation.');
+  const elected = eligibleElectedMinisters();
+  if (!elected.some(person=>String(person.id)===String(meeting.selectedLeaderId))) return toast('The selected Legislative Party Leader must be an elected BPP MLA.');
   g.formed = true;
-  g.chiefMinister = state.playerName;
-  autoAppointStateCabinet();
-  g.history.unshift({ day: state.day, month: state.month, year: state.year, event: 'State government formed; elected BPP MLAs assigned to the cabinet' });
-  saveState(); render(); toast(`Government formed. ${Object.keys(g.ministers).length} elected MLA(s) assigned to ministerial portfolios where available.`);
+  g.chiefMinister = meeting.selectedLeaderName;
+  g.formationLeaderId = meeting.selectedLeaderId;
+  g.cabinetConfirmed = false;
+  g.history.unshift({day:state.day,month:state.month,year:state.year,event:`Government formation initiated with ${g.chiefMinister} as elected Legislative Party Leader; cabinet appointments pending`});
+  saveState(); render(); toast(`${g.chiefMinister} selected as Legislative Party Leader. Proceed to cabinet formation and final confirmation.`);
 }
 
-function appointMinister(portfolio) {
+function appointMinister(portfolio, memberId) {
   const g = ensureGovernmentState();
-  if (!g.formed) return toast('Form your government first.');
+  if (!g.formed) return toast('Complete the legislative party meeting and form the government first.');
   if (!governmentPortfolios.includes(portfolio)) return;
-  const used = Object.values(g.ministers).filter(name => name !== g.ministers[portfolio]);
-  const candidate = eligibleElectedMinisters().filter(person => !used.includes(person.name))
-    .sort((a,b)=>cabinetCandidateScore(b,portfolio)-cabinetCandidateScore(a,portfolio))[0];
-  if (!candidate) return toast('No unassigned elected BPP MLA is available for this ministry.');
+  const used = Object.entries(g.ministers).filter(([key])=>key!==portfolio).map(([,name])=>name);
+  const candidate = eligibleElectedMinisters().find(person=>String(person.id)===String(memberId));
+  if (!candidate) return toast('Choose an elected BPP MLA from the searchable member list.');
+  if (used.includes(candidate.name)) return toast('This MLA already holds another ministry. Select a different member.');
   g.ministers[portfolio] = candidate.name;
-  g.history.unshift({ day: state.day, month: state.month, year: state.year, event: `${candidate.name} appointed Minister for ${portfolio} from ${candidate.constituency}` });
-  saveState(); render(); toast(`${candidate.name}, elected from ${candidate.constituency}, appointed to ${portfolio}.`);
+  g.ministerMemberIds = g.ministerMemberIds || {};
+  g.ministerMemberIds[portfolio] = candidate.id;
+  g.history.unshift({ day:state.day, month:state.month, year:state.year, event:`${candidate.name}, elected from ${candidate.constituency}, appointed Minister for ${portfolio} by the Chief Minister` });
+  saveState(); render(); toast(`${candidate.name} appointed to ${portfolio}.`);
+}
+function conductLegislativeBallot(nomineeId) {
+  const meeting = ensureFormationMeeting();
+  if (meeting.status !== 'In session') return toast('The party meeting is not in session.');
+  const nominee = meeting.nominees.find(item=>String(item.id)===String(nomineeId) && item.nominated);
+  if (!nominee) return toast('Nominate the member before conducting the ballot.');
+  const members = eligibleElectedMinisters();
+  const support = members.filter(voter => {
+    if (String(voter.id)===String(nominee.id)) return true;
+    const affinity = (Number(voter.loyalty)||50)*0.55 + (Number(nominee.loyalty)||50)*0.25 + Math.min(20,(Number(nominee.experience)||0)*0.2);
+    return affinity >= 68;
+  }).length;
+  const opposition = Math.max(0,members.length-support);
+  meeting.votes[String(nominee.id)] = support;
+  meeting.ballot = { nomineeId:nominee.id, nomineeName:nominee.name, support, opposition, total:members.length, date:dateText() };
+  if (support >= Math.floor(members.length/2)+1) {
+    meeting.selectedLeaderId = nominee.id;
+    meeting.selectedLeaderName = nominee.name;
+    meeting.status = 'Leader elected';
+    meeting.resolution = `${nominee.name} elected Legislative Party Leader by secret-ballot simulation (${support} for, ${opposition} against).`;
+  } else {
+    meeting.status = 'In session';
+    meeting.resolution = `${nominee.name} did not secure a majority (${support} of ${members.length}). The meeting remains open for another nomination or ballot.`;
+  }
+  const g=ensureGovernmentState();
+  g.history.unshift({day:state.day,month:state.month,year:state.year,event:meeting.resolution});
+  saveState(); render(); toast(meeting.resolution);
 }
 
 function allocateDepartment(department, delta) {
@@ -3728,7 +3809,24 @@ function governmentPage() {
   const wins = governmentMandateCount();
   const majorityReached = wins >= governmentMajorityMark();
   const formed = !!g.formed;
-  const totalAllocation = Object.values(g.departments).reduce((sum, value) => sum + Number(value || 0), 0);
+  const meeting = ensureFormationMeeting();
+  const electedMlas = eligibleElectedMinisters();
+  const selectedPortfolio = g.pendingPortfolio || governmentPortfolios[0];
+  const nomineeCards = electedMlas.map(person => {
+    const nominee = meeting.nominees.find(item=>String(item.id)===String(person.id));
+    return `<article class="meeting-member" data-meeting-member-row="${escapeHtml((person.name+' '+person.role+' '+person.constituency).toLowerCase())}">
+      <div><b>${escapeHtml(person.name)}</b><small>${escapeHtml(person.role)} · MLA, ${escapeHtml(person.constituency||'Constituency not recorded')}</small></div>
+      <div class="meeting-member-actions">
+        <button class="secondary-btn" data-meeting-nominate="${escapeHtml(person.id)}" ${meeting.status!=='In session'?'disabled':''}>${nominee?.nominated?'NOMINATED':'NOMINATE'}</button>
+        ${nominee?.nominated?`<button class="secondary-btn" data-meeting-ballot="${escapeHtml(person.id)}">CONDUCT BALLOT</button>`:''}
+      </div>
+    </article>`;
+  }).join('');
+  const cabinetChoices = electedMlas.filter(person => !Object.entries(g.ministers).some(([portfolio,name])=>portfolio!==selectedPortfolio && name===person.name)).map(person=>`
+    <article class="meeting-member" data-cabinet-member-row="${escapeHtml((person.name+' '+person.role+' '+person.constituency).toLowerCase())}">
+      <div><b>${escapeHtml(person.name)}</b><small>${escapeHtml(person.role)} · ${escapeHtml(person.constituency||'Constituency not recorded')} · ${person.experience} experience</small></div>
+      <button class="secondary-btn" data-cabinet-select="${escapeHtml(person.id)}" data-cabinet-portfolio="${escapeHtml(selectedPortfolio)}">APPOINT</button>
+    </article>`).join('');
   const ministries = governmentPortfolios.map(portfolio => `
     <article class="panel government-portfolio">
       <span class="eyebrow">MINISTRY PORTFOLIO</span><h3>${escapeHtml(portfolio)}</h3>
@@ -3745,14 +3843,34 @@ function governmentPage() {
     <section class="panel government-hero"><span class="gold-tag">STATE ADMINISTRATION</span><h2>${formed ? 'Your state government' : wins ? 'You have an Assembly mandate' : 'The path to government'}</h2>
       <p class="panel-description">${formed ? `Chief Minister: ${escapeHtml(g.chiefMinister || state.playerName)}. Build your cabinet and deliver programmes.` : 'One MLA victory gives you one Assembly seat, not a government. A single party needs 113 of 224 seats to form a majority government. Party candidates must be approved, funded and included in the election cycle before their simulated constituency results count.'}</p>
       <div class="government-unlock-grid"><div><b>${wins} / 224</b><small>Party Assembly seats won · majority 113</small></div><div><b>${money(g.treasury)}</b><small>Government treasury</small></div><div><b>${Number(g.performance)}%</b><small>Administration performance</small></div><div><b>${Object.keys(g.ministers).length}/${governmentPortfolios.length}</b><small>Ministers appointed</small></div></div>
-      <button class="primary-btn" data-action="gov-form" ${!majorityReached || formed ? 'disabled' : ''}>${formed ? 'GOVERNMENT FORMED' : majorityReached ? 'FORM STATE GOVERNMENT' : 'MAJORITY NOT REACHED'}</button>
-      <p class="panel-description government-majority-note">${majorityReached ? 'Majority secured. You may now form the state government.' : `You currently have ${wins} seat(s). ${governmentMajorityMark()-wins} more seat(s) are required for a single-party majority.`}</p>
+      ${!meeting.selectedLeaderName && !formed ? `<button class="primary-btn" data-action="call-party-meeting" ${!majorityReached?'disabled':''}>CALL BPP LEGISLATIVE PARTY MEETING</button>` : `<button class="primary-btn" data-action="gov-form" ${!majorityReached || formed || meeting.status!=='Leader elected' ? 'disabled' : ''}>PROCEED TO GOVERNMENT FORMATION</button>`}
+      <p class="panel-description government-majority-note">${formed ? `Government led by ${escapeHtml(g.chiefMinister)}.` : meeting.selectedLeaderName ? `${escapeHtml(meeting.selectedLeaderName)} has been elected Legislative Party Leader. Proceed when ready.` : majorityReached ? 'Majority secured. Hold a party meeting and elect your Legislative Party Leader before government formation.' : `You currently have ${wins} seat(s). ${governmentMajorityMark()-wins} more seat(s) are required for a single-party majority.`}</p>
     </section>
+    ${majorityReached && !formed ? `<section class="panel legislative-meeting-panel" style="margin-top:16px">
+      <span class="eyebrow">BPP LEGISLATIVE PARTY</span><h2>Party meeting & leader election</h2>
+      <p class="panel-description">The election result does not automatically make you Chief Minister. Convene elected BPP MLAs, nominate a Legislative Party Leader and conduct a simulated secret ballot.</p>
+      <div class="meeting-status"><b>${escapeHtml(meeting.status)}</b><small>${electedMlas.length} elected BPP MLA record(s) · ${meeting.attendance?.length||0} meeting attendance records</small></div>
+      ${meeting.resolution?`<p class="panel-description">${escapeHtml(meeting.resolution)}</p>`:''}
+      ${meeting.selectedLeaderName?`<div class="meeting-resolution"><b>Selected Legislative Party Leader</b><h3>${escapeHtml(meeting.selectedLeaderName)}</h3><small>${escapeHtml(meeting.resolution||'Leadership decision recorded')}</small></div>`:''}
+      <label class="field-label" for="meetingMemberSearch">Search elected MLAs by name, role or constituency</label>
+      <input id="meetingMemberSearch" class="search-input" placeholder="Search elected BPP MLAs…" ${meeting.status!=='In session'?'disabled':''}>
+      <div class="meeting-member-list" id="meetingMemberList">${nomineeCards || '<p class="panel-description">No elected BPP MLA profiles are available for this meeting.</p>'}</div>
+      ${meeting.ballot?`<div class="meeting-ballot-result"><b>Last ballot: ${escapeHtml(meeting.ballot.nomineeName)}</b><p>${meeting.ballot.support} for · ${meeting.ballot.opposition} against · ${meeting.ballot.total} voting MLAs</p></div>`:''}
+    </section>`:''}
     <section class="panel" style="margin-top:16px">
       <span class="eyebrow">PUBLIC ACCOUNTABILITY</span><h3>Election manifesto commitments</h3>
       ${(g.manifestoPromises || []).length ? g.manifestoPromises.slice(0,8).map(item=>`<div class="finance-history"><span>${escapeHtml(item.text)}<br><small>${escapeHtml(item.announcedAt || '')} · ${escapeHtml(item.status || 'Pending')}</small></span><b>${Number(item.progress || 0)}%</b></div>`).join('') : '<p class="panel-description">Winning Assembly candidates will register their manifesto commitments here for public tracking.</p>'}
     </section>
     <div class="command-section-head"><div><span class="eyebrow">COUNCIL OF MINISTERS</span><h2>Cabinet formation</h2></div></div>
+    <section class="panel cabinet-selection-panel">
+      <h3>Search and appoint elected MLAs</h3>
+      <p class="panel-description">Choose a portfolio, search the elected BPP MLA register and appoint the member yourself. No ministers are assigned automatically.</p>
+      <label class="field-label" for="cabinetPortfolioSelect">Ministry portfolio</label>
+      <select id="cabinetPortfolioSelect" class="search-input" ${!formed?'disabled':''}>${governmentPortfolios.map(portfolio=>`<option value="${escapeHtml(portfolio)}" ${portfolio===selectedPortfolio?'selected':''}>${escapeHtml(portfolio)}</option>`).join('')}</select>
+      <label class="field-label" for="cabinetMemberSearch">Search eligible elected MLAs</label>
+      <input id="cabinetMemberSearch" class="search-input" placeholder="Search name, party role or constituency…" ${!formed?'disabled':''}>
+      <div id="cabinetMemberList" class="meeting-member-list">${formed ? (cabinetChoices || '<p class="panel-description">No unassigned elected BPP MLAs available.</p>') : '<p class="panel-description">Complete the party meeting and form the government to appoint ministers.</p>'}</div>
+    </section>
     <div class="government-cabinet-grid">${ministries}</div>
     <section class="panel gov-budget-panel"><div class="command-section-head"><div><span class="eyebrow">PUBLIC FINANCE</span><h2>Department allocations</h2></div><b>${totalAllocation}% allocated</b></div>
       <p class="panel-description">Adjust each department in 5% steps. Total allocation cannot exceed 100%.</p>${departments}
@@ -4899,11 +5017,27 @@ function render() {
 /* EVENT HANDLERS */
 
 document.addEventListener('input', event => {
+  if (event.target && event.target.id === 'meetingMemberSearch') {
+    const query = event.target.value.trim().toLocaleLowerCase('en-IN');
+    document.querySelectorAll('#meetingMemberList [data-meeting-member-row]').forEach(card => { card.hidden = !card.dataset.meetingMemberRow.includes(query); });
+  }
+  if (event.target && event.target.id === 'cabinetMemberSearch') {
+    const query = event.target.value.trim().toLocaleLowerCase('en-IN');
+    document.querySelectorAll('#cabinetMemberList [data-cabinet-member-row]').forEach(card => { card.hidden = !card.dataset.cabinetMemberRow.includes(query); });
+  }
   if (event.target && event.target.id === 'atlasDistrictSearch') {
     const query = event.target.value.trim().toLocaleLowerCase('en-IN');
     document.querySelectorAll('#atlasDistrictList [data-map-district]').forEach(button => {
       button.hidden = !button.dataset.mapDistrict.toLocaleLowerCase('en-IN').includes(query);
     });
+  }
+});
+
+document.addEventListener('change', event => {
+  if (event.target && event.target.id === 'cabinetPortfolioSelect') {
+    const g = ensureGovernmentState();
+    g.pendingPortfolio = event.target.value;
+    saveState(); render();
   }
 });
 
@@ -5224,7 +5358,19 @@ if (!Array.isArray(state.media.history)) state.media.history = [];
   if (parliamentButton) { parliamentAction(parliamentButton.dataset.parliamentAction); return; }
 
   const appointButton = event.target.closest('[data-gov-appoint]');
-  if (appointButton) { appointMinister(appointButton.dataset.govAppoint); return; }
+  if (appointButton) {
+    const g=ensureGovernmentState();
+    g.pendingPortfolio=appointButton.dataset.govAppoint;
+    saveState(); render();
+    document.getElementById('cabinetPortfolioSelect')?.scrollIntoView({behavior:'smooth',block:'center'});
+    return;
+  }
+  const meetingNominateButton = event.target.closest('[data-meeting-nominate]');
+  if (meetingNominateButton) { nominateLegislativeLeader(meetingNominateButton.dataset.meetingNominate); return; }
+  const meetingBallotButton = event.target.closest('[data-meeting-ballot]');
+  if (meetingBallotButton) { conductLegislativeBallot(meetingBallotButton.dataset.meetingBallot); return; }
+  const cabinetSelectButton = event.target.closest('[data-cabinet-select]');
+  if (cabinetSelectButton) { appointMinister(cabinetSelectButton.dataset.cabinetPortfolio,cabinetSelectButton.dataset.cabinetSelect); return; }
   const budgetButton = event.target.closest('[data-gov-budget]');
   if (budgetButton) { allocateDepartment(budgetButton.dataset.govBudget, Number(budgetButton.dataset.delta)); return; }
 
@@ -5245,6 +5391,9 @@ if (!Array.isArray(state.media.history)) state.media.history = [];
       break;
     case 'end-day':
       endDay();
+      break;
+    case 'call-party-meeting':
+      callLegislativePartyMeeting();
       break;
     case 'gov-form':
       formGovernment();
