@@ -4824,6 +4824,12 @@ function governmentPage() {
       <div class="gov-budget-actions"><button data-gov-budget="${escapeHtml(name)}" data-delta="-5" ${!formed || value <= 5 ? 'disabled' : ''}>−5%</button><button data-gov-budget="${escapeHtml(name)}" data-delta="5" ${!formed || totalAllocation >= 100 ? 'disabled' : ''}>+5%</button></div>
     </div>`).join('');
   return `
+    <section class="panel"><span class="eyebrow">PARLIAMENTARY OVERSIGHT</span><h2>Decisions affecting Government</h2>
+      ${(g.parliamentaryRecord || []).slice(0,5).map(item=>`<div class="history-row"><b>${escapeHtml(item.event === 'bill-assented' ? `Enacted law: ${item.bill?.title || 'Bill'}` : item.event === 'confidence-won' ? 'Confidence established' : item.event === 'confidence-lost' || item.event === 'no-confidence-passed' ? 'Government lost Assembly confidence' : item.event === 'alliance-withdrawn' ? `Alliance support withdrawn: ${item.partner || 'Partner'}` : item.event === 'minister-review' ? 'Minister performance review requested' : item.event === 'question' ? 'Ministerial question raised' : item.event === 'debate' ? 'Opposition debate held' : item.event)}</b><small>${escapeHtml(item.date || '')}</small></div>`).join('') || '<p class="muted">Parliamentary decisions and their effects will appear here.</p>'}
+    </section>
+    <section class="panel"><span class="eyebrow">ENACTED LEGISLATION</span><h2>Laws awaiting implementation</h2>
+      ${(g.enactedLaws || []).slice(0,6).map(law=>`<div class="history-row"><b>${escapeHtml(law.title)}</b><span>${escapeHtml(law.status)}</span></div>`).join('') || '<p class="muted">Bills receiving assent in Parliament will appear here.</p>'}
+    </section>
     <div class="page-heading"><div><div class="eyebrow">PUBLIC ADMINISTRATION</div><h1>Government <em>command</em></h1><p>Manage ministries, public finances, infrastructure projects, government orders and service delivery.</p></div><div class="date-card"><span>GOVERNMENT STATUS</span><b>${formed ? 'GOVERNMENT FORMED' : majorityReached ? 'MAJORITY SECURED' : wins ? 'MAJORITY NOT REACHED' : 'NOT FORMED'}</b><small>${wins}/113 seats needed for majority</small></div></div>
     <section class="panel government-hero"><span class="gold-tag">STATE ADMINISTRATION</span><h2>${formed ? 'Your state government' : majorityReached ? 'Assembly majority secured' : wins ? 'The path to a majority' : 'The path to government'}</h2>
       <p class="panel-description">${formed ? `Chief Minister: ${escapeHtml(g.chiefMinister || state.playerName)}. Build your cabinet and deliver programmes.` : 'One MLA victory gives you one Assembly seat, not a government. A single party needs 113 of 224 seats to form a majority government. Party candidates must be approved, funded and included in the election cycle before their simulated constituency results count.'}</p>
@@ -5718,9 +5724,15 @@ function ensureParliamentState() {
   for (const key of ['bills','alliances','history','motions','ministerReviews','questionsLog']) if (!Array.isArray(p[key])) p[key] = [];
   if (!p.oppositionLeader) p.oppositionLeader = 'Leader of the Opposition';
   if (!p.lastMotionResult) p.lastMotionResult = 'No confidence motion submitted';
-  p.seats = Number(p.seats) || 224;
-  p.rulingSeats = Math.max(0, Number(p.rulingSeats) || governmentMandateCount() || 0);
-  p.oppositionSeats = Math.max(0, Number(p.oppositionSeats) || Math.max(0, p.seats-p.rulingSeats));
+  p.seats = 224;
+  // Keep Assembly arithmetic valid in old saves: neither side can exceed the House.
+  const partySeats = Math.max(0, Math.min(p.seats, Number(governmentMandateCount()) || 0));
+  const allianceSeats = Array.isArray(state.alliances?.partners)
+    ? state.alliances.partners.reduce((sum, partner) => sum + Math.max(0, Number(partner.seats) || 0), 0)
+    : 0;
+  const supportedSeats = Math.max(0, Math.min(p.seats, partySeats + allianceSeats));
+  p.rulingSeats = supportedSeats;
+  p.oppositionSeats = Math.max(0, p.seats - supportedSeats);
   return p;
 }
 function parliamentBillActionLabel(bill) {
@@ -5736,6 +5748,44 @@ function parliamentBillStageLabel(bill) {
   const labels = {introduced:'First Reading · Introduced',committee:'Referred to Committee',reported:'Committee Report Submitted',debate:'House Debate',passed:'Passed by Assembly · Awaiting Assent',assent:'Assented · Enacted',defeated:'Defeated in House'};
   return labels[bill.stage || (String(bill.status||'').toLowerCase().includes('passed')?'passed':'introduced')] || 'Introduced';
 }
+function syncParliamentGovernment(event, details = {}) {
+  const p = ensureParliamentState();
+  const g = ensureGovernmentState();
+  if (!Array.isArray(g.parliamentaryRecord)) g.parliamentaryRecord = [];
+  if (!Array.isArray(g.enactedLaws)) g.enactedLaws = [];
+  if (!Array.isArray(g.accountabilityLog)) g.accountabilityLog = [];
+  const record = { event, date: dateText(), ...details };
+  g.parliamentaryRecord.unshift(record);
+  g.parliamentaryRecord = g.parliamentaryRecord.slice(0, 40);
+  if (['question', 'debate', 'minister-review'].includes(event)) {
+    g.accountabilityLog.unshift(record);
+    g.accountabilityLog = g.accountabilityLog.slice(0, 40);
+    if (event === 'minister-review') g.performance = Math.max(0, Number(g.performance || 50) - 1);
+  }
+  if (event === 'confidence-won') {
+    p.confidence = 'Majority demonstrated';
+    g.confidence = 'Majority demonstrated';
+    g.formed = true;
+    if (g.formation && g.formation.stage === 'government-formed') g.status = 'Government in office';
+  } else if (event === 'confidence-lost' || event === 'no-confidence-passed') {
+    p.confidence = 'Government has lost Assembly confidence';
+    g.confidence = p.confidence;
+    g.formed = false;
+    g.status = 'Government lost confidence';
+    if (g.formation) g.formation.stage = 'floor-test-failed';
+    g.history.unshift({ day:state.day, month:state.month, year:state.year, event:'Parliament decision: government lost Assembly confidence' });
+  } else if (event === 'bill-assented' && details.bill) {
+    if (!g.enactedLaws.some(item => String(item.id) === String(details.bill.id))) {
+      g.enactedLaws.unshift({ id:details.bill.id, title:details.bill.title, type:details.bill.type, date:dateText(), status:'Enacted · Awaiting implementation' });
+    }
+    g.history.unshift({ day:state.day, month:state.month, year:state.year, event:`Parliament enacted ${details.bill.title}; available for government implementation` });
+  } else if (event === 'alliance-withdrawn') {
+    g.confidence = 'Coalition support changed; confidence requires reassessment';
+    g.status = 'Coalition support changed';
+  }
+  return g;
+}
+
 function parliamentPage() {
   const p = ensureParliamentState();
   const majority = Math.floor(p.seats/2)+1;
@@ -5789,7 +5839,8 @@ function advanceParliamentBill(id) {
     bill.stage = 'assent'; bill.status = 'Assented · Enacted in simulation'; bill.assentDate = dateText();
     bill.lastAction = 'Assent recorded. The bill is now an enacted law in this fictional simulation.';
     p.history.push({event:`Bill enacted after assent: ${bill.title}`,date:dateText()});
-    toast('Assent recorded. The bill is now enacted in the simulation.');
+    syncParliamentGovernment('bill-assented', { bill:{id:bill.id,title:bill.title,type:bill.type} });
+    toast('Assent recorded. The enacted law is now listed in Government for implementation.');
   }
   saveState(); render();
 }
@@ -5797,22 +5848,26 @@ function advanceParliamentBill(id) {
 function parliamentAction(action) {
   const p = ensureParliamentState();
   if (action === 'session') { p.sessions++; p.history.push({event:'Session opened',date:dateText()}); toast('Legislative session opened.'); }
-  if (action === 'question') { p.questions++; const item={event:`Opposition question raised to the government (${p.questions} total)`,date:dateText()}; p.questionsLog.push(item); p.history.push(item); toast('Ministerial question recorded for House scrutiny.'); }
-  if (action === 'debate') { const item={event:'Opposition debate held on government performance',date:dateText()}; p.questionsLog.push(item); p.history.push(item); toast('Opposition debate recorded.'); }
-  if (action === 'review') { const item={event:'Minister performance review requested by the House',date:dateText()}; p.ministerReviews.push(item); p.questionsLog.push(item); toast('Ministerial review recorded.'); }
+  if (action === 'question') { p.questions++; const item={event:`Opposition question raised to the government (${p.questions} total)`,date:dateText()}; p.questionsLog.push(item); p.history.push(item); syncParliamentGovernment('question', item); toast('Ministerial question recorded in Government accountability.'); }
+  if (action === 'debate') { const item={event:'Opposition debate held on government performance',date:dateText()}; p.questionsLog.push(item); p.history.push(item); syncParliamentGovernment('debate', item); toast('Opposition debate recorded in Government accountability.'); }
+  if (action === 'review') { const item={event:'Minister performance review requested by the House',date:dateText()}; p.ministerReviews.push(item); p.questionsLog.push(item); syncParliamentGovernment('minister-review', item); toast('Ministerial review added to Government accountability.'); }
   if (action === 'confidence' || action === 'no-confidence') {
     const motionType = action === 'confidence' ? 'Confidence motion' : 'No-confidence motion';
-    const totalSupport = Math.max(0, Number(p.rulingSeats||0));
-    const majorityNeeded = Math.floor(Number(p.seats||224)/2)+1;
-    const passed = action === 'confidence' ? totalSupport >= majorityNeeded : totalSupport < majorityNeeded;
+    const totalSupport = Math.max(0, Math.min(p.seats, Number(p.rulingSeats||0)));
+    const totalOpposition = Math.max(0, p.seats - totalSupport);
+    const majorityNeeded = Math.floor(p.seats/2)+1;
+    const governmentWins = totalSupport >= majorityNeeded;
+    const passed = action === 'confidence' ? governmentWins : !governmentWins;
     const result = action === 'confidence'
       ? (passed ? 'Government wins confidence vote' : 'Government loses confidence vote')
       : (passed ? 'No-confidence motion succeeds · Government loses majority' : 'No-confidence motion defeated · Government retains majority');
-    p.confidence = passed ? (action === 'confidence' ? 'Majority demonstrated' : 'Government at risk · Majority lost') : (action === 'confidence' ? 'Confidence not established' : 'Majority maintained');
+    p.confidence = governmentWins ? 'Majority demonstrated' : 'Government has lost Assembly confidence';
     p.lastMotionResult = result;
-    p.motions.push({title:motionType,result,date:dateText(),support:totalSupport,majorityNeeded});
+    p.motions.push({title:motionType,result,date:dateText(),support:totalSupport,opposition:totalOpposition,majorityNeeded});
     p.history.push({event:`${motionType}: ${result}`,date:dateText()});
-    if (action === 'no-confidence' && passed) { const g=ensureGovernmentState(); g.formed=false; g.status='Government lost confidence'; g.history.unshift({day:state.day,month:state.month,year:state.year,event:'Government lost Assembly confidence in a simulated no-confidence vote'}); }
+    if (action === 'confidence') syncParliamentGovernment(passed ? 'confidence-won' : 'confidence-lost', {support:totalSupport,opposition:totalOpposition,majorityNeeded,result});
+    else if (passed) syncParliamentGovernment('no-confidence-passed', {support:totalSupport,opposition:totalOpposition,majorityNeeded,result});
+    else syncParliamentGovernment('no-confidence-defeated', {support:totalSupport,opposition:totalOpposition,majorityNeeded,result});
     toast(result);
   }
   if (action === 'withdraw') {
@@ -5821,7 +5876,7 @@ function parliamentAction(action) {
     p.rulingSeats=Math.max(0,p.rulingSeats-Math.max(0,Number(partner.seats)||0));
     p.oppositionSeats=Math.min(p.seats,p.oppositionSeats+Math.max(0,Number(partner.seats)||0));
     const item={title:`Alliance withdrawal: ${partner.name}`,result:'Support withdrawn',date:dateText()};
-    p.motions.push(item); p.history.push({event:item.title,date:dateText()}); toast(`${partner.name} withdrew support.`);
+    p.motions.push(item); p.history.push({event:item.title,date:dateText()}); syncParliamentGovernment('alliance-withdrawn', {partner:partner.name,seats:partner.seats}); toast(`${partner.name} withdrew support; Government status updated.`);
   }
   if (action === 'bill') {
     const title = document.querySelector('#parliamentBillTitle')?.value.trim();
