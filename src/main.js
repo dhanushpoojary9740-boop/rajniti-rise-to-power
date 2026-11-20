@@ -1,5 +1,6 @@
 import './styles.css';
 import districtDirectory from './data/india-districts.json';
+import lokSabhaConstituencyReference from './data/lok-sabha-constituencies.json';
 
 const STORE_KEY = 'rajniti-save-v1';
 
@@ -3359,6 +3360,47 @@ function nationalElectionArchitecturePanel() {
 
 
 
+
+function verifiedLokSabhaDataPanel() {
+  const reference = lokSabhaConstituencyReference;
+  const stateRows = Array.isArray(reference.units) ? reference.units : [];
+  const records = stateRows.flatMap(unit => (unit.constituencies || []).map(pc => ({ ...pc, state: unit.state })));
+  const allocationTotal = lokSabhaSeatAllocation.reduce((sum, unit) => sum + Number(unit.seats || 0), 0);
+  const reservation = reference.nationalReservedTotals || {};
+  return `
+    <section class="panel verified-ls-data-panel">
+      <span class="gold-tag">ECI REFERENCE DATA · 2024</span>
+      <h2>Verified parliamentary constituency register</h2>
+      <p class="panel-description">This is the official-data layer used to identify real parliamentary seats and reservation categories. The national seat allocation is 543. Detailed constituency names currently loaded in this release are the 28 Karnataka seats; other state/UT names will be added only after their ECI reference records are verified.</p>
+      <div class="election-metrics">
+        <div><small>NATIONAL SEATS</small><b>${allocationTotal}</b></div>
+        <div><small>VERIFIED NAMES LOADED</small><b>${records.length}</b></div>
+        <div><small>SC RESERVED</small><b>${Number(reservation.SC || 0)}</b></div>
+        <div><small>ST RESERVED</small><b>${Number(reservation.ST || 0)}</b></div>
+      </div>
+      <div class="verified-ls-data-note">
+        <b>Data coverage</b>
+        <span>Karnataka · ${records.length}/28 official constituency names and categories</span>
+        <span>National constituency names · ${records.length}/543 verified in this dataset</span>
+        <span>Reservation totals · 84 SC and 47 ST in the 2024 reference; unreserved total 412</span>
+      </div>
+      <div class="creator-field">
+        <label for="verifiedPcSearch">Search verified constituency / reservation</label>
+        <input id="verifiedPcSearch" type="search" placeholder="e.g. Chikkodi, Bangalore, SC, ST">
+      </div>
+      <div id="verifiedPcList" class="verified-pc-list">
+        ${records.map(pc => `
+          <article class="verified-pc-row" data-verified-pc-row="${escapeHtml([pc.state,pc.number,pc.name,pc.reservation].join(' ').toLowerCase())}">
+            <div><b>${escapeHtml(pc.officialLabel)}</b><small>${escapeHtml(pc.state)} · Parliamentary Constituency ${pc.number}</small></div>
+            <span class="verified-pc-reservation ${pc.reservation === 'GEN' ? 'general' : 'reserved'}">${pc.reservation === 'GEN' ? 'UNRESERVED' : `RESERVED · ${pc.reservation}`}</span>
+          </article>
+        `).join('')}
+      </div>
+      <p class="panel-description">Source: Election Commission of India, Atlas 2024 and 2024 Statistical Reports. Dataset reference election: 2024. Constituency boundaries and names can change after a legally notified delimitation; the game must use a versioned dataset rather than silently changing existing election history.</p>
+    </section>
+  `;
+}
+
 function nationalLokSabhaCandidatePanel() {
   const schedule = ensureElectionCalendar().calendar['lok-sabha'];
   const cycle = Number(schedule?.nextAt || currentMonthIndex());
@@ -3462,7 +3504,7 @@ function electionPage() {
       ${statCard('WIN RATE', winRate + '%', 'Based on completed contests', '✦')}
       ${statCard('LOCAL SUPPORT', averageSupport + '%', 'Across your localities', '♥')}
     </div>
-\n    ${nationalLokSabhaCandidatePanel()}\n
+\n    ${verifiedLokSabhaDataPanel()}\n    ${nationalLokSabhaCandidatePanel()}\n
     ${nationalElectionArchitecturePanel()}
 
     <section class="panel">
@@ -5704,6 +5746,12 @@ document.addEventListener('change', event => {
 });
 
 document.addEventListener('input', event => {
+  if (event.target && event.target.id === 'verifiedPcSearch') {
+    const query = event.target.value.trim().toLocaleLowerCase('en-IN');
+    document.querySelectorAll('#verifiedPcList [data-verified-pc-row]').forEach(row => {
+      row.hidden = !row.dataset.verifiedPcRow.includes(query);
+    });
+  }
   if (event.target.id === 'candidateRegisterSearch') {
     const query=event.target.value.trim().toLowerCase();
     document.querySelectorAll('[data-candidate-register-row]').forEach(row=>{ row.style.display=row.dataset.candidateRegisterRow.includes(query)?'':'none'; });
