@@ -3890,6 +3890,7 @@ function launchGovernmentScheme() {
 
 function governmentPage() {
   const g = ensureGovernmentState();
+  const totalAllocation = Object.values(g.departments || {}).reduce((sum, value) => sum + Number(value || 0), 0);
   const wins = governmentMandateCount();
   const majorityReached = wins >= governmentMajorityMark();
   const formed = !!g.formed;
