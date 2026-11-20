@@ -4472,6 +4472,11 @@ function ensureGovernmentState() {
   if (!Array.isArray(g.manifestoPromises)) g.manifestoPromises = [];
   if (!Array.isArray(g.coalitionPartners)) g.coalitionPartners = [];
   if (!Array.isArray(g.history)) g.history = [];
+  if (!Array.isArray(g.projects)) g.projects = [];
+  if (!Array.isArray(g.governmentOrders)) g.governmentOrders = [];
+  if (!Array.isArray(g.departmentReviews)) g.departmentReviews = [];
+  if (!Array.isArray(g.auditFindings)) g.auditFindings = [];
+  if (!g.annualBudget || typeof g.annualBudget !== 'object') g.annualBudget = { year: Number(state.year || 1), approved: 5000000000, spent: 0, revenue: 5000000000 };
   if (!g.formationMeeting || typeof g.formationMeeting !== 'object') g.formationMeeting = { status:'Not convened', nominees:[], selectedLeaderId:null, votes:{}, resolution:null };
   if (!g.formation || typeof g.formation !== 'object') g.formation = { stage:'not-started', governorInvitation:null, appointment:null, cmOath:null, cabinetOath:null, floorTest:null };
   if (!g.formation.stage) g.formation.stage = g.formed ? 'government-formed' : 'not-started';
@@ -4696,6 +4701,64 @@ function launchGovernmentScheme() {
   saveState(); render(); toast(`${available[0]} launched. ₹50 lakh allocated.`);
 }
 
+
+function createGovernmentProject() {
+  const g = ensureGovernmentState();
+  if (!g.formed) return toast('Form your government first.');
+  const name = prompt('Enter the public infrastructure project name:');
+  if (!name || !name.trim()) return;
+  const department = prompt('Responsible department (e.g. Infrastructure, Health, Education):', 'Infrastructure');
+  if (!department || !department.trim()) return;
+  const costCr = Number(prompt('Estimated project cost in ₹ crore:', '25'));
+  if (!Number.isFinite(costCr) || costCr <= 0 || costCr > 10000) return toast('Enter a valid project cost in crore.');
+  const duration = Number(prompt('Estimated completion time in months:', '12'));
+  if (!Number.isInteger(duration) || duration < 1 || duration > 120) return toast('Enter a valid duration from 1 to 120 months.');
+  const cost = Math.round(costCr * 10000000);
+  if (cost > g.treasury) return toast('Insufficient government treasury for this project.');
+  g.treasury -= cost;
+  g.projects.unshift({id:Date.now(),name:name.trim(),department:department.trim(),cost,durationMonths:duration,progress:0,status:'Approved',createdAt:dateText(),createdMonth:Number(state.month),createdYear:Number(state.year),milestones:[{name:'Administrative approval',status:'Completed'},{name:'Detailed project report',status:'Pending'},{name:'Tendering and procurement',status:'Pending'},{name:'Execution and monitoring',status:'Pending'}]});
+  g.history.unshift({day:state.day,month:state.month,year:state.year,event:`Project approved: ${name.trim()} · ${department.trim()} · ${money(cost)}`});
+  saveState(); render(); toast('Project approved and funds reserved in the government treasury.');
+}
+function issueGovernmentOrder() {
+  const g = ensureGovernmentState();
+  if (!g.formed) return toast('Form your government first.');
+  const title = prompt('Government Order / policy title:');
+  if (!title || !title.trim()) return;
+  const department = prompt('Issuing department:', 'General Administration');
+  if (!department || !department.trim()) return;
+  const details = prompt('Describe the order, scope and implementation direction:');
+  if (!details || !details.trim()) return;
+  g.governmentOrders.unshift({id:Date.now(),title:title.trim(),department:department.trim(),details:details.trim(),status:'Issued in simulation',date:dateText(),year:state.year,month:state.month});
+  g.history.unshift({day:state.day,month:state.month,year:state.year,event:`Government order issued: ${title.trim()}`});
+  saveState(); render(); toast('Government order recorded.');
+}
+function reviewGovernmentDepartment() {
+  const g = ensureGovernmentState();
+  if (!g.formed) return toast('Form your government first.');
+  const departments = Object.keys(g.departments || {});
+  const name = prompt(`Choose department to review:\n${departments.map((d,i)=>`${i+1}. ${d}`).join('\n')}`);
+  const department = departments[Number(name)-1] || departments.find(d=>d.toLowerCase()===String(name||'').toLowerCase());
+  if (!department) return toast('Department not recognised.');
+  const score = Math.max(0,Math.min(100,Math.round(Number(prompt('Department performance score (0–100):','70')))));
+  if (!Number.isFinite(score)) return toast('Enter a valid score.');
+  const note = prompt('Review findings / action required:','Review staffing, service delivery and pending files.');
+  g.departmentReviews.unshift({department,score,note:note||'',date:dateText()});
+  g.performance = Math.round((Number(g.performance||50)*0.8)+(score*0.2));
+  g.history.unshift({day:state.day,month:state.month,year:state.year,event:`${department} department reviewed: ${score}/100`});
+  saveState(); render(); toast(`${department} review recorded.`);
+}
+function advanceGovernmentProject(id) {
+  const g=ensureGovernmentState(); const project=g.projects.find(p=>String(p.id)===String(id));
+  if(!g.formed||!project||project.status==='Completed') return;
+  project.progress=Math.min(100,Number(project.progress||0)+25);
+  project.status=project.progress>=100?'Completed':'In progress';
+  const milestone=project.milestones?.find(m=>m.status==='Pending'); if(milestone) milestone.status='Completed';
+  if(project.status==='Completed'){g.performance=Math.min(100,Number(g.performance||50)+2);state.publicSupport=Math.min(100,Number(state.publicSupport||0)+1);}
+  g.history.unshift({day:state.day,month:state.month,year:state.year,event:`${project.name}: progress updated to ${project.progress}%`});
+  saveState();render();toast(`Project progress updated to ${project.progress}%.`);
+}
+
 function governmentPage() {
   const g = ensureGovernmentState();
   const totalAllocation = Object.values(g.departments || {}).reduce((sum, value) => sum + Number(value || 0), 0);
@@ -4751,7 +4814,7 @@ function governmentPage() {
       <div class="gov-budget-actions"><button data-gov-budget="${escapeHtml(name)}" data-delta="-5" ${!formed || value <= 5 ? 'disabled' : ''}>−5%</button><button data-gov-budget="${escapeHtml(name)}" data-delta="5" ${!formed || totalAllocation >= 100 ? 'disabled' : ''}>+5%</button></div>
     </div>`).join('');
   return `
-    <div class="page-heading"><div><div class="eyebrow">PUBLIC ADMINISTRATION</div><h1>Government <em>command</em></h1><p>Form a cabinet, manage public funds and deliver state programmes.</p></div><div class="date-card"><span>GOVERNMENT STATUS</span><b>${formed ? 'GOVERNMENT FORMED' : majorityReached ? 'MAJORITY SECURED' : wins ? 'MAJORITY NOT REACHED' : 'NOT FORMED'}</b><small>${wins}/113 seats needed for majority</small></div></div>
+    <div class="page-heading"><div><div class="eyebrow">PUBLIC ADMINISTRATION</div><h1>Government <em>command</em></h1><p>Manage ministries, public finances, infrastructure projects, government orders and service delivery.</p></div><div class="date-card"><span>GOVERNMENT STATUS</span><b>${formed ? 'GOVERNMENT FORMED' : majorityReached ? 'MAJORITY SECURED' : wins ? 'MAJORITY NOT REACHED' : 'NOT FORMED'}</b><small>${wins}/113 seats needed for majority</small></div></div>
     <section class="panel government-hero"><span class="gold-tag">STATE ADMINISTRATION</span><h2>${formed ? 'Your state government' : majorityReached ? 'Assembly majority secured' : wins ? 'The path to a majority' : 'The path to government'}</h2>
       <p class="panel-description">${formed ? `Chief Minister: ${escapeHtml(g.chiefMinister || state.playerName)}. Build your cabinet and deliver programmes.` : 'One MLA victory gives you one Assembly seat, not a government. A single party needs 113 of 224 seats to form a majority government. Party candidates must be approved, funded and included in the election cycle before their simulated constituency results count.'}</p>
       <div class="government-unlock-grid"><div><b>${wins} / 224</b><small>Party Assembly seats won · majority 113</small></div><div><b>${money(g.treasury)}</b><small>Government treasury</small></div><div><b>${Number(g.performance)}%</b><small>Administration performance</small></div><div><b>${appointedMinisterCount}/${governmentPortfolios.length}</b><small>Ministers appointed</small></div></div>
@@ -4794,6 +4857,24 @@ function governmentPage() {
     <section class="panel gov-scheme-panel"><div class="command-section-head"><div><span class="eyebrow">PUBLIC DELIVERY</span><h2>Government programmes</h2></div><b>${g.schemes.length} launched</b></div>
       <p class="panel-description">Launch a state programme using ₹50 lakh from the government treasury.</p><button class="primary-btn" data-action="gov-scheme" ${!formed ? 'disabled' : ''}>LAUNCH NEXT PUBLIC PROGRAMME</button>
       ${g.schemes.length ? g.schemes.map(item => `<div class="gov-scheme-row"><div><b>${escapeHtml(item.name)}</b><small>${escapeHtml(item.department)} · ${escapeHtml(item.status)}</small></div><strong>${money(item.cost)}</strong></div>`).join('') : '<p class="panel-description">No programmes launched yet.</p>'}
+    </section>
+    <section class="panel" style="margin-top:16px">
+      <div class="command-section-head"><div><span class="eyebrow">STATE DEVELOPMENT</span><h2>Infrastructure projects</h2></div><b>${g.projects.length} projects</b></div>
+      <p class="panel-description">Create capital projects, reserve treasury funds and track administrative approval, procurement and execution milestones.</p>
+      <button class="primary-btn" data-action="gov-project-create" ${!formed?'disabled':''}>APPROVE NEW PROJECT</button>
+      ${g.projects.length?g.projects.slice(0,10).map(project=>`<div class="gov-scheme-row"><div><b>${escapeHtml(project.name)}</b><small>${escapeHtml(project.department)} · ${escapeHtml(project.status)} · ${project.durationMonths} months</small><div class="gov-budget-track"><i style="width:${Number(project.progress||0)}%"></i></div><small>${Number(project.progress||0)}% complete · ${money(project.cost)}</small></div><button class="secondary-btn" data-gov-project-progress="${escapeHtml(project.id)}" ${!formed||project.status==='Completed'?'disabled':''}>UPDATE MILESTONE</button></div>`).join(''):'<p class="panel-description">No capital projects approved yet.</p>'}
+    </section>
+    <section class="panel" style="margin-top:16px">
+      <div class="command-section-head"><div><span class="eyebrow">EXECUTIVE GOVERNANCE</span><h2>Government orders & rules</h2></div><b>${g.governmentOrders.length} issued</b></div>
+      <p class="panel-description">Record simulated Government Orders, administrative directions and policy implementation instructions. This is a gameplay record, not a legally published notification.</p>
+      <button class="primary-btn" data-action="gov-order-create" ${!formed?'disabled':''}>ISSUE GOVERNMENT ORDER</button>
+      ${g.governmentOrders.slice(0,8).map(order=>`<div class="gov-scheme-row"><div><b>${escapeHtml(order.title)}</b><small>${escapeHtml(order.department)} · ${escapeHtml(order.date)} · ${escapeHtml(order.status)}</small><small>${escapeHtml(order.details)}</small></div></div>`).join('')}
+    </section>
+    <section class="panel" style="margin-top:16px">
+      <div class="command-section-head"><div><span class="eyebrow">ADMINISTRATIVE ACCOUNTABILITY</span><h2>Department performance reviews</h2></div><b>${g.departmentReviews.length} reviews</b></div>
+      <p class="panel-description">Review department delivery, record findings and track administrative performance.</p>
+      <button class="primary-btn" data-action="gov-department-review" ${!formed?'disabled':''}>CONDUCT DEPARTMENT REVIEW</button>
+      ${g.departmentReviews.slice(0,8).map(review=>`<div class="gov-scheme-row"><div><b>${escapeHtml(review.department)} · ${review.score}/100</b><small>${escapeHtml(review.date)} · ${escapeHtml(review.note)}</small></div></div>`).join('')}
     </section>
     <section class="panel government-note"><span class="eyebrow">RECENT GOVERNMENT ACTIVITY</span><h3>Administration record</h3>
       ${g.history.length ? g.history.slice(0,8).map(item => `<div class="gov-scheme-row"><b>${escapeHtml(item.event)}</b><small>Year ${item.year}, Month ${item.month}, Day ${item.day}</small></div>`).join('') : '<p class="panel-description">Government decisions will appear here.</p>'}
@@ -6348,6 +6429,9 @@ if (!Array.isArray(state.media.history)) state.media.history = [];
   const officeDecision = event.target.closest('[data-office-decision]');
   if (officeDecision) { decideOfficeFile(officeDecision.dataset.officeFile, officeDecision.dataset.officeDecision); return; }
 
+  const projectProgressButton = event.target.closest('[data-gov-project-progress]');
+  if (projectProgressButton) { advanceGovernmentProject(projectProgressButton.dataset.govProjectProgress); return; }
+
   const action = event.target.closest('[data-action]')?.dataset.action;
 
   switch (action) {
@@ -6374,6 +6458,15 @@ if (!Array.isArray(state.media.history)) state.media.history = [];
       break;
     case 'gov-scheme':
       launchGovernmentScheme();
+      break;
+    case 'gov-project-create':
+      createGovernmentProject();
+      break;
+    case 'gov-order-create':
+      issueGovernmentOrder();
+      break;
+    case 'gov-department-review':
+      reviewGovernmentDepartment();
       break;
     case 'media-press':
       mediaAction('press');
