@@ -6004,6 +6004,27 @@ function ensureNationalCommand() {
   if (!Array.isArray(n.bills)) n.bills = [];
   if (!Array.isArray(n.projects)) n.projects = [];
   if (!Array.isArray(n.history)) n.history = [];
+  // Independent Union-level institutions; never reuse the Karnataka Assembly state.
+  if (!n.lokSabha || typeof n.lokSabha !== 'object') n.lokSabha = {};
+  const ls = n.lokSabha;
+  if (!Array.isArray(ls.partySeats)) ls.partySeats = [];
+  if (!Array.isArray(ls.candidates)) ls.candidates = [];
+  if (!Array.isArray(ls.campaignLog)) ls.campaignLog = [];
+  if (!Array.isArray(ls.sessionsLog)) ls.sessionsLog = [];
+  if (!Array.isArray(ls.motions)) ls.motions = [];
+  if (!Array.isArray(ls.questions)) ls.questions = [];
+  if (!Array.isArray(ls.enactedLaws)) ls.enactedLaws = [];
+  if (!Array.isArray(ls.oppositionReviews)) ls.oppositionReviews = [];
+  if (!Array.isArray(ls.coalitionAgreements)) ls.coalitionAgreements = [];
+  if (!Array.isArray(ls.campaigns)) ls.campaigns = [];
+  if (!ls.government || typeof ls.government !== 'object') ls.government = {status:'No Union Government formed', primeMinister:'', caretaker:false, stage:'not-formed', confidence:'Not tested', cabinet:{}};
+  if (!ls.government.cabinet || typeof ls.government.cabinet !== 'object') ls.government.cabinet = {};
+  if (!ls.election || typeof ls.election !== 'object') ls.election = {status:'Pre-election', cycle:1, totalSeats:543, majority:272, lastResult:null};
+  ls.election.totalSeats = 543; ls.election.majority = 272;
+  if (!Number.isFinite(Number(ls.election.campaignDays))) ls.election.campaignDays = 0;
+  if (!Number.isFinite(Number(ls.election.pollingDay))) ls.election.pollingDay = 0;
+  if (!Number.isFinite(Number(ls.government.supportSeats))) ls.government.supportSeats = 0;
+  if (!Number.isFinite(Number(ls.government.oppositionSeats))) ls.government.oppositionSeats = 0;
   if (!n.budget || typeof n.budget !== 'object') n.budget = { ...defaults.nationalCommand.budget };
   if (!n.budget.allocated) n.budget.allocated = { ...defaults.nationalCommand.budget.allocated };
   for (const key of ['revenue','expenditure','reserve']) if (!Number.isFinite(Number(n.budget[key]))) n.budget[key] = defaults.nationalCommand.budget[key];
@@ -6013,8 +6034,16 @@ function nationalCommandPage() {
   const n = ensureNationalCommand();
   const g = ensureGovernmentState();
   const b = n.budget;
+  const ls = n.lokSabha;
   const total = Object.values(b.allocated).reduce((sum,v)=>sum+Number(v||0),0);
-  const majority = Math.floor(543/2)+1;
+  const majority = 272;
+  const rulingSeats = Math.min(543, Math.max(0, Number(ls.government.supportSeats||0)));
+  const oppositionSeats = Math.max(0, 543-rulingSeats);
+  ls.government.oppositionSeats = oppositionSeats;
+  const electionStatus = ls.election.status || 'Pre-election';
+  const partySeatRows = ls.partySeats.length ? ls.partySeats.map((party,i)=>`<div class="history-row"><b>${escapeHtml(party.name)}</b><span>${Number(party.seats)} seats</span><button class="secondary-btn" data-ls-party-remove="${i}">REMOVE</button></div>`).join('') : '<p class="muted">No national election result has been entered. Add party seat results after a simulated general election.</p>';
+  const nationalCabinetRows = ['Home Affairs','Finance','Defence','External Affairs','Road Transport','Education','Health','Agriculture','Rural Development','Commerce'].map(portfolio=>`<div class="history-row"><b>${escapeHtml(portfolio)}</b><span>${escapeHtml(ls.government.cabinet[portfolio]||'Vacant')}</span><button class="secondary-btn" data-ls-cabinet="${escapeHtml(portfolio)}">APPOINT</button></div>`).join('');
+  const lsHistory = ls.sessionsLog.slice(0,8).map(item=>`<div class="history-row"><b>${escapeHtml(item.event)}</b><small>${escapeHtml(item.date||'')}</small></div>`).join('') || '<p class="muted">Lok Sabha proceedings will appear here.</p>';
   const role = String(state.role || '').toLowerCase();
   const isNational = role.includes('prime minister') || role.includes('union minister') || role.includes('mp');
   const portfolios = ['Home Affairs','Finance','Defence','External Affairs','Road Transport','Education','Health','Agriculture','Rural Development','Commerce'];
@@ -6023,6 +6052,13 @@ function nationalCommandPage() {
   const projects = n.projects.length ? n.projects.slice().reverse().map(x=>`<div class="history-row"><div><b>${escapeHtml(x.name)}</b><small>${escapeHtml(x.department)} · ${money(x.budget)}</small></div><span>${x.progress}% · ${escapeHtml(x.status)}</span></div>`).join('') : '<p class="muted">No national development programmes yet.</p>';
   const history = n.history.length ? n.history.slice(0,8).map(x=>`<div class="history-row"><b>${escapeHtml(x.event)}</b><small>${escapeHtml(x.date)}</small></div>`).join('') : '<p class="muted">Political and government decisions will appear here.</p>';
   return `<section class="page-heading"><div><span class="eyebrow">NATIONAL LEADERSHIP · VERSION 1.5.0</span><h1>National <em>Command Centre</em></h1><p>Manage government formation, cabinet responsibilities, legislation, public finances and development programmes in one place.</p></div></section>
+  <section class="panel national-command"><span class="gold-tag">UNION LEGISLATURE · LOK SABHA</span><h2>National House dashboard</h2><div class="stats-grid">${statCard('LOK SABHA SEATS','543','National elected House','🏛')}${statCard('MAJORITY MARK','272','Simple majority of full House','⚖')}${statCard('GOVERNMENT SUPPORT',rulingSeats,'Declared support seats','▤')}${statCard('OPPOSITION / OTHER',oppositionSeats,'Remaining seats; not party transfers','⚑')}</div><p><b>Election:</b> ${escapeHtml(electionStatus)} · <b>Union Government:</b> ${escapeHtml(ls.government.status)}</p><p class="muted">National seat arithmetic is independent of Karnataka's 224-seat Assembly. Party membership and alliance support are tracked separately.</p></section>
+  <section class="panel"><span class="eyebrow">GENERAL ELECTION & CAMPAIGN CONTROL</span><h2>Lok Sabha election operations</h2><p>AI campaign simulation can be run for national party candidates; the player's own campaign remains manually controlled.</p><button class="secondary-btn" data-national-action="campaign-ai">RUN AI NATIONAL CAMPAIGNS</button><button class="secondary-btn" data-national-action="election-poll">RECORD GENERAL ELECTION RESULTS</button><button class="secondary-btn" data-national-action="add-party-seats">ADD PARTY SEAT RESULT</button><p><b>AI campaign reports:</b> ${ls.campaignLog.length} · <b>Party result records:</b> ${ls.partySeats.length}</p>${ls.campaignLog.slice(0,4).map(x=>`<div class="history-row"><b>${escapeHtml(x.party)}</b><span>${escapeHtml(x.activity)} · ${x.score}/100</span></div>`).join('')}</section>
+  <section class="panel"><span class="eyebrow">PRESIDENT & UNION GOVERNMENT FORMATION</span><h2>Government formation and floor test</h2><p><b>Prime Minister:</b> ${escapeHtml(ls.government.primeMinister||'Not appointed')} · <b>Status:</b> ${escapeHtml(ls.government.status)}</p><p><b>Declared support:</b> ${rulingSeats}/543 · Majority required: 272</p><button class="secondary-btn" data-national-action="president-invite">PRESIDENT INVITES LEADER</button><button class="secondary-btn" data-national-action="national-coalition">RECORD COALITION SUPPORT</button><button class="secondary-btn" data-national-action="appoint-pm">APPOINT PRIME MINISTER</button><button class="primary-btn" data-national-action="national-floor-test">CONDUCT LOK SABHA FLOOR TEST</button><button class="secondary-btn" data-national-action="national-no-confidence">MOVE NO-CONFIDENCE MOTION</button><p class="muted">The President appoints the Prime Minister; the ministry is collectively responsible to the Lok Sabha. A floor test demonstrates House confidence.</p></section>
+  <section class="panel"><span class="eyebrow">LOK SABHA PROCEEDINGS</span><h2>Question Hour, debates and legislation</h2><input id="lsQuestion" class="text-input" maxlength="160" placeholder="Question to a Union Minister"><button class="secondary-btn" data-national-action="question-hour">SUBMIT MINISTERIAL QUESTION</button><input id="lsDebate" class="text-input" maxlength="120" placeholder="Debate subject"><button class="secondary-btn" data-national-action="national-debate">RECORD HOUSE DEBATE</button><p><b>Sessions held:</b> ${ls.sessionsLog.filter(x=>x.type==='session').length} · <b>Questions:</b> ${ls.questions.length} · <b>Motions:</b> ${ls.motions.length}</p></section>
+  <section class="panel"><span class="eyebrow">NATIONAL PARTY STRENGTH</span><h2>Lok Sabha party seat ledger</h2>${partySeatRows}</section>
+  <section class="panel"><span class="eyebrow">UNION CABINET</span><h2>Ministries and portfolios</h2>${nationalCabinetRows}</section>
+  <section class="panel"><span class="eyebrow">UNION PARLIAMENTARY RECORD</span><h2>Proceedings and decisions</h2>${lsHistory}</section>
   <div class="stats-grid">${statCard('Political level',escapeHtml(n.level),'Career authority','♜')}${statCard('Coalition partners',n.coalition.length,'Recorded partners','♧')}${statCard('National reserve',money(b.reserve),'Illustrative simulation budget','₹')}${statCard('Development projects',n.projects.length,'Programmes tracked','⌂')}</div>
   <div class="dashboard-grid">
    <section class="panel"><span class="eyebrow">POLITICAL CAREER & GOVERNMENT</span><h2>Leadership mandate</h2><p><b>Current role:</b> ${escapeHtml(state.role || 'Political Volunteer')}</p><p><b>State government:</b> ${g.formed ? 'Formed' : 'Not formed'} · <b>National office:</b> ${isNational ? 'National-level role detected' : 'Not currently in a national-level role'}</p><label class="field-label">Simulation government level</label><select id="nationalLevel" class="text-input"><option ${n.level==='State'?'selected':''}>State</option><option ${n.level==='Coalition'?'selected':''}>Coalition</option><option ${n.level==='National'?'selected':''}>National</option></select><button class="primary-btn" data-national-action="update-level">UPDATE GOVERNMENT LEVEL</button><p class="muted">This is a career simulation setting. It does not grant a real-world office or legal authority.</p></section>
@@ -6038,6 +6074,69 @@ function nationalCommandPage() {
 function nationalCommandAction(action) {
   const n = ensureNationalCommand();
   const log = event => n.history.unshift({ event, date: dateText() });
+  const ls = n.lokSabha;
+  const lsLog = event => { ls.sessionsLog.unshift({event,date:dateText()}); ls.sessionsLog=ls.sessionsLog.slice(0,100); };
+  if (action === 'campaign-ai') {
+    const rivals = ensureRivalPartyIntelligence().parties;
+    const partyNames = [...new Set([...(Array.isArray(state.parties)?state.parties:[]).map(x=>x.name), ...rivals.map(x=>x.name)].filter(Boolean))].slice(0,12);
+    if (!partyNames.length) partyNames.push('National parties');
+    partyNames.forEach((party,i)=>{ const activities=['Public meetings','Door-to-door outreach','Manifesto outreach','Constituency issue campaign','Volunteer mobilisation']; const score=Math.max(15,Math.min(95,Math.round(35+(Number(state.partyPopularity||20)*0.35)+(i*7)%25))); ls.campaignLog.unshift({party,activity:activities[(Number(state.month||1)+i)%activities.length],score,date:dateText()}); });
+    ls.campaignLog=ls.campaignLog.slice(0,60); ls.election.status='National campaign activity simulated'; ls.election.campaignDays=Number(ls.election.campaignDays||0)+1; lsLog('AI parties completed national campaign activities; player campaign remains manual'); toast('AI national campaign activities completed.');
+  }
+  if (action === 'add-party-seats') {
+    const name=prompt('Enter national party name:'); if(!name||!name.trim()) return;
+    const raw=prompt('Enter Lok Sabha seats won by this party (0–543):','100'); if(raw===null)return;
+    const seats=Math.floor(Number(raw)); if(!Number.isFinite(seats)||seats<0||seats>543)return toast('Enter a valid seat count between 0 and 543.');
+    const existing=ls.partySeats.find(x=>x.name.toLowerCase()===name.trim().toLowerCase());
+    const totalOthers=ls.partySeats.filter(x=>x!==existing).reduce((sum,x)=>sum+Number(x.seats||0),0);
+    if(totalOthers+seats>543)return toast('Recorded party seats cannot exceed 543.');
+    if(existing) existing.seats=seats; else ls.partySeats.push({name:name.trim().slice(0,60),seats});
+    lsLog(`General election result recorded: ${name.trim()} won ${seats} Lok Sabha seats`); toast('Party seat result recorded.');
+  }
+  if (action === 'election-poll') {
+    if(!ls.partySeats.length)return toast('Record party seat results before finalising the national election.');
+    const total=ls.partySeats.reduce((sum,x)=>sum+Number(x.seats||0),0); if(total>543)return toast('Party results exceed 543 seats.');
+    ls.election.status='Results declared'; ls.election.lastResult={date:dateText(),recordedSeats:total,unallocated:543-total};
+    lsLog(`Lok Sabha general election results declared; ${total} party seats recorded, ${543-total} seats unallocated`); toast('National election results recorded.');
+  }
+  if (action === 'president-invite') {
+    const leader=prompt('Enter leader invited by the President to form the Union Government:'); if(!leader||!leader.trim())return;
+    ls.government.invitedLeader=leader.trim(); ls.government.stage='invited'; ls.government.status='President invited leader · majority to be demonstrated';
+    lsLog(`President invited ${leader.trim()} to form the Union Government`); toast('Presidential invitation recorded.');
+  }
+  if (action === 'national-coalition') {
+    const name=prompt('Supporting party / alliance name:'); if(!name||!name.trim())return;
+    const raw=prompt('Number of Lok Sabha MPs committing support:'); if(raw===null)return;
+    const seats=Math.floor(Number(raw)); const used=ls.coalitionAgreements.reduce((sum,x)=>sum+Number(x.seats||0),0);
+    if(!Number.isFinite(seats)||seats<1||used+seats>543)return toast('Support commitments must be positive and cannot exceed 543.');
+    ls.coalitionAgreements.push({name:name.trim(),seats,date:dateText()}); ls.government.supportSeats=Math.min(543,ls.government.supportSeats+seats); lsLog(`${name.trim()} committed ${seats} MPs to support the invited leader`); toast('Coalition support recorded separately from party seats.');
+  }
+  if (action === 'appoint-pm') {
+    if(!ls.government.invitedLeader)return toast('Record the President invitation first.');
+    if(ls.government.supportSeats<272)return toast('At least 272 declared support seats are required before simulated appointment.');
+    ls.government.primeMinister=ls.government.invitedLeader; ls.government.stage='appointed'; ls.government.status='Prime Minister appointed · oath and floor test pending';
+    lsLog(`${ls.government.primeMinister} appointed Prime Minister; ministry formation and floor test pending`); toast('Prime Minister appointment recorded.');
+  }
+  if (action === 'national-floor-test') {
+    if(ls.government.stage!=='appointed')return toast('A Prime Minister must be appointed first.');
+    const passed=ls.government.supportSeats>=272; ls.government.confidence=passed?'Confidence established':'Confidence not established';
+    ls.government.status=passed?'Union Government in office':'Caretaker Union Government · Floor test failed'; ls.government.caretaker=!passed; ls.government.stage=passed?'formed':'floor-test-failed';
+    lsLog(`Lok Sabha floor test ${passed?'passed':'failed'} with ${ls.government.supportSeats} declared support seats`); toast(passed?'Floor test passed. Union Government is in office.':'Floor test failed. Caretaker administration continues.');
+  }
+  if (action === 'national-no-confidence') {
+    const passed=ls.government.supportSeats<272; const result=passed?'No-confidence motion carried · Union Government loses confidence':'No-confidence motion defeated · Union Government retains majority';
+    ls.motions.unshift({type:'No-confidence motion',result,date:dateText(),support:ls.government.supportSeats,majority:272});
+    if(passed){ls.government.caretaker=true;ls.government.status='Caretaker Union Government · Lost Lok Sabha confidence';ls.government.stage='caretaker';ls.government.confidence='Lost confidence';ls.government.invitedLeader='';ls.government.supportSeats=0;}
+    lsLog(result); toast(result);
+  }
+  if (action === 'question-hour') {
+    const question=document.querySelector('#lsQuestion')?.value.trim(); if(!question)return toast('Enter a question for a Union Minister.');
+    ls.questions.unshift({question,date:dateText(),status:'Submitted for Question Hour'}); lsLog(`Question Hour: ${question}`); toast('Question entered in the Lok Sabha record.');
+  }
+  if (action === 'national-debate') {
+    const subject=document.querySelector('#lsDebate')?.value.trim(); if(!subject)return toast('Enter a debate subject.');
+    ls.oppositionReviews.unshift({subject,date:dateText(),status:'Debate recorded'}); lsLog(`Lok Sabha debate: ${subject}`); toast('House debate recorded.');
+  }
   if (action === 'update-level') {
     const value = document.querySelector('#nationalLevel')?.value;
     if (!['State','Coalition','National'].includes(value)) return;
@@ -6622,6 +6721,10 @@ if (!Array.isArray(state.media.history)) state.media.history = [];
 
   const nationalActionButton = event.target.closest('[data-national-action]');
   if (nationalActionButton) { nationalCommandAction(nationalActionButton.dataset.nationalAction); return; }
+  const lsCabinetButton = event.target.closest('[data-ls-cabinet]');
+  if (lsCabinetButton) { const n=ensureNationalCommand(); const portfolio=lsCabinetButton.dataset.lsCabinet; const name=prompt(`Appoint Union Minister for ${portfolio}:`); if(name&&name.trim()){n.lokSabha.government.cabinet[portfolio]=name.trim().slice(0,60);n.lokSabha.sessionsLog.unshift({event:`Union portfolio ${portfolio} assigned to ${name.trim()}`,date:dateText()});saveState();render();toast('Union Cabinet portfolio updated.');} return; }
+  const lsPartyRemove = event.target.closest('[data-ls-party-remove]');
+  if (lsPartyRemove) { const n=ensureNationalCommand(); const i=Number(lsPartyRemove.dataset.lsPartyRemove); if(n.lokSabha.partySeats[i]){n.lokSabha.partySeats.splice(i,1);saveState();render();} return; }
   const nationalAppointButton = event.target.closest('[data-national-appoint]');
   if (nationalAppointButton) {
     const n = ensureNationalCommand();
