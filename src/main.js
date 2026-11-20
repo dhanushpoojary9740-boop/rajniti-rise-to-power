@@ -543,6 +543,9 @@ function migratePartyManagementSave() {
   if (partySaveMigrated) saveState();
 }
 
+// Election seat reference data must exist before saved candidate migrations run.
+const lokSabhaSeatAllocation = [{"unit": "Andhra Pradesh", "seats": 25}, {"unit": "Arunachal Pradesh", "seats": 2}, {"unit": "Assam", "seats": 14}, {"unit": "Bihar", "seats": 40}, {"unit": "Chhattisgarh", "seats": 11}, {"unit": "Goa", "seats": 2}, {"unit": "Gujarat", "seats": 26}, {"unit": "Haryana", "seats": 10}, {"unit": "Himachal Pradesh", "seats": 4}, {"unit": "Jharkhand", "seats": 14}, {"unit": "Karnataka", "seats": 28}, {"unit": "Kerala", "seats": 20}, {"unit": "Madhya Pradesh", "seats": 29}, {"unit": "Maharashtra", "seats": 48}, {"unit": "Manipur", "seats": 2}, {"unit": "Meghalaya", "seats": 2}, {"unit": "Mizoram", "seats": 1}, {"unit": "Nagaland", "seats": 1}, {"unit": "Odisha", "seats": 21}, {"unit": "Punjab", "seats": 13}, {"unit": "Rajasthan", "seats": 25}, {"unit": "Sikkim", "seats": 1}, {"unit": "Tamil Nadu", "seats": 39}, {"unit": "Telangana", "seats": 17}, {"unit": "Tripura", "seats": 2}, {"unit": "Uttar Pradesh", "seats": 80}, {"unit": "Uttarakhand", "seats": 5}, {"unit": "West Bengal", "seats": 42}, {"unit": "Andaman & Nicobar Islands", "seats": 1}, {"unit": "Chandigarh", "seats": 1}, {"unit": "Dadra & Nagar Haveli and Daman & Diu", "seats": 2}, {"unit": "Delhi", "seats": 7}, {"unit": "Jammu & Kashmir", "seats": 5}, {"unit": "Ladakh", "seats": 1}, {"unit": "Lakshadweep", "seats": 1}, {"unit": "Puducherry", "seats": 1}];
+
 migratePartyManagementSave();
 
 // Migrate older saves safely into the ground-politics system.
@@ -3621,7 +3624,6 @@ function decidePartySlate(id, decision) {
 }
 
 
-const lokSabhaSeatAllocation = [{"unit": "Andhra Pradesh", "seats": 25}, {"unit": "Arunachal Pradesh", "seats": 2}, {"unit": "Assam", "seats": 14}, {"unit": "Bihar", "seats": 40}, {"unit": "Chhattisgarh", "seats": 11}, {"unit": "Goa", "seats": 2}, {"unit": "Gujarat", "seats": 26}, {"unit": "Haryana", "seats": 10}, {"unit": "Himachal Pradesh", "seats": 4}, {"unit": "Jharkhand", "seats": 14}, {"unit": "Karnataka", "seats": 28}, {"unit": "Kerala", "seats": 20}, {"unit": "Madhya Pradesh", "seats": 29}, {"unit": "Maharashtra", "seats": 48}, {"unit": "Manipur", "seats": 2}, {"unit": "Meghalaya", "seats": 2}, {"unit": "Mizoram", "seats": 1}, {"unit": "Nagaland", "seats": 1}, {"unit": "Odisha", "seats": 21}, {"unit": "Punjab", "seats": 13}, {"unit": "Rajasthan", "seats": 25}, {"unit": "Sikkim", "seats": 1}, {"unit": "Tamil Nadu", "seats": 39}, {"unit": "Telangana", "seats": 17}, {"unit": "Tripura", "seats": 2}, {"unit": "Uttar Pradesh", "seats": 80}, {"unit": "Uttarakhand", "seats": 5}, {"unit": "West Bengal", "seats": 42}, {"unit": "Andaman & Nicobar Islands", "seats": 1}, {"unit": "Chandigarh", "seats": 1}, {"unit": "Dadra & Nagar Haveli and Daman & Diu", "seats": 2}, {"unit": "Delhi", "seats": 7}, {"unit": "Jammu & Kashmir", "seats": 5}, {"unit": "Ladakh", "seats": 1}, {"unit": "Lakshadweep", "seats": 1}, {"unit": "Puducherry", "seats": 1}];
 
 function nationalElectionArchitecturePanel() {
   const totalSeats = lokSabhaSeatAllocation.reduce((sum, item) => sum + item.seats, 0);
