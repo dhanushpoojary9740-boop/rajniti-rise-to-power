@@ -2390,3 +2390,26 @@ input, select, textarea {
   .national-ls-state-grid { grid-template-columns:1fr; }
   .national-lok-sabha-actions .primary-btn { width:100%; }
 }
+
+
+/* RAJNITI 4.4.0 · Party-wide constituency election results */
+.party-election-results-block { margin:18px 0; padding:14px; border:1px solid rgba(201,165,93,.28); border-radius:13px; background:rgba(9,15,24,.55); }
+.party-result-tools { display:grid; grid-template-columns:minmax(0,1.5fr) minmax(130px,1fr); gap:9px; margin:12px 0; }
+.party-result-tools input,.party-result-tools select { min-width:0; width:100%; padding:11px 12px; border:1px solid rgba(255,255,255,.13); border-radius:9px; color:var(--text-primary,#f1f3f6); background:rgba(255,255,255,.045); }
+.party-result-list { display:grid; gap:10px; max-height:650px; overflow:auto; }
+.party-result-candidate { padding:12px; border:1px solid rgba(255,255,255,.08); border-radius:11px; background:rgba(255,255,255,.025); }
+.party-result-candidate[hidden] { display:none; }
+.party-result-topline { display:flex; align-items:flex-start; justify-content:space-between; gap:10px; }
+.party-result-topline>div { display:grid; gap:4px; min-width:0; }
+.party-result-topline b { color:var(--text-primary,#f1f3f6); }
+.party-result-topline small { color:var(--text-secondary,#aab2c0); font-size:.78rem; }
+.party-result-status { flex:0 0 auto; font-size:.68rem; font-weight:800; letter-spacing:.04em; padding:5px 7px; border-radius:6px; }
+.party-result-status.won { color:#8bd5a4; background:rgba(58,160,93,.13); }
+.party-result-status.lost { color:#e3a0a0; background:rgba(190,72,72,.13); }
+.party-result-metrics { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px; margin:12px 0; }
+.party-result-metrics span { display:grid; gap:4px; padding:8px; border-radius:8px; background:rgba(255,255,255,.035); }
+.party-result-metrics small { color:var(--text-secondary,#aab2c0); font-size:.64rem; }
+.party-result-metrics b { font-size:.95rem; color:#e2c17e; font-variant-numeric:tabular-nums; }
+.party-result-candidate details { border-top:1px solid rgba(255,255,255,.07); padding-top:8px; }
+.party-result-candidate summary { color:var(--text-secondary,#b7c0cc); cursor:pointer; font-size:.82rem; }
+@media(max-width:520px) { .party-result-tools { grid-template-columns:1fr; } .party-result-topline { flex-direction:column; } }

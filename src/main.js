@@ -2193,6 +2193,85 @@ function advanceElectionCount() {
   if (count.round >= count.totalRounds) completeElectionCounting(active);
   saveState(); render();
 }
+
+function buildPartyWideElectionResults(active, playerResult) {
+  const cycle = Number(active.scheduledAt || currentMonthIndex());
+  const partyName = state.party || 'Independent';
+  const playerRow = {
+    candidateId: active.candidateId || 'player',
+    candidateName: active.candidateName || state.playerName || 'Player',
+    constituency: active.constituency || 'Player constituency',
+    stateName: active.stateName || state.stateName || 'Karnataka',
+    party: partyName,
+    isPlayer: true,
+    isManualMember: false,
+    result: playerResult.result,
+    votes: Number(playerResult.candidateVotes || 0),
+    voteShare: Number(playerResult.candidateShare || 0),
+    turnout: Number(playerResult.turnout || 0),
+    totalVoters: Number(playerResult.totalVoters || 0),
+    margin: Math.abs(Number(playerResult.candidateVotes || 0) - Number(playerResult.opponentVotes || 0)),
+    winnerName: playerResult.result === 'Won' ? playerRowName(active) : (playerResult.contestants?.[0]?.name || ''),
+    competitors: (playerResult.contestants || []).map(item => ({ name:item.name, party:item.party, votes:Number(item.votes||0), share:Number(item.share||0) }))
+  };
+  const output = [playerRow];
+  if (state.partyId === 'independent') return output;
+  const slate = ensurePartySlate().filter(item =>
+    item.typeId === active.typeId &&
+    Number(item.scheduledAt) === cycle &&
+    ['Party Approved','Funded','Elected','Not Elected'].includes(item.status) &&
+    Number(item.approvedBudget || 0) > 0 &&
+    String(item.constituency || '').toLowerCase() !== String(active.constituency || '').toLowerCase()
+  );
+  const seen = new Set([String(active.constituency || '').toLowerCase()]);
+  slate.forEach((item,index) => {
+    const key = String(item.constituency || '').trim().toLowerCase();
+    if (!key || seen.has(key)) return;
+    seen.add(key);
+    const member = (state.partyMemberRecords || []).find(person => String(person.id) === String(item.memberId));
+    const strength = Number(member?.loyalty || 50) * .35 +
+      Number(member?.experience || 0) * .25 +
+      Number(state.partyPopularity || 0) * .4 +
+      Math.min(12, Number(item.approvedBudget || 0) / 1000000);
+    const share = Math.max(8, Math.min(68, Math.round(27 + (strength - 50) * .42 + ((index % 7) - 3))));
+    const totalVoters = active.typeId === 'assembly' ? 180000 + ((index * 7919) % 120000) : 900000 + ((index * 15427) % 700000);
+    const turnout = Math.round(totalVoters * (.58 + ((index % 9) * .012)));
+    const candidateVotes = Math.round(turnout * share / 100);
+    const remaining = Math.max(0, turnout - candidateVotes);
+    const rivalOneShare = .57 + ((index % 5) * .015);
+    const rivalOneVotes = Math.round(remaining * rivalOneShare);
+    const rivalTwoVotes = remaining - rivalOneVotes;
+    const competitors = [
+      {name:item.candidateName,party:partyName,votes:candidateVotes,share:Math.round(candidateVotes/Math.max(1,turnout)*100)},
+      {name:`${['Arun Kumar','Meera Nair','Ravi Shetty','Farah Khan','Vikram Das'][index%5]}`,party:`${['National Democratic Front','People's Alliance','Regional Congress','Jan Shakti Party'][index%4]}`,votes:rivalOneVotes,share:Math.round(rivalOneVotes/Math.max(1,turnout)*100)},
+      {name:`${['Suresh Rao','Anita Devi','Imran Ali','Joseph Mathew'][index%4]}`,party:`${['People's Front','Democratic Union','Lok Jan Party'][index%3]}`,votes:rivalTwoVotes,share:Math.round(rivalTwoVotes/Math.max(1,turnout)*100)}
+    ].sort((a,b)=>b.votes-a.votes);
+    const won = competitors[0].party === partyName && competitors[0].name === item.candidateName;
+    const ownVotes = competitors.find(candidate => candidate.name === item.candidateName && candidate.party === partyName)?.votes || 0;
+    const rivalWinner = competitors[0];
+    const rivalMargin = Math.abs(ownVotes - (competitors.find(candidate => candidate.name !== item.candidateName || candidate.party !== partyName)?.votes || 0));
+    output.push({
+      candidateId:item.memberId, candidateName:item.candidateName, constituency:item.constituency,
+      stateName:item.stateName || 'India', party:partyName, isPlayer:false,
+      isManualMember:!!member?.createdManually, result:won?'Won':'Lost',
+      votes:ownVotes, voteShare:Math.round(ownVotes/Math.max(1,turnout)*100),
+      turnout,totalVoters,margin:rivalMargin,winnerName:rivalWinner.name,competitors,
+      slateId:item.id
+    });
+    item.electionResult = won?'Won':'Lost';
+    item.status = won?'Elected':'Not Elected';
+    item.resultDate = dateText();
+    item.resultDetails = output[output.length-1];
+  });
+  const manual = output.filter(item=>item.isManualMember);
+  const others = output.filter(item=>!item.isPlayer&&!item.isManualMember);
+  return [playerRow, ...manual, ...others];
+}
+
+function playerRowName(active) {
+  return (active?.candidateName || state.playerName || 'Player');
+}
+
 function completeElectionCounting(active) {
   const count = active.counting;
   const contestants = count.candidates.map(item=>({name:item.name,party:item.party,votes:item.votes,share:Math.round(item.votes/Math.max(1,count.counted)*100)})).sort((a,b)=>b.votes-a.votes);
@@ -2259,7 +2338,7 @@ function completeElectionCounting(active) {
       countedForSeatTally: validSeatResults.includes(item)
     }));
   }
-  const type=electionTypes.find(item=>item.id===active.typeId);
+  result.partyCandidateResults = buildPartyWideElectionResults(active, result);\n  const type=electionTypes.find(item=>item.id===active.typeId);
   state.elections.history.unshift(result); state.elections.history=state.elections.history.slice(0,30);
   state.elections.totalContested++; if(won){state.elections.totalWon++;state.reputation=Math.min(100,state.reputation+8);state.influence=Math.min(100,state.influence+10);state.publicSupport=Math.min(100,state.publicSupport+8);state.experience+=100;if(active.candidateId==='player'){state.role=type?.winRole||state.role;state.level=Math.max(state.level,active.typeId==='local'?2:active.typeId==='assembly'?5:8);}if(state.partyId!=='independent')state.partyPopularity=Math.min(100,state.partyPopularity+8);if(active.typeId==='assembly'){const government=ensureGovernmentState();government.manifestoPromises.unshift({id:'promise-'+Date.now(),text:active.manifesto,status:'Pending',progress:0,announcedAt:dateText(),electionId:active.id});government.manifestoPromises=government.manifestoPromises.slice(0,20);}}
   else {state.elections.totalLost++;state.reputation=Math.max(0,state.reputation-2);state.experience+=25;}
@@ -2539,7 +2618,7 @@ function addPartyMember(form) {
   if (state.money < 100) return toast('You need ₹100 to register a member.');
   if (state.partyMemberRecords.some(member => member.name.toLowerCase() === name.toLowerCase())) return toast('A member with this name already exists.');
   state.money -= 100; state.totalExpenses += 100;
-  state.partyMemberRecords.push({ id: 'member-' + Date.now(), name, role: 'General Member', loyalty: 50, experience: 0, joined: dateText(), isFounder: false });
+  state.partyMemberRecords.push({ id: 'member-' + Date.now(), name, role: 'General Member', loyalty: 50, experience: 0, joined: dateText(), isFounder: false, createdManually: true });
   state.partyMembers = state.partyMemberRecords.length;
   state.partyHistory.unshift({ event: name + ' joined the party', date: dateText() });
   saveState(); render(); toast(name + ' added to the party.');
@@ -3843,7 +3922,38 @@ function showElectionResult(result) {
         <div><small>${escapeHtml(result.opponentName)}</small><b>${result.opponentVotes.toLocaleString('en-IN')}</b><span>Opposition votes</span></div>
       </div>
       <div class="party-stat-row"><span>Total turnout</span><b>${result.turnout.toLocaleString('en-IN')} / ${result.totalVoters.toLocaleString('en-IN')}</b></div>
-      ${(result.contestants || []).map((item,index)=>`<div class="finance-history"><span>${index+1}. ${escapeHtml(item.name)} · ${escapeHtml(item.party)}</span><b>${item.share}%</b></div>`).join('')}
+      ${(result.contestants || []).map((item,index)=>`<div class="finance-history"><span>${index+1}. ${escapeHtml(item.name)} · ${escapeHtml(item.party)} · ${Number(item.votes||0).toLocaleString('en-IN')} votes</span><b>${item.share}%</b></div>`).join('')}
+      ${(result.partyCandidateResults || []).length ? `
+        <section class="party-election-results-block">
+          <span class="gold-tag">PARTY-WIDE COUNTING REPORT</span>
+          <h3>All ${escapeHtml(state.party || 'party')} candidates</h3>
+          <p class="panel-description">Your constituency result is shown first, manually registered members next, followed by other party candidates. Each candidate has a constituency-level simulated count.</p>
+          <div class="party-result-tools">
+            <input id="partyResultSearch" type="search" placeholder="Search candidate or constituency">
+            <select id="partyResultFilter">
+              <option value="all">All candidates</option><option value="won">Winners</option><option value="lost">Not elected</option><option value="manual">Manually created members</option>
+            </select>
+          </div>
+          <div class="party-result-list">
+            ${(result.partyCandidateResults || []).map((candidate,index)=>`
+              <article class="party-result-candidate" data-party-result-row="${escapeHtml([candidate.candidateName,candidate.constituency,candidate.stateName,candidate.party].join(' ').toLowerCase())}" data-result-status="${candidate.result==='Won'?'won':'lost'}" data-result-manual="${candidate.isManualMember?'yes':'no'}">
+                <div class="party-result-topline">
+                  <div><b>${index===0?'★ ':''}${escapeHtml(candidate.candidateName)}</b><small>${escapeHtml(candidate.constituency)} · ${escapeHtml(candidate.stateName || '')}</small></div>
+                  <span class="party-result-status ${candidate.result==='Won'?'won':'lost'}">${candidate.isPlayer?'YOUR RESULT · ':''}${candidate.result==='Won'?'WON':'NOT ELECTED'}</span>
+                </div>
+                <div class="party-result-metrics">
+                  <span><small>VOTES</small><b>${Number(candidate.votes||0).toLocaleString('en-IN')}</b></span>
+                  <span><small>VOTE SHARE</small><b>${Number(candidate.voteShare||0)}%</b></span>
+                  <span><small>${candidate.result==='Won'?'WIN MARGIN':'DEFEAT MARGIN'}</small><b>${Number(candidate.margin||0).toLocaleString('en-IN')}</b></span>
+                </div>
+                <details><summary>View competitors and vote percentages</summary>
+                  ${(candidate.competitors||[]).map(contestant=>`<div class="finance-history"><span>${escapeHtml(contestant.name)} · ${escapeHtml(contestant.party)}</span><b>${Number(contestant.votes||0).toLocaleString('en-IN')} · ${Number(contestant.share||0)}%</b></div>`).join('')}
+                  <div class="party-stat-row"><span>Turnout</span><b>${Number(candidate.turnout||0).toLocaleString('en-IN')} / ${Number(candidate.totalVoters||0).toLocaleString('en-IN')}</b></div>
+                </details>
+              </article>
+            `).join('')}
+          </div>
+        </section>` : ''}
       <div class="party-stat-row"><span>Candidate expenditure / simulated ceiling</span><b>${money(result.candidateSpending || 0)} / ${money(result.candidateSpendingLimit || 0)}</b></div>
       ${result.totalSeats ? `<div class="party-stat-row"><span>Simulated seat projection</span><b>${result.seatsWon} / ${result.totalSeats} · Majority ${result.majorityMark}</b></div><p class="panel-description">${result.hungHouse ? 'No single-party majority in this simulated result. Coalition negotiations would be needed to form a government.' : 'The simulated result reaches the majority threshold.'}</p>` : ''}
       <button class="primary-btn full" data-action="close-election-result">CONTINUE →</button>
@@ -5737,6 +5847,14 @@ if (!Array.isArray(state.media.history)) state.media.history = [];
 });
 
 document.addEventListener('change', event => {
+  if (event.target && event.target.id === 'partyResultFilter') {
+    const filter = event.target.value;
+    document.querySelectorAll('.party-result-list [data-party-result-row]').forEach(row => {
+      row.hidden = filter === 'won' ? row.dataset.resultStatus !== 'won'
+        : filter === 'lost' ? row.dataset.resultStatus !== 'lost'
+        : filter === 'manual' ? row.dataset.resultManual !== 'yes' : false;
+    });
+  }
   if (event.target.id === 'groundState') {
     const stateName = event.target.value;
     const districtSelect = document.querySelector('#groundDistrict');
@@ -5748,6 +5866,12 @@ document.addEventListener('change', event => {
 });
 
 document.addEventListener('input', event => {
+  if (event.target && event.target.id === 'partyResultSearch') {
+    const query = event.target.value.trim().toLocaleLowerCase('en-IN');
+    document.querySelectorAll('.party-result-list [data-party-result-row]').forEach(row => {
+      row.hidden = !row.dataset.partyResultRow.includes(query);
+    });
+  }
   if (event.target && event.target.id === 'verifiedPcSearch') {
     const query = event.target.value.trim().toLocaleLowerCase('en-IN');
     document.querySelectorAll('#verifiedPcList [data-verified-pc-row]').forEach(row => {
