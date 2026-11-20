@@ -4516,7 +4516,23 @@ function governmentPage() {
   const totalAllocation = Object.values(g.departments || {}).reduce((sum, value) => sum + Number(value || 0), 0);
   const wins = governmentMandateCount();
   const majorityReached = wins >= governmentMajorityMark();
-  const formed = !!g.formed;
+  let formed = !!g.formed;
+  // Reconcile legacy/stale saves before displaying government powers.
+  // A saved "formed" flag must never override the current Assembly seat tally.
+  if (formed && !majorityReached) {
+    g.formed = false;
+    g.chiefMinister = '';
+    g.formationLeaderId = null;
+    g.cabinetConfirmed = false;
+    g.ministers = {};
+    g.history.unshift({
+      day: state.day, month: state.month, year: state.year,
+      event: `Government status corrected: ${wins} Assembly seats are below the 113-seat majority requirement`
+    });
+    saveState();
+    formed = false;
+  }
+  const appointedMinisterCount = governmentPortfolios.filter(portfolio => !!g.ministers[portfolio]).length;
   const meeting = ensureFormationMeeting();
   const electedMlas = eligibleElectedMinisters();
   const selectedPortfolio = g.pendingPortfolio || governmentPortfolios[0];
@@ -4547,10 +4563,10 @@ function governmentPage() {
       <div class="gov-budget-actions"><button data-gov-budget="${escapeHtml(name)}" data-delta="-5" ${!formed || value <= 5 ? 'disabled' : ''}>−5%</button><button data-gov-budget="${escapeHtml(name)}" data-delta="5" ${!formed || totalAllocation >= 100 ? 'disabled' : ''}>+5%</button></div>
     </div>`).join('');
   return `
-    <div class="page-heading"><div><div class="eyebrow">PUBLIC ADMINISTRATION</div><h1>Government <em>command</em></h1><p>Form a cabinet, manage public funds and deliver state programmes.</p></div><div class="date-card"><span>GOVERNMENT STATUS</span><b>${formed ? 'GOVERNMENT FORMED' : wins ? 'MANDATE AVAILABLE' : 'NOT FORMED'}</b><small>${wins}/113 seats needed for majority</small></div></div>
-    <section class="panel government-hero"><span class="gold-tag">STATE ADMINISTRATION</span><h2>${formed ? 'Your state government' : wins ? 'You have an Assembly mandate' : 'The path to government'}</h2>
+    <div class="page-heading"><div><div class="eyebrow">PUBLIC ADMINISTRATION</div><h1>Government <em>command</em></h1><p>Form a cabinet, manage public funds and deliver state programmes.</p></div><div class="date-card"><span>GOVERNMENT STATUS</span><b>${formed ? 'GOVERNMENT FORMED' : majorityReached ? 'MAJORITY SECURED' : wins ? 'MAJORITY NOT REACHED' : 'NOT FORMED'}</b><small>${wins}/113 seats needed for majority</small></div></div>
+    <section class="panel government-hero"><span class="gold-tag">STATE ADMINISTRATION</span><h2>${formed ? 'Your state government' : majorityReached ? 'Assembly majority secured' : wins ? 'The path to a majority' : 'The path to government'}</h2>
       <p class="panel-description">${formed ? `Chief Minister: ${escapeHtml(g.chiefMinister || state.playerName)}. Build your cabinet and deliver programmes.` : 'One MLA victory gives you one Assembly seat, not a government. A single party needs 113 of 224 seats to form a majority government. Party candidates must be approved, funded and included in the election cycle before their simulated constituency results count.'}</p>
-      <div class="government-unlock-grid"><div><b>${wins} / 224</b><small>Party Assembly seats won · majority 113</small></div><div><b>${money(g.treasury)}</b><small>Government treasury</small></div><div><b>${Number(g.performance)}%</b><small>Administration performance</small></div><div><b>${Object.keys(g.ministers).length}/${governmentPortfolios.length}</b><small>Ministers appointed</small></div></div>
+      <div class="government-unlock-grid"><div><b>${wins} / 224</b><small>Party Assembly seats won · majority 113</small></div><div><b>${money(g.treasury)}</b><small>Government treasury</small></div><div><b>${Number(g.performance)}%</b><small>Administration performance</small></div><div><b>${appointedMinisterCount}/${governmentPortfolios.length}</b><small>Ministers appointed</small></div></div>
       ${!meeting.selectedLeaderName && !formed ? `<button class="primary-btn" data-action="call-party-meeting" ${!majorityReached?'disabled':''}>CALL BPP LEGISLATIVE PARTY MEETING</button>` : `<button class="primary-btn" data-action="gov-form" ${!majorityReached || formed || meeting.status!=='Leader elected' ? 'disabled' : ''}>PROCEED TO GOVERNMENT FORMATION</button>`}
       <p class="panel-description government-majority-note">${formed ? `Government led by ${escapeHtml(g.chiefMinister)}.` : meeting.selectedLeaderName ? `${escapeHtml(meeting.selectedLeaderName)} has been elected Legislative Party Leader. Proceed when ready.` : majorityReached ? 'Majority secured. Hold a party meeting and elect your Legislative Party Leader before government formation.' : `You currently have ${wins} seat(s). ${governmentMajorityMark()-wins} more seat(s) are required for a single-party majority.`}</p>
     </section>
