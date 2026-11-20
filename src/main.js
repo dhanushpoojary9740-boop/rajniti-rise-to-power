@@ -2194,9 +2194,101 @@ function advanceElectionCount() {
   saveState(); render();
 }
 
+
+function stableElectionSeed(value) {
+  let hash = 2166136261;
+  const text = String(value || '');
+  for (let i = 0; i < text.length; i++) {
+    hash ^= text.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+  return hash >>> 0;
+}
+
+function simulatePartyConstituencyResult(active, item, member, index, cycle) {
+  if (item.electionResultDetails && item.electionResultDetails.electionCycle === cycle) {
+    return item.electionResultDetails;
+  }
+  const seed = stableElectionSeed(`${cycle}|${item.typeId}|${item.constituency}|${item.memberId}`);
+  const variation = seed % 9;
+  const loyalty = Number(member?.loyalty ?? 50);
+  const experience = Number(member?.experience ?? 0);
+  const popularity = Number(state.partyPopularity ?? 35);
+  const budget = Number(item.approvedBudget || 0);
+  const campaignQuality = Number(item.campaignScore || item.campaignStrength || 0);
+  const strength = loyalty * 0.28 + Math.min(100, experience) * 0.18 +
+    popularity * 0.34 + Math.min(100, budget / 1000000) * 0.12 +
+    Math.min(100, campaignQuality) * 0.08;
+  const baseShare = Math.max(7, Math.min(62, 24 + (strength - 50) * 0.48 + (variation - 4) * 1.1));
+  const rivalOne = Math.max(10, Math.min(48, 34 + ((seed >>> 8) % 11) - 5));
+  const rivalTwo = Math.max(7, Math.min(32, 19 + ((seed >>> 16) % 9) - 4));
+  const other = Math.max(3, 100 - baseShare - rivalOne - rivalTwo);
+  const raw = [baseShare, rivalOne, rivalTwo, other];
+  const total = raw.reduce((sum, value) => sum + value, 0);
+  const shares = raw.map(value => value / total);
+  const totalVoters = active.typeId === 'lok-sabha'
+    ? 850000 + (seed % 650001)
+    : active.typeId === 'assembly'
+      ? 170000 + (seed % 150001)
+      : 25000 + (seed % 55001);
+  const turnoutRate = 0.56 + ((seed >>> 4) % 1700) / 10000;
+  const turnout = Math.round(totalVoters * turnoutRate);
+  const voteCounts = [];
+  let allocated = 0;
+  shares.forEach((share, i) => {
+    const votes = i === shares.length - 1 ? turnout - allocated : Math.round(turnout * share);
+    voteCounts.push(votes);
+    allocated += votes;
+  });
+  const rivals = [
+    { name: `${['Arun Kumar','Meera Nair','Ravi Shetty','Farah Khan','Vikram Das'][seed % 5]}`, party: `${['National Democratic Front','People’s Alliance','Regional Congress','Jan Shakti Party'][seed % 4]}`, votes: voteCounts[1] },
+    { name: `${['Suresh Rao','Anita Devi','Imran Ali','Joseph Mathew'][(seed >>> 5) % 4]}`, party: `${['People’s Front','Democratic Union','Lok Jan Party'][(seed >>> 11) % 3]}`, votes: voteCounts[2] },
+    { name: `${['Kavya Menon','Deepak Patil','Naveen Das','Salma Begum'][(seed >>> 13) % 4]}`, party: 'Independent', votes: voteCounts[3] }
+  ];
+  const candidate = { name: item.candidateName, party: state.party || 'BPP', votes: voteCounts[0] };
+  const competitors = [candidate, ...rivals].sort((a,b) => b.votes - a.votes).map(person => ({
+    ...person,
+    share: Math.round(person.votes / Math.max(1, turnout) * 1000) / 10
+  }));
+  const candidatePosition = competitors.findIndex(person => person.name === candidate.name && person.party === candidate.party);
+  const winner = competitors[0];
+  const runnerUp = competitors[1];
+  const details = {
+    electionCycle: cycle,
+    candidateId: item.memberId,
+    candidateName: item.candidateName,
+    constituency: item.constituency,
+    stateName: item.stateName || 'India',
+    party: state.party || 'BPP',
+    votes: candidate.votes,
+    voteShare: Math.round(candidate.votes / Math.max(1, turnout) * 1000) / 10,
+    turnout,
+    totalVoters,
+    result: candidatePosition === 0 ? 'Won' : 'Lost',
+    margin: candidatePosition === 0 ? Math.max(0, winner.votes - runnerUp.votes) : Math.max(0, winner.votes - candidate.votes),
+    winnerName: winner.name,
+    competitors,
+    simulation: 'Fictional constituency-level simulation; generated once and saved with the election record.'
+  };
+  item.electionResultDetails = details;
+  item.electionResult = details.result;
+  item.status = details.result === 'Won' ? 'Elected' : 'Not Elected';
+  item.resultDate = dateText();
+  return details;
+}
+
 function buildPartyWideElectionResults(active, playerResult) {
-  const cycle = Number(active.scheduledAt || currentMonthIndex());
+  const cycle = Number(active.scheduledAt ?? currentMonthIndex());
   const partyName = state.party || 'Independent';
+  const playerCandidate = (playerResult.contestants || []).find(item =>
+    item.name === playerResult.candidateName && item.party === partyName
+  );
+  const playerVotes = Number(playerResult.candidateVotes || playerCandidate?.votes || 0);
+  const playerCompetitors = (playerResult.contestants || []).map(item => ({
+    name: item.name, party: item.party, votes: Number(item.votes || 0),
+    share: Math.round(Number(item.votes || 0) / Math.max(1, Number(playerResult.turnout || 0)) * 1000) / 10
+  }));
+  const playerSorted = [...playerCompetitors].sort((a,b) => b.votes - a.votes);
   const playerRow = {
     candidateId: active.candidateId || 'player',
     candidateName: active.candidateName || state.playerName || 'Player',
@@ -2206,13 +2298,13 @@ function buildPartyWideElectionResults(active, playerResult) {
     isPlayer: true,
     isManualMember: false,
     result: playerResult.result,
-    votes: Number(playerResult.candidateVotes || 0),
-    voteShare: Number(playerResult.candidateShare || 0),
+    votes: playerVotes,
+    voteShare: Math.round(playerVotes / Math.max(1, Number(playerResult.turnout || 0)) * 1000) / 10,
     turnout: Number(playerResult.turnout || 0),
     totalVoters: Number(playerResult.totalVoters || 0),
-    margin: Math.abs(Number(playerResult.candidateVotes || 0) - Number(playerResult.opponentVotes || 0)),
-    winnerName: playerResult.result === 'Won' ? playerRowName(active) : (playerResult.contestants?.[0]?.name || ''),
-    competitors: (playerResult.contestants || []).map(item => ({ name:item.name, party:item.party, votes:Number(item.votes||0), share:Number(item.share||0) }))
+    margin: playerSorted.length > 1 ? (playerSorted[0].name === (active.candidateName || state.playerName || 'Player') ? Math.max(0, playerSorted[0].votes - playerSorted[1].votes) : Math.max(0, playerSorted[0].votes - playerVotes)) : 0,
+    winnerName: playerSorted[0]?.name || '',
+    competitors: playerCompetitors
   };
   const output = [playerRow];
   if (state.partyId === 'independent') return output;
@@ -2221,139 +2313,146 @@ function buildPartyWideElectionResults(active, playerResult) {
     Number(item.scheduledAt) === cycle &&
     ['Party Approved','Funded','Elected','Not Elected'].includes(item.status) &&
     Number(item.approvedBudget || 0) > 0 &&
-    String(item.constituency || '').toLowerCase() !== String(active.constituency || '').toLowerCase()
+    String(item.constituency || '').trim().toLocaleLowerCase('en-IN') !== String(active.constituency || '').trim().toLocaleLowerCase('en-IN')
   );
-  const seen = new Set([String(active.constituency || '').toLowerCase()]);
+  const seen = new Set([String(active.constituency || '').trim().toLocaleLowerCase('en-IN')]);
+  const manualRows = [];
+  const otherRows = [];
   slate.forEach((item,index) => {
-    const key = String(item.constituency || '').trim().toLowerCase();
+    const key = String(item.constituency || '').trim().toLocaleLowerCase('en-IN');
     if (!key || seen.has(key)) return;
     seen.add(key);
     const member = (state.partyMemberRecords || []).find(person => String(person.id) === String(item.memberId));
-    const strength = Number(member?.loyalty || 50) * .35 +
-      Number(member?.experience || 0) * .25 +
-      Number(state.partyPopularity || 0) * .4 +
-      Math.min(12, Number(item.approvedBudget || 0) / 1000000);
-    const share = Math.max(8, Math.min(68, Math.round(27 + (strength - 50) * .42 + ((index % 7) - 3))));
-    const totalVoters = active.typeId === 'assembly' ? 180000 + ((index * 7919) % 120000) : 900000 + ((index * 15427) % 700000);
-    const turnout = Math.round(totalVoters * (.58 + ((index % 9) * .012)));
-    const candidateVotes = Math.round(turnout * share / 100);
-    const remaining = Math.max(0, turnout - candidateVotes);
-    const rivalOneShare = .57 + ((index % 5) * .015);
-    const rivalOneVotes = Math.round(remaining * rivalOneShare);
-    const rivalTwoVotes = remaining - rivalOneVotes;
-    const competitors = [
-      {name:item.candidateName,party:partyName,votes:candidateVotes,share:Math.round(candidateVotes/Math.max(1,turnout)*100)},
-      {name:`${['Arun Kumar','Meera Nair','Ravi Shetty','Farah Khan','Vikram Das'][index%5]}`,party:`${['National Democratic Front','People’s Alliance','Regional Congress','Jan Shakti Party'][index%4]}`,votes:rivalOneVotes,share:Math.round(rivalOneVotes/Math.max(1,turnout)*100)},
-      {name:`${['Suresh Rao','Anita Devi','Imran Ali','Joseph Mathew'][index%4]}`,party:`${['People’s Front','Democratic Union','Lok Jan Party'][index%3]}`,votes:rivalTwoVotes,share:Math.round(rivalTwoVotes/Math.max(1,turnout)*100)}
-    ].sort((a,b)=>b.votes-a.votes);
-    const won = competitors[0].party === partyName && competitors[0].name === item.candidateName;
-    const ownVotes = competitors.find(candidate => candidate.name === item.candidateName && candidate.party === partyName)?.votes || 0;
-    const rivalWinner = competitors[0];
-    const rivalMargin = Math.abs(ownVotes - (competitors.find(candidate => candidate.name !== item.candidateName || candidate.party !== partyName)?.votes || 0));
-    output.push({
-      candidateId:item.memberId, candidateName:item.candidateName, constituency:item.constituency,
-      stateName:item.stateName || 'India', party:partyName, isPlayer:false,
-      isManualMember:!!member?.createdManually, result:won?'Won':'Lost',
-      votes:ownVotes, voteShare:Math.round(ownVotes/Math.max(1,turnout)*100),
-      turnout,totalVoters,margin:rivalMargin,winnerName:rivalWinner.name,competitors,
-      slateId:item.id
-    });
-    item.electionResult = won?'Won':'Lost';
-    item.status = won?'Elected':'Not Elected';
-    item.resultDate = dateText();
-    item.resultDetails = output[output.length-1];
+    const details = simulatePartyConstituencyResult(active, item, member, index, cycle);
+    const row = {
+      ...details,
+      isPlayer: false,
+      isManualMember: !!member?.createdManually,
+      slateId: item.id
+    };
+    if (row.isManualMember) manualRows.push(row);
+    else otherRows.push(row);
   });
-  const manual = output.filter(item=>item.isManualMember);
-  const others = output.filter(item=>!item.isPlayer&&!item.isManualMember);
-  return [playerRow, ...manual, ...others];
-}
-
-function playerRowName(active) {
-  return (active?.candidateName || state.playerName || 'Player');
+  return [playerRow, ...manualRows, ...otherRows];
 }
 
 function completeElectionCounting(active) {
   const count = active.counting;
-  const contestants = count.candidates.map(item=>({name:item.name,party:item.party,votes:item.votes,share:Math.round(item.votes/Math.max(1,count.counted)*100)})).sort((a,b)=>b.votes-a.votes);
+  const contestants = count.candidates.map(item => ({
+    name:item.name, party:item.party, votes:Number(item.votes || 0),
+    share:Math.round(Number(item.votes || 0) / Math.max(1,count.counted) * 1000) / 10
+  })).sort((a,b) => b.votes - a.votes);
   const winner = contestants[0];
-  const won = winner && winner.name === active.candidateName;
+  const own = contestants.find(item => item.name === active.candidateName);
+  const won = !!winner && winner.name === active.candidateName;
   const result = {
-    id: active.id, typeName: active.typeName, candidateName: active.candidateName, candidateId: active.candidateId,
-    constituency: active.constituency, date: dateText(), result: won ? 'Won' : 'Lost',
-    totalVoters: count.totalVoters, turnout: count.turnout,
-    candidateVotes: contestants.find(x=>x.name===active.candidateName)?.votes || 0,
-    opponentVotes: contestants.find(x=>x.name===active.opponentName)?.votes || 0,
-    otherVotes: count.turnout-(contestants.find(x=>x.name===active.candidateName)?.votes || 0)-(contestants.find(x=>x.name===active.opponentName)?.votes || 0),
-    opponentName: active.opponentName, candidateShare: contestants.find(x=>x.name===active.candidateName)?.share || 0,
-    contestants, campaignScore: active.campaignScore, manifesto: active.manifesto,
-    partyFunded: !!active.partyFunded, campaignAllocation: active.initialBudget,
-    candidateSpending: Number(active.candidateSpending||0), candidateSpendingLimit:Number(active.candidateSpendingLimit||0)
+    id:active.id, typeName:active.typeName, typeId:active.typeId,
+    candidateName:active.candidateName, candidateId:active.candidateId,
+    constituency:active.constituency, stateName:active.stateName || state.stateName || 'Karnataka',
+    scheduledAt:Number(active.scheduledAt || currentMonthIndex()),
+    date:dateText(), result:won?'Won':'Lost',
+    totalVoters:Number(count.totalVoters || 0), turnout:Number(count.turnout || 0),
+    candidateVotes:Number(own?.votes || 0),
+    opponentVotes:Number(contestants.find(item => item.name === active.opponentName)?.votes || 0),
+    otherVotes:Math.max(0,Number(count.turnout || 0) - Number(own?.votes || 0) - Number(contestants.find(item => item.name === active.opponentName)?.votes || 0)),
+    opponentName:active.opponentName,
+    candidateShare:Math.round(Number(own?.votes || 0) / Math.max(1,Number(count.counted || 0)) * 1000) / 10,
+    contestants, campaignScore:active.campaignScore, manifesto:active.manifesto,
+    partyFunded:!!active.partyFunded, campaignAllocation:active.initialBudget,
+    candidateSpending:Number(active.candidateSpending || 0),
+    candidateSpendingLimit:Number(active.candidateSpendingLimit || 0),
+    countingRounds:Number(count.totalRounds || 0),
+    countingComplete:true
   };
+  result.partyCandidateResults = buildPartyWideElectionResults(active,result);
+  const partyWins = result.partyCandidateResults.filter(item => item.result === 'Won').length;
+  const partyLosses = result.partyCandidateResults.filter(item => item.result === 'Lost').length;
+  const partyContested = result.partyCandidateResults.length;
   if (active.typeId === 'assembly' || active.typeId === 'lok-sabha') {
     const totalSeats = active.typeId === 'assembly' ? 224 : 543;
-    result.totalSeats=totalSeats; result.majorityMark=Math.floor(totalSeats/2)+1;
-    result.seatsWon=Math.max(0,Math.round(totalSeats*result.candidateShare/100));
-    result.hungHouse=result.seatsWon<result.majorityMark;
-    state.elections.lastMandate={typeId:active.typeId,totalSeats,majorityMark:result.majorityMark,seatsWon:result.seatsWon,hungHouse:result.hungHouse,party:state.party||'Independent',date:dateText(),projectionOnly:true};
-  }
-  if (active.typeId === 'assembly') {
-    if (!Array.isArray(state.elections.partyAssemblyResults)) state.elections.partyAssemblyResults = [];
-    const cycle = Number(active.scheduledAt || currentMonthIndex());
-    const cycleResults = state.elections.partyAssemblyResults.filter(item => Number(item.scheduledAt) === cycle);
-    if (!cycleResults.some(item => String(item.constituency).toLowerCase() === String(active.constituency || 'Player constituency').toLowerCase())) {
-      cycleResults.push({ scheduledAt:cycle, constituency:karnatakaAssemblyConstituencies[0], candidateName:active.candidateName, result:won?'Won':'Lost', source:'Player contest', playerContest:true, countedForSeatTally:true });
-    }
-    if (state.partyId !== 'independent') {
-      const partyCandidates = ensurePartySlate().filter(item => item.typeId === 'assembly' && Number(item.scheduledAt) === cycle && ['Funded','Party Approved'].includes(item.status) && Number(item.approvedBudget || 0) > 0);
-      partyCandidates.forEach((item,index) => {
-        if (cycleResults.some(record => String(record.constituency).toLowerCase() === String(item.constituency || '').toLowerCase())) return;
-        const member = (state.partyMemberRecords || []).find(person => String(person.id) === String(item.memberId));
-        const strength = Number(member?.loyalty || 50) * 0.35 + Number(member?.experience || 0) * 0.25 + Number(state.partyPopularity || 0) * 0.4 + Math.min(12, Number(item.approvedBudget || 0) / 1000000);
-        const candidateWon = strength >= 50 + ((index % 5) - 2);
-        item.electionResult = candidateWon ? 'Won' : 'Lost';
-        item.status = candidateWon ? 'Elected' : 'Not Elected';
-        item.resultDate = dateText();
-        cycleResults.push({ scheduledAt:cycle, constituency:item.constituency, candidateName:item.candidateName, result:item.electionResult, source:'Party candidate simulation', countedForSeatTally:true });
-      });
-    }
-    state.elections.partyAssemblyResults = state.elections.partyAssemblyResults.filter(item => Number(item.scheduledAt) !== cycle).concat(cycleResults).slice(-1000);
-    const uniqueSeats = new Map();
-    cycleResults.forEach(item => {
-      const key = String(item.constituency || '').trim().toLocaleLowerCase('en-IN');
-      if (!key || uniqueSeats.has(key)) return;
-      uniqueSeats.set(key,item);
-    });
-    const validSeatResults = Array.from(uniqueSeats.values()).slice(0,224);
-    const seatWins = Math.min(224, validSeatResults.filter(item => item.result === 'Won').length);
-    const seatLosses = validSeatResults.filter(item => item.result === 'Lost').length;
-    state.elections.lastAssemblySeatTally = {
-      scheduledAt:cycle,totalSeats:224,majorityMark:113,seatsWon:seatWins,
-      seatsLost:seatLosses,seatsContested:validSeatResults.length,
-      seatsPending:Math.max(0,224-validSeatResults.length),
-      party:state.party || 'Independent',date:dateText(),
-      countingComplete:true
+    const majorityMark = Math.floor(totalSeats / 2) + 1;
+    result.totalSeats = totalSeats;
+    result.majorityMark = majorityMark;
+    result.seatsWon = partyWins;
+    result.seatsContested = partyContested;
+    result.seatsPending = Math.max(0,totalSeats-partyContested);
+    result.hungHouse = partyWins < majorityMark;
+    state.elections.lastMandate = {
+      typeId:active.typeId,totalSeats,majorityMark,seatsWon:partyWins,
+      seatsContested:partyContested,seatsPending:result.seatsPending,
+      hungHouse:result.hungHouse,party:partyNameSafe(),date:dateText(),
+      projectionOnly:false
     };
-    state.elections.partyAssemblyResults = state.elections.partyAssemblyResults.map(item => ({
-      ...item,
-      countedForSeatTally: validSeatResults.includes(item)
-    }));
+    if (active.typeId === 'assembly') {
+      const cycle = Number(active.scheduledAt || currentMonthIndex());
+      const seatRows = result.partyCandidateResults.map(item => ({
+        scheduledAt:cycle,constituency:item.constituency,candidateName:item.candidateName,
+        candidateId:item.candidateId,result:item.result,votes:item.votes,
+        voteShare:item.voteShare,margin:item.margin,winnerName:item.winnerName,
+        source:item.isPlayer?'Player constituency count':'Saved party constituency simulation',
+        countedForSeatTally:true,details:item
+      }));
+      state.elections.partyAssemblyResults = (state.elections.partyAssemblyResults || [])
+        .filter(item => Number(item.scheduledAt) !== cycle).concat(seatRows).slice(-1000);
+      state.elections.lastAssemblySeatTally = {
+        scheduledAt:cycle,totalSeats:224,majorityMark:113,
+        seatsWon:partyWins,seatsLost:partyLosses,seatsContested:partyContested,
+        seatsPending:Math.max(0,224-partyContested),party:partyNameSafe(),
+        date:dateText(),countingComplete:true
+      };
+    } else {
+      state.elections.lastLokSabhaSeatTally = {
+        scheduledAt:Number(active.scheduledAt || currentMonthIndex()),
+        totalSeats:543,majorityMark:272,seatsWon:partyWins,
+        seatsLost:partyLosses,seatsContested:partyContested,
+        seatsPending:Math.max(0,543-partyContested),party:partyNameSafe(),
+        date:dateText(),countingComplete:true
+      };
+    }
   }
-  result.partyCandidateResults = buildPartyWideElectionResults(active, result);
-  const type=electionTypes.find(item=>item.id===active.typeId);
-  state.elections.history.unshift(result); state.elections.history=state.elections.history.slice(0,30);
-  state.elections.totalContested++; if(won){state.elections.totalWon++;state.reputation=Math.min(100,state.reputation+8);state.influence=Math.min(100,state.influence+10);state.publicSupport=Math.min(100,state.publicSupport+8);state.experience+=100;if(active.candidateId==='player'){state.role=type?.winRole||state.role;state.level=Math.max(state.level,active.typeId==='local'?2:active.typeId==='assembly'?5:8);}if(state.partyId!=='independent')state.partyPopularity=Math.min(100,state.partyPopularity+8);if(active.typeId==='assembly'){const government=ensureGovernmentState();government.manifestoPromises.unshift({id:'promise-'+Date.now(),text:active.manifesto,status:'Pending',progress:0,announcedAt:dateText(),electionId:active.id});government.manifestoPromises=government.manifestoPromises.slice(0,20);}}
-  else {state.elections.totalLost++;state.reputation=Math.max(0,state.reputation-2);state.experience+=25;}
-  if(state.partyId!=='independent')state.partyElectionHistory.push({event:`${result.result} ${active.typeName}`,date:dateText()});
+  const type = electionTypes.find(item => item.id === active.typeId);
+  state.elections.history.unshift(result);
+  state.elections.history = state.elections.history.slice(0,30);
+  state.elections.totalContested++;
+  if (won) {
+    state.elections.totalWon++;
+    state.reputation=Math.min(100,state.reputation+8);
+    state.influence=Math.min(100,state.influence+10);
+    state.publicSupport=Math.min(100,state.publicSupport+8);
+    state.experience+=100;
+    if(active.candidateId==='player') {
+      state.role=type?.winRole||state.role;
+      state.level=Math.max(state.level,active.typeId==='local'?2:active.typeId==='assembly'?5:8);
+    }
+    if(state.partyId!=='independent') state.partyPopularity=Math.min(100,state.partyPopularity+8);
+    if(active.typeId==='assembly') {
+      const government=ensureGovernmentState();
+      government.manifestoPromises.unshift({id:'promise-'+Date.now(),text:active.manifesto,status:'Pending',progress:0,announcedAt:dateText(),electionId:active.id});
+      government.manifestoPromises=government.manifestoPromises.slice(0,20);
+    }
+  } else {
+    state.elections.totalLost++;
+    state.reputation=Math.max(0,state.reputation-2);
+    state.experience+=25;
+  }
+  if(state.partyId!=='independent') state.partyElectionHistory.push({event:`${result.result} ${active.typeName}`,date:dateText()});
   state.elections.completedCounting=Array.isArray(state.elections.completedCounting)?state.elections.completedCounting:[];
   state.elections.completedCounting.unshift({electionId:active.id,rounds:count.totalRounds,counted:count.counted,completedAt:dateText()});
-  const schedule = ensureElectionCalendar().calendar[active.typeId];
-  if (schedule && Number(schedule.nextAt) === Number(active.scheduledAt)) {
-    schedule.nextAt = Number(active.scheduledAt) + Number(schedule.intervalMonths || 60);
+  const schedule=ensureElectionCalendar().calendar[active.typeId];
+  if(schedule && Number(schedule.nextAt)===Number(active.scheduledAt)) {
+    schedule.nextAt=Number(active.scheduledAt)+Number(schedule.intervalMonths||60);
     delete schedule.proposalKey;
   }
   state.elections.active=null;
-  saveState(); render(); showElectionResult(result);
+  saveState();
+  render();
+  showElectionResult(result);
 }
+
+function partyNameSafe() {
+  return state.party || 'Independent';
+}
+
 
 function endDay() {
   if (!state.characterCreated) return toast('Create your politician first.');
@@ -3928,7 +4027,7 @@ function showElectionResult(result) {
         <section class="party-election-results-block">
           <span class="gold-tag">PARTY-WIDE COUNTING REPORT</span>
           <h3>All ${escapeHtml(state.party || 'party')} candidates</h3>
-          <p class="panel-description">Your constituency result is shown first, manually registered members next, followed by other party candidates. Each candidate has a constituency-level simulated count.</p>
+          <p class="panel-description">Your actual completed constituency count is shown first, manually registered candidates next, followed by other approved and funded party candidates. Each additional constituency is simulated once, saved with this election record and never recalculated when this report is reopened. All game-world figures are fictional.</p>
           <div class="party-result-tools">
             <input id="partyResultSearch" type="search" placeholder="Search candidate or constituency">
             <select id="partyResultFilter">
@@ -3956,7 +4055,7 @@ function showElectionResult(result) {
           </div>
         </section>` : ''}
       <div class="party-stat-row"><span>Candidate expenditure / simulated ceiling</span><b>${money(result.candidateSpending || 0)} / ${money(result.candidateSpendingLimit || 0)}</b></div>
-      ${result.totalSeats ? `<div class="party-stat-row"><span>Simulated seat projection</span><b>${result.seatsWon} / ${result.totalSeats} · Majority ${result.majorityMark}</b></div><p class="panel-description">${result.hungHouse ? 'No single-party majority in this simulated result. Coalition negotiations would be needed to form a government.' : 'The simulated result reaches the majority threshold.'}</p>` : ''}
+      ${result.totalSeats ? `<div class="party-stat-row"><span>Party seats won in counted contests</span><b>${result.seatsWon} / ${result.totalSeats} · Majority ${result.majorityMark}</b></div><div class="party-stat-row"><span>Contested / pending seats</span><b>${Number(result.seatsContested||0)} / ${Number(result.seatsPending||0)}</b></div><p class="panel-description">${result.seatsPending ? `Only ${result.seatsContested} constituencies have saved party candidate results; ${result.seatsPending} seats remain uncounted in the party report.` : (result.hungHouse ? 'No single-party majority in this simulated result. Coalition negotiations would be needed to form a government.' : 'The party reaches the majority threshold in this simulated result.')}</p>` : ''}
       <button class="primary-btn full" data-action="close-election-result">CONTINUE →</button>
     </section>`;
   document.body.appendChild(overlay);
