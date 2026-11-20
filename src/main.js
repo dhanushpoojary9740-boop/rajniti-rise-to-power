@@ -4060,8 +4060,19 @@ function electionPage() {
     local: { label: 'Local Elections', typeId: 'local', description: 'Panchayat, municipality and municipal corporation elections.' },
     other: { label: 'Other Elections', typeId: null, description: 'Rajya Sabha, Legislative Council, by-elections and other special contests.' }
   };
+
   const selectedElectionSection = electionSectionMeta[electionSection] ? electionSection : 'assembly';
   const selectedElectionTypeId = electionSectionMeta[selectedElectionSection].typeId;
+  const allCareerResults = Array.isArray(e.history) ? e.history : [];
+  const categoryResults = allCareerResults.filter(item => {
+    if (selectedElectionSection === 'other') return !['assembly','lok-sabha','local'].includes(item.typeId);
+    return item.typeId === selectedElectionTypeId;
+  });
+  const categoryContested = categoryResults.length;
+  const categoryWon = categoryResults.filter(item => item.result === 'Won' || item.won === true).length;
+  const categoryWinRate = categoryContested ? Math.round(categoryWon / categoryContested * 100) : 0;
+  const categorySupportValues = categoryResults.map(item => Number(item.voteShare ?? item.localSupport ?? item.support)).filter(value => Number.isFinite(value) && value >= 0);
+  const categorySupport = categorySupportValues.length ? Math.round(categorySupportValues.reduce((a,b)=>a+b,0)/categorySupportValues.length) : 0;
 
   const electionCalendar = ensureElectionCalendar();
   const pendingNominations = electionCalendar.nominationQueue.filter(item => item.typeId !== 'assembly' && item.status === 'Pending');
@@ -4103,10 +4114,10 @@ function electionPage() {
     </section>
 
     <div class="stats-grid election-stats">
-      ${statCard('ELECTIONS CONTESTED', e.totalContested, 'Career record', '▤')}
-      ${statCard('ELECTIONS WON', e.totalWon, 'Successful contests', '★')}
-      ${statCard('WIN RATE', winRate + '%', 'Based on completed contests', '✦')}
-      ${statCard('LOCAL SUPPORT', averageSupport + '%', 'Across your localities', '♥')}
+      ${statCard('ELECTIONS CONTESTED', categoryContested, 'Selected election category', '▤')}
+      ${statCard('ELECTIONS WON', categoryWon, 'Successful contests in this category', '★')}
+      ${statCard('WIN RATE', categoryWinRate + '%', 'Based on this category history', '✦')}
+      ${statCard('LOCAL SUPPORT', categorySupport + '%', categorySupportValues.length ? 'Average recorded vote share' : 'No category result data yet', '♥')}
     </div>
 
     ${selectedElectionSection === 'lok-sabha' ? `
@@ -4582,6 +4593,12 @@ function ensureGovernmentState() {
   if (!Array.isArray(g.manifestoPromises)) g.manifestoPromises = [];
   if (!Array.isArray(g.coalitionPartners)) g.coalitionPartners = [];
   if (!Array.isArray(g.history)) g.history = [];
+  if (!g.alternativeAdministration || typeof g.alternativeAdministration !== 'object') {
+    g.alternativeAdministration = { active:false, leader:'', party:'', supportSeats:0, partners:[], ministers:[], formedAt:'', confidence:'Not tested', source:'Opposition formation' };
+  }
+  if (!Array.isArray(g.alternativeAdministration.partners)) g.alternativeAdministration.partners = [];
+  if (!Array.isArray(g.alternativeAdministration.ministers)) g.alternativeAdministration.ministers = [];
+
   if (!Array.isArray(g.projects)) g.projects = [];
   if (!Array.isArray(g.governmentOrders)) g.governmentOrders = [];
   if (!Array.isArray(g.departmentReviews)) g.departmentReviews = [];
@@ -4879,6 +4896,48 @@ function advanceGovernmentProject(id) {
   saveState();render();toast(`Milestone completed: ${milestone.name}. Project ${project.progress}% complete.`);
 }
 
+
+function alternativeGovernmentAction(action) {
+  const g=ensureGovernmentState();
+  const a=g.alternativeAdministration;
+  if(action==='form'){
+    const leader=prompt('Enter the opposition coalition leader who will become Chief Minister:');
+    if(!leader||!leader.trim())return;
+    const party=prompt('Enter the leader’s party:');
+    if(!party||!party.trim())return;
+    const raw=prompt('Enter total declared Assembly support seats (including coalition partners):','113');
+    if(raw===null)return;
+    const seats=Math.max(0,Math.min(224,Math.floor(Number(raw))));
+    if(!Number.isFinite(seats)||seats<113)return toast('A minimum of 113 declared support seats is required in the 224-seat Karnataka Assembly.');
+    a.active=true;a.leader=leader.trim();a.party=party.trim();a.supportSeats=seats;a.partners=[];a.ministers=[];a.formedAt=dateText();a.confidence='Awaiting floor test';a.source='Alternative coalition formed after election result';
+    g.formed=false;g.status='Alternative coalition formed · Floor test pending';
+    g.history.unshift({day:state.day,month:state.month,year:state.year,event:`Opposition coalition led by ${a.leader} (${a.party}) declared ${seats} Assembly support seats and formed an alternative administration pending floor test`});
+    saveState();render();toast('Alternative coalition recorded. Appoint ministers and complete its floor test.');
+  } else if(action==='partner'){
+    if(!a.active)return toast('Form an alternative coalition first.');
+    const name=prompt('Supporting party name:');if(!name||!name.trim())return;
+    const raw=prompt('Committed support seats:','1');if(raw===null)return;
+    const seats=Math.floor(Number(raw));if(!Number.isFinite(seats)||seats<=0||a.supportSeats+seats>224)return toast('Enter valid support seats within the 224-seat House.');
+    a.partners.push({name:name.trim(),seats});a.supportSeats+=seats;
+    saveState();render();toast('Coalition partner and support recorded.');
+  } else if(action==='minister'){
+    if(!a.active)return toast('Form an alternative coalition first.');
+    const name=prompt('Minister full name:');if(!name||!name.trim())return;
+    const portfolio=prompt('Ministerial portfolio:');if(!portfolio||!portfolio.trim())return;
+    if(a.ministers.some(m=>m.portfolio.toLowerCase()===portfolio.trim().toLowerCase()))return toast('That portfolio is already assigned.');
+    a.ministers.push({name:name.trim(),portfolio:portfolio.trim(),party:prompt('Minister party:')||a.party});
+    saveState();render();toast('Minister appointed to the alternative cabinet.');
+  } else if(action==='floor'){
+    if(!a.active)return toast('No alternative administration is active.');
+    const passed=Number(a.supportSeats)>=113;
+    a.confidence=passed?'Floor test passed · Government in office':'Floor test failed';
+    if(passed){a.active=true;g.formed=true;g.chiefMinister=a.leader;g.status='Alternative coalition government in office';g.cabinetConfirmed=true;}
+    else {a.active=false;g.formed=false;g.status='No government commands a recorded majority';}
+    g.history.unshift({day:state.day,month:state.month,year:state.year,event:`Alternative coalition floor test ${passed?'passed':'failed'} with ${a.supportSeats} of 224 declared support seats`});
+    saveState();render();toast(a.confidence);
+  }
+}
+
 function governmentPage() {
   const g = ensureGovernmentState();
   const totalAllocation = Object.values(g.departments || {}).reduce((sum, value) => sum + Number(value || 0), 0);
@@ -4950,7 +5009,22 @@ function governmentPage() {
       <button class="secondary-btn" data-succession-action="dissolve" ${['floor-test-passed','assembly-dissolved'].includes(succession.stage)?'disabled':''}>DISSOLVE ASSEMBLY & CALL ELECTION</button>
       ${succession.floorTest ? `<p><b>Last floor test:</b> ${escapeHtml(succession.floorTest.result)} · ${Number(succession.floorTest.support)} supporting votes</p>` : ''}
     </section>` : '';
+  const alternative = g.alternativeAdministration;
+  const alternativePanel = `
+    <section class="panel"><span class="eyebrow">ALTERNATIVE GOVERNMENT & COALITION</span><h2>${alternative.active ? 'Opposition-led administration' : 'Alternative government formation'}</h2>
+      <p>${alternative.active ? `A coalition led by <b>${escapeHtml(alternative.leader)}</b> (${escapeHtml(alternative.party)}) has declared ${Number(alternative.supportSeats)} supporting seats.` : 'If your party cannot form a majority, record an opposition coalition and its proposed Council of Ministers here.'}</p>
+      <p><b>Floor-test status:</b> ${escapeHtml(alternative.confidence || 'Not tested')}</p>
+      ${alternative.partners.map(x=>`<div class="history-row"><b>${escapeHtml(x.name)}</b><small>${Number(x.seats)} supporting seats</small></div>`).join('')}
+      ${alternative.ministers.length ? `<h3>Alternative Council of Ministers</h3>${alternative.ministers.map(m=>`<div class="history-row"><b>${escapeHtml(m.name)}</b><small>${escapeHtml(m.portfolio)} · ${escapeHtml(m.party)}</small></div>`).join('')}` : '<p class="muted">No ministers appointed yet.</p>'}
+      <div class="national-lok-sabha-actions">
+        <button class="secondary-btn" data-alt-government="form">FORM OPPOSITION GOVERNMENT</button>
+        <button class="secondary-btn" data-alt-government="partner" ${!alternative.active?'disabled':''}>ADD COALITION PARTNER</button>
+        <button class="secondary-btn" data-alt-government="minister" ${!alternative.active?'disabled':''}>APPOINT MINISTER</button>
+        <button class="primary-btn" data-alt-government="floor" ${!alternative.active?'disabled':''}>CONDUCT FLOOR TEST</button>
+      </div>
+    </section>`;
   return `
+    ${alternativePanel}
     ${successionPanel}
     <section class="panel"><span class="eyebrow">PARLIAMENTARY OVERSIGHT</span><h2>Decisions affecting Government</h2>
       ${(g.parliamentaryRecord || []).slice(0,5).map(item=>`<div class="history-row"><b>${escapeHtml(item.event === 'bill-assented' ? `Enacted law: ${item.bill?.title || 'Bill'}` : item.event === 'confidence-won' ? 'Confidence established' : item.event === 'confidence-lost' || item.event === 'no-confidence-passed' ? 'Government lost Assembly confidence' : item.event === 'alliance-withdrawn' ? `Alliance support withdrawn: ${item.partner || 'Partner'}` : item.event === 'minister-review' ? 'Minister performance review requested' : item.event === 'question' ? 'Ministerial question raised' : item.event === 'debate' ? 'Opposition debate held' : item.event)}</b><small>${escapeHtml(item.date || '')}</small></div>`).join('') || '<p class="muted">Parliamentary decisions and their effects will appear here.</p>'}
@@ -6872,6 +6946,9 @@ if (!Array.isArray(state.media.history)) state.media.history = [];
 
   const successionButton = event.target.closest('[data-succession-action]');
   if (successionButton) { governmentSuccessionAction(successionButton.dataset.successionAction); return; }
+
+  const alternativeGovernmentButton = event.target.closest('[data-alt-government]');
+  if (alternativeGovernmentButton) { alternativeGovernmentAction(alternativeGovernmentButton.dataset.altGovernment); return; }
 
   const parliamentButton = event.target.closest('[data-parliament-action]');
   if (parliamentButton) { parliamentAction(parliamentButton.dataset.parliamentAction); return; }
