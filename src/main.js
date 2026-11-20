@@ -279,7 +279,7 @@ function ensureKarnataka224PartyRoster() {
   if (!Array.isArray(state.partyMemberRecords)) state.partyMemberRecords = [];
   const members = state.partyMemberRecords.filter(member => member && member.id !== 'founder');
   const usedNames = new Set(members.map(member => String(member.name||'').toLowerCase()));
-  for (let i = 0; i < 224; i++) {
+  for (let i = 0; i < 223; i++) {
     let member = members[i];
     if (!member) {
       let name = fictionalIndianPartyNames[i % fictionalIndianPartyNames.length];
@@ -303,7 +303,7 @@ function ensureKarnataka224PartyRoster() {
     }
   }
   state.partyMembers = state.partyMemberRecords.length;
-  return members.slice(0,224);
+  return members.slice(0,223);
 }
 function ensureAssemblyElectionCountdown() {
   const elections = ensureElectionCalendar();
@@ -317,6 +317,57 @@ function ensureAssemblyElectionCountdown() {
     saveState();
   }
   return schedule;
+}
+function migrateAssemblySeatCapAndSchedule250() {
+  if (state.assemblySeatCapScheduleV250Applied) return;
+  const now = currentMonthIndex();
+  const elections = ensureElectionCalendar();
+  const schedule = elections.calendar.assembly;
+  if (schedule) {
+    const previous = Number(schedule.nextAt);
+    schedule.nextAt = now + 7;
+    schedule.intervalMonths = 60;
+    schedule.label = 'State Assembly Election';
+    delete schedule.proposalKey;
+    if (elections.active && elections.active.typeId === 'assembly' &&
+        Number(elections.active.scheduledAt) === previous &&
+        !['counting','voting'].includes(elections.active.phase)) {
+      elections.active.scheduledAt = schedule.nextAt;
+    }
+  }
+  const groups = new Map();
+  (elections.partyAssemblyResults || []).filter(item => item && item.source).forEach(item => {
+    const key = Number(item.scheduledAt || 0);
+    if (!groups.has(key)) groups.set(key,[]);
+    groups.get(key).push(item);
+  });
+  groups.forEach((records,cycle) => {
+    const player = records.find(item => item.playerContest || item.source === 'Player contest');
+    if (player) {
+      player.constituency = karnatakaAssemblyConstituencies[0];
+      player.playerContest = true;
+      player.countedForSeatTally = true;
+    }
+    const unique = new Set();
+    let accepted = 0;
+    records.forEach(item => {
+      const key = String(item.constituency || '').trim().toLocaleLowerCase('en-IN');
+      if (!key || unique.has(key) || accepted >= 224) {
+        item.countedForSeatTally = false;
+        return;
+      }
+      unique.add(key); accepted++;
+      item.countedForSeatTally = true;
+    });
+    const valid = records.filter(item => item.countedForSeatTally);
+    const won = Math.min(224,valid.filter(item => item.result === 'Won').length);
+    const lost = valid.filter(item => item.result === 'Lost').length;
+    if (!elections.lastAssemblySeatTally || !Number.isFinite(Number(elections.lastAssemblySeatTally.scheduledAt)) || Number(elections.lastAssemblySeatTally.scheduledAt) <= cycle) {
+      elections.lastAssemblySeatTally = { scheduledAt:cycle,totalSeats:224,majorityMark:113,seatsWon:won,seatsLost:lost,seatsContested:valid.length,seatsPending:Math.max(0,224-valid.length),party:state.party||'BPP',countingComplete:valid.length>=224,date:dateText() };
+    }
+  });
+  state.assemblySeatCapScheduleV250Applied = true;
+  saveState();
 }
 function migratePartyManagementSave() {
   if (!Array.isArray(state.partyMemberRecords)) state.partyMemberRecords = [];
@@ -1896,6 +1947,7 @@ function electionPhase(active) {
 }
 function processElectionCalendar() {
   const elections = ensureElectionCalendar();
+  migrateAssemblySeatCapAndSchedule250();
   ensureAssemblyElectionCountdown();
   const now = currentMonthIndex();
   const types = [
@@ -2025,7 +2077,7 @@ function completeElectionCounting(active) {
     const cycle = Number(active.scheduledAt || currentMonthIndex());
     const cycleResults = state.elections.partyAssemblyResults.filter(item => Number(item.scheduledAt) === cycle);
     if (!cycleResults.some(item => String(item.constituency).toLowerCase() === String(active.constituency || 'Player constituency').toLowerCase())) {
-      cycleResults.push({ scheduledAt:cycle, constituency:active.constituency || 'Player constituency', candidateName:active.candidateName, result:won?'Won':'Lost', source:'Player contest' });
+      cycleResults.push({ scheduledAt:cycle, constituency:karnatakaAssemblyConstituencies[0], candidateName:active.candidateName, result:won?'Won':'Lost', source:'Player contest', playerContest:true, countedForSeatTally:true });
     }
     if (state.partyId !== 'independent') {
       const partyCandidates = ensurePartySlate().filter(item => item.typeId === 'assembly' && Number(item.scheduledAt) === cycle && ['Funded','Party Approved'].includes(item.status) && Number(item.approvedBudget || 0) > 0);
@@ -2037,12 +2089,30 @@ function completeElectionCounting(active) {
         item.electionResult = candidateWon ? 'Won' : 'Lost';
         item.status = candidateWon ? 'Elected' : 'Not Elected';
         item.resultDate = dateText();
-        cycleResults.push({ scheduledAt:cycle, constituency:item.constituency, candidateName:item.candidateName, result:item.electionResult, source:'Party candidate simulation' });
+        cycleResults.push({ scheduledAt:cycle, constituency:item.constituency, candidateName:item.candidateName, result:item.electionResult, source:'Party candidate simulation', countedForSeatTally:true });
       });
     }
     state.elections.partyAssemblyResults = state.elections.partyAssemblyResults.filter(item => Number(item.scheduledAt) !== cycle).concat(cycleResults).slice(-1000);
-    const seatWins = cycleResults.filter(item => item.result === 'Won').length;
-    state.elections.lastAssemblySeatTally = { scheduledAt:cycle, totalSeats:224, majorityMark:113, seatsWon:seatWins, seatsContested:cycleResults.length, party:state.party || 'Independent', date:dateText() };
+    const uniqueSeats = new Map();
+    cycleResults.forEach(item => {
+      const key = String(item.constituency || '').trim().toLocaleLowerCase('en-IN');
+      if (!key || uniqueSeats.has(key)) return;
+      uniqueSeats.set(key,item);
+    });
+    const validSeatResults = Array.from(uniqueSeats.values()).slice(0,224);
+    const seatWins = Math.min(224, validSeatResults.filter(item => item.result === 'Won').length);
+    const seatLosses = validSeatResults.filter(item => item.result === 'Lost').length;
+    state.elections.lastAssemblySeatTally = {
+      scheduledAt:cycle,totalSeats:224,majorityMark:113,seatsWon:seatWins,
+      seatsLost:seatLosses,seatsContested:validSeatResults.length,
+      seatsPending:Math.max(0,224-validSeatResults.length),
+      party:state.party || 'Independent',date:dateText(),
+      countingComplete:true
+    };
+    state.elections.partyAssemblyResults = state.elections.partyAssemblyResults.map(item => ({
+      ...item,
+      countedForSeatTally: validSeatResults.includes(item)
+    }));
   }
   const type=electionTypes.find(item=>item.id===active.typeId);
   state.elections.history.unshift(result); state.elections.history=state.elections.history.slice(0,30);
@@ -2911,8 +2981,14 @@ function proposePartySlate(typeId = 'assembly') {
     : (state.partyMemberRecords || []).filter(member => member && member.name && member.id !== 'founder');
   if (!members.length) return toast('Recruit party members before proposing candidates.');
   const assignments = typeId === 'assembly'
-    ? karnatakaAssemblyConstituencies.map((_,index)=>({stateName:'Karnataka',district:'Karnataka',constituencyNumber:index+1,constituency:karnatakaAssemblyConstituencies[index],constituencyAssignment:'Official Karnataka Assembly constituency list · 2023 reference',seatType:'Verify reservation category'}))
+    ? karnatakaAssemblyConstituencies.slice(1).map((name,index)=>({stateName:'Karnataka',district:'Karnataka',constituencyNumber:index+2,constituency:name,constituencyAssignment:'Official Karnataka Assembly constituency list · 2023 reference',seatType:'Verify reservation category'}))
     : assignPartyElectionSeats(typeId,members,scheduledAt);
+  if (typeId === 'assembly') {
+    const validMemberIds = new Set(members.map(member => String(member.id)));
+    slate.filter(item => item.typeId === 'assembly' && Number(item.scheduledAt) === scheduledAt &&
+      ['Proposed','Party Approved','Funded'].includes(item.status) && !validMemberIds.has(String(item.memberId)))
+      .forEach(item => { item.status = 'Not Contested'; item.countedForSeatTally = false; item.seatLimitNote = 'Reserved seat limit: player occupies one of 224 Assembly seats'; });
+  }
   let added = 0, refreshed = 0;
   members.forEach((member,index) => {
     const seat = assignments[index];
@@ -3093,6 +3169,7 @@ function decidePartySlate(id, decision) {
 
 function electionPage() {
   ensureAssemblyElectionCountdown();
+  migrateAssemblySeatCapAndSchedule250();
   const e = state.elections;
   const active = e.active;
   const candidateList = electionCandidates();
@@ -3144,13 +3221,38 @@ function electionPage() {
         const pending = cycle.filter(item => item.status === 'Proposed').length;
         const notEntered = approved;
         const tally = state.elections?.lastAssemblySeatTally;
-        const partySeatsWon = tally ? Number(tally.seatsWon || 0) : (cycle.filter(item => item.status === 'Elected').length);
+        const partySeatsWon = Math.min(224,Math.max(0,tally ? Number(tally.seatsWon || 0) : cycle.filter(item => item.status === 'Elected').length));
+        const partySeatsLost = Math.min(224-partySeatsWon,Math.max(0,tally ? Number(tally.seatsLost || lost) : lost));
+        const liveActive = state.elections?.active;
+        const liveCounting = !!(liveActive && liveActive.typeId === 'assembly' && liveActive.phase === 'counting' && liveActive.counting);
+        const liveLeader = liveCounting ? [...(liveActive.counting.candidates||[])].sort((a,b)=>Number(b.votes||0)-Number(a.votes||0))[0] : null;
+        const leading = liveLeader && liveLeader.name === liveActive.candidateName ? 1 : 0;
+        const countedSeats = Math.min(224,partySeatsWon+partySeatsLost+leading);
+        const countingPending = Math.max(0,224-countedSeats);
+        const pct = value => `${(Math.max(0,Math.min(224,value))/224*100).toFixed(2)}%`;
+        const roundLabel = liveCounting ? `Round ${liveActive.counting.round}/${liveActive.counting.totalRounds} · ${Math.round(Number(liveActive.counting.counted||0)/Math.max(1,Number(liveActive.counting.turnout||1))*100)}% of votes counted` : (tally?.countingComplete ? 'Counting completed' : 'No live counting session');
         return `<div class="panel party-election-summary" style="margin:16px 0">
           <span class="eyebrow">PARTY ASSEMBLY ELECTION TRACKER</span>
           <h3>${latestCycle === null ? 'No party-wide Assembly slate yet' : 'Your party candidates'}</h3>
           <div class="election-metrics">
             <div><small>BPP ASSEMBLY SEATS WON</small><b>${partySeatsWon}/224</b></div>
             <div><small>MAJORITY REQUIRED</small><b>113</b></div>
+          </div>
+          <div class="assembly-seat-chart">
+            <div class="assembly-seat-chart-heading"><b>224-seat Assembly performance</b><span>${countedSeats}/224 counted</span></div>
+            <div class="assembly-seat-chart-bar" role="img" aria-label="Won ${partySeatsWon}, lost ${partySeatsLost}, leading ${leading}, counting pending ${countingPending}">
+              <i class="seat-won" style="width:${pct(partySeatsWon)}"></i>
+              <i class="seat-lost" style="width:${pct(partySeatsLost)}"></i>
+              <i class="seat-leading" style="width:${pct(leading)}"></i>
+              <i class="seat-pending" style="width:${pct(countingPending)}"></i>
+            </div>
+            <div class="assembly-seat-legend">
+              <span><i class="seat-dot seat-won"></i>Won <b>${partySeatsWon}</b></span>
+              <span><i class="seat-dot seat-leading"></i>Leading <b>${leading}</b></span>
+              <span><i class="seat-dot seat-lost"></i>Lost <b>${partySeatsLost}</b></span>
+              <span><i class="seat-dot seat-pending"></i>Counting pending <b>${countingPending}</b></span>
+            </div>
+            <div class="assembly-counting-detail"><b>${roundLabel}</b><span>Majority ${partySeatsWon>=113?'secured':`${113-partySeatsWon} seats needed`}</span></div>
           </div>
           ${latestCycle === null ? '<p class="panel-description">Generate the Assembly candidate list below to track who is selected, funded and contested. Your own MLA victory counts as one party seat.</p>' : `
             <div class="election-metrics">
@@ -3161,7 +3263,7 @@ function electionPage() {
               <div><small>APPROVED, NOT FUNDED</small><b>${notEntered}</b></div>
               <div><small>AWAITING APPROVAL</small><b>${pending}</b></div>
             </div>
-            <p class="panel-description">Your own victory counts as one Assembly seat. Other BPP members contest only after you approve their party ticket and authorise their 50/50 campaign funding. Approved but unfunded members have not contested. Their simulated constituency results are added when your election counting is completed.</p>
+            <p class="panel-description">Your own MLA constituency is reserved as one of the 224 seats. AI proposes candidates for the remaining 223 constituencies, so your victory is never counted twice. Other BPP members contest only after you approve their party ticket and authorise their 50/50 campaign funding. Approved but unfunded members have not contested. Their simulated constituency results are added when your election counting is completed.</p>
           `}
           ${cycle.length ? `<div class="party-election-result-list">${cycle.map(item => {
             const label = item.status === 'Elected' ? 'WON' : item.status === 'Not Elected' ? 'LOST' : item.status === 'Funded' ? 'FUNDED · AWAITING POLL' : item.status === 'Party Approved' ? 'NOT CONTESTED · FUNDING PENDING' : item.status === 'Rejected' ? 'REJECTED' : 'AWAITING APPROVAL';
@@ -3431,7 +3533,7 @@ const governmentPortfolios = [
 
 function governmentMandateCount() {
   const tally = state.elections?.lastAssemblySeatTally;
-  if (tally && Number.isFinite(Number(tally.seatsWon))) return Number(tally.seatsWon);
+  if (tally && Number.isFinite(Number(tally.seatsWon))) return Math.max(0,Math.min(224,Number(tally.seatsWon)));
   return (state.elections?.history || []).filter(item =>
     item.result === 'Won' && String(item.typeName || item.type || '').toLowerCase().includes('assembly')
   ).length;
@@ -4654,6 +4756,7 @@ function updateRivalPartyIntelligence(action, id) {
 /* MAIN RENDER */
 
 function render() {
+  migrateAssemblySeatCapAndSchedule250();
   let content;
 
   switch (activeTab) {

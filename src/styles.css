@@ -2164,3 +2164,27 @@ input, select, textarea {
   .candidate-simple-top > b { font-size:13px; }
   .candidate-simple-actions button { flex:1 1 90px; font-size:9px; }
 }
+
+
+/* RAJNITI 2.5.0 — Assembly seat-counting dashboard */
+.assembly-seat-chart { margin-top:14px; padding:14px; border:1px solid #2b3b51; border-radius:11px; background:#0b1523; }
+.assembly-seat-chart-heading, .assembly-counting-detail { display:flex; align-items:center; justify-content:space-between; gap:10px; }
+.assembly-seat-chart-heading b { font-size:13px; color:#edf2f8; }
+.assembly-seat-chart-heading span, .assembly-counting-detail span { color:#9eacbf; font-size:10px; }
+.assembly-seat-chart-bar { display:flex; width:100%; height:15px; overflow:hidden; border-radius:20px; background:#263347; margin:13px 0 12px; }
+.assembly-seat-chart-bar i { display:block; height:100%; min-width:0; }
+.seat-won { background:#299b70; }
+.seat-lost { background:#bf5962; }
+.seat-leading { background:#d5b36b; }
+.seat-pending { background:#64748b; }
+.assembly-seat-legend { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:9px 12px; }
+.assembly-seat-legend span { display:flex; align-items:center; gap:6px; color:#aebacc; font-size:10px; }
+.assembly-seat-legend b { color:#f1f4f8; margin-left:auto; font-size:12px; }
+.seat-dot { width:8px; height:8px; border-radius:50%; display:inline-block; flex:0 0 8px; }
+.assembly-counting-detail { border-top:1px solid #29384d; margin-top:12px; padding-top:10px; }
+.assembly-counting-detail b { color:#d9c38f; font-size:10px; }
+@media(max-width:700px) {
+  .assembly-seat-chart { padding:11px; }
+  .assembly-seat-legend { gap:8px; }
+  .assembly-seat-legend span { font-size:9px; }
+}
