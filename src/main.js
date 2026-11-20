@@ -3843,6 +3843,7 @@ function nationalLokSabhaCandidatePanel() {
                 <div class="candidate-simple-actions">
                   ${item.status==='Proposed' ? `<button class="secondary-btn" data-party-slate-edit="${escapeHtml(item.id)}">Edit</button><button class="secondary-btn" data-party-slate-action="approve" data-party-slate-id="${escapeHtml(item.id)}">Approve ticket</button><button class="secondary-btn" data-party-slate-action="reject" data-party-slate-id="${escapeHtml(item.id)}">Reject</button>` : ''}
                   ${item.status==='Party Approved' ? `<button class="secondary-btn" data-party-slate-fund="${escapeHtml(item.id)}">Fund campaign 50/50</button>` : ''}
+                  ${item.status==='Funded' ? `<button class="secondary-btn" data-ls-manual-campaign="${escapeHtml(item.id)}">Manage my campaign</button>` : ''}
                 </div>
               </article>
             `).join('')}
@@ -3854,6 +3855,114 @@ function nationalLokSabhaCandidatePanel() {
 }
 
 
+
+
+function ensureLokSabhaElectionEngine() {
+  if (!state.elections || typeof state.elections !== 'object') state.elections = {};
+  if (!state.elections.lokSabhaEngine || typeof state.elections.lokSabhaEngine !== 'object') {
+    state.elections.lokSabhaEngine = { cycle:null, campaigns:[], results:[], partyTally:[], completed:false, lastRunAt:'' };
+  }
+  const engine = state.elections.lokSabhaEngine;
+  if (!Array.isArray(engine.campaigns)) engine.campaigns = [];
+  if (!Array.isArray(engine.results)) engine.results = [];
+  if (!Array.isArray(engine.partyTally)) engine.partyTally = [];
+  const schedule = ensureElectionCalendar().calendar['lok-sabha'];
+  const cycle = Number(schedule?.nextAt || currentMonthIndex());
+  if (Number(engine.cycle) !== cycle) {
+    engine.cycle = cycle; engine.campaigns = []; engine.results = []; engine.partyTally = []; engine.completed = false;
+  }
+  return engine;
+}
+function lokSabhaSeed(text) {
+  let h=2166136261;
+  for (let i=0;i<String(text).length;i++) { h^=String(text).charCodeAt(i); h=Math.imul(h,16777619); }
+  return h>>>0;
+}
+function manageManualLokSabhaCampaign(id) {
+  const item=ensurePartySlate().find(x=>String(x.id)===String(id));
+  if(!item || item.status!=='Funded') return toast('Fund and approve your candidate before managing the campaign.');
+  const raw=prompt('Set your manual campaign performance score (0–100):',String(item.manualCampaignScore||50));
+  if(raw===null)return;
+  const score=Math.max(0,Math.min(100,Math.round(Number(raw))));
+  if(!Number.isFinite(score))return toast('Enter a valid score from 0 to 100.');
+  item.playerControlledCampaign=true;item.manualCampaignScore=score;item.campaignScore=score;item.manualCampaignUpdatedAt=dateText();
+  saveState();render();toast('Your candidate campaign settings have been saved.');
+}
+function runLokSabhaCampaigns() {
+  const engine=ensureLokSabhaElectionEngine();
+  if (engine.completed) return toast('This Lok Sabha election has already been counted.');
+  const slate=ensurePartySlate().filter(x=>x.typeId==='lok-sabha' && Number(x.scheduledAt)===engine.cycle && x.status==='Funded');
+  if (!slate.length) return toast('Fund and approve at least one Lok Sabha candidate before campaigning.');
+  const rivalNames=['National Democratic Alliance','Indian National Congress','Regional Alliance','Independent Front'];
+  engine.campaigns=[];
+  const seats=assignPartyElectionSeats('lok-sabha',[],engine.cycle);
+  seats.forEach(seat=>{
+    const own=slate.find(x=>x.stateName===seat.stateName && Number(x.constituencyNumber)===Number(seat.constituencyNumber));
+    if (own) {
+      const manual=own.playerControlledCampaign===true || own.memberId===state.playerMemberId;
+      const base=manual ? Number(own.manualCampaignScore||0) : 0;
+      const performance=manual ? Math.max(0,Math.min(100,base)) : Math.max(15,Math.min(95,Math.round(35+(Number(own.approvedBudget)||0)/500000+(Number(own.experience)||0)*.2+(Number(own.popularity)||0)*.15)));
+      engine.campaigns.push({seatCode:seat.seatCode,stateName:seat.stateName,constituency:seat.constituency,candidateName:own.candidateName,partyName:own.partyName,player:true,manual,performance,activities:manual?'Player-directed campaign':'AI rallies, public meetings and constituency outreach'});
+      own.campaignScore=performance; own.campaignCycle=engine.cycle;
+    }
+    for(let rivalIndex=0;rivalIndex<3;rivalIndex++){
+      const seed=lokSabhaSeed(`${engine.cycle}|${seat.seatCode}|rival-${rivalIndex}`);
+      const rivalParty=rivalNames[seed%rivalNames.length];
+      engine.campaigns.push({seatCode:seat.seatCode,stateName:seat.stateName,constituency:seat.constituency,candidateName:`${rivalParty} Candidate ${rivalIndex+1}`,partyName:rivalParty,player:false,manual:false,performance:35+(seed%51),activities:'AI rallies, door-to-door outreach and manifesto campaigning'});
+    }
+  });
+  engine.campaignsRunAt=dateText();
+  saveState(); render();
+  toast(`AI campaigns completed across ${engine.campaigns.length} campaign entries.`);
+}
+function countLokSabhaElection() {
+  const engine=ensureLokSabhaElectionEngine();
+  if (engine.completed) return toast('This election has already been counted.');
+  if (!engine.campaigns.length) return toast('Run national campaigns before polling and counting.');
+  const slate=ensurePartySlate().filter(x=>x.typeId==='lok-sabha' && Number(x.scheduledAt)===engine.cycle && x.status==='Funded');
+  const results=[];
+  const parties={};
+  engine.campaigns.filter(x=>!x.player).forEach(x=>{ parties[x.partyName]=true; });
+  engine.campaigns.filter(x=>x.player).forEach(x=>{ parties[x.partyName]=true; });
+  const partyNames=Object.keys(parties);
+  const seats=assignPartyElectionSeats('lok-sabha',[],engine.cycle);
+  seats.forEach(seat=>{
+    const contestants=engine.campaigns.filter(x=>x.seatCode===seat.seatCode);
+    if (!contestants.length) return;
+    const scored=contestants.map(c=>{
+      const seed=lokSabhaSeed(`${engine.cycle}|${seat.seatCode}|${c.partyName}|${c.candidateName}`);
+      const turnoutBase=45000+(seed%55000);
+      const votes=Math.max(1,Math.round(turnoutBase*(0.45+(Number(c.performance)||0)/180)));
+      return {...c,votes};
+    }).sort((a,b)=>b.votes-a.votes);
+    const total=scored.reduce((sum,x)=>sum+x.votes,0);
+    const winner=scored[0];
+    scored.forEach(c=>{ if(!parties[c.partyName])parties[c.partyName]=true; });
+    results.push({seatCode:seat.seatCode,stateName:seat.stateName,constituency:seat.constituency,winner:winner.candidateName,partyName:winner.partyName,votes:winner.votes,totalVotes:total,margin:winner.votes-(scored[1]?.votes||0),candidates:scored.map(x=>({candidateName:x.candidateName,partyName:x.partyName,votes:x.votes}))});
+    const own=slate.find(x=>x.stateName===seat.stateName && Number(x.constituencyNumber)===Number(seat.constituencyNumber));
+    if(own){own.status=winner.player?'Elected':'Not Elected';own.electionResult=winner.player?'Won':'Lost';own.votes=scored.find(x=>x.player)?.votes||0;own.resultDate=dateText();}
+  });
+  const tally={};
+  results.forEach(r=>{tally[r.partyName]=(tally[r.partyName]||0)+1;});
+  engine.results=results;
+  engine.partyTally=Object.entries(tally).map(([party,seats])=>({party,seats})).sort((a,b)=>b.seats-a.seats);
+  engine.completed=true;engine.lastRunAt=dateText();
+  state.elections.lastLokSabhaSeatTally={scheduledAt:engine.cycle,totalSeats:543,majorityMark:272,seatsWon:engine.partyTally,countingComplete:true,constituencyResults:results};
+  saveState();render();
+  toast(`Lok Sabha counting completed: ${results.length} constituency results recorded.`);
+}
+function lokSabhaElectionEnginePanel() {
+  const e=ensureLokSabhaElectionEngine();
+  const approved=ensurePartySlate().filter(x=>x.typeId==='lok-sabha' && Number(x.scheduledAt)===e.cycle && x.status==='Funded').length;
+  const wins=e.results.length, leader=e.partyTally[0];
+  return `<section class="panel"><span class="gold-tag">543-CONSTITUENCY ELECTION ENGINE</span><h2>National campaign, polling & counting</h2>
+    <div class="election-metrics"><div><small>CONSTITUENCIES</small><b>543</b></div><div><small>FUNDED PLAYER CANDIDATES</small><b>${approved}</b></div><div><small>CAMPAIGN ENTRIES</small><b>${e.campaigns.length}</b></div><div><small>RESULTS RECORDED</small><b>${wins}/543</b></div></div>
+    <p class="panel-description">This simulation generates constituency-level campaign and vote outcomes from funded player candidates and simulated AI competitors. Numbered constituency labels are used where verified official names are not available in the current dataset.</p>
+    <div class="national-lok-sabha-actions"><button class="primary-btn" data-ls-engine-campaign ${e.completed?'disabled':''}>RUN AI NATIONAL CAMPAIGNS</button><button class="primary-btn" data-ls-engine-count ${!e.campaigns.length||e.completed?'disabled':''}>POLL & COUNT ALL CONSTITUENCIES</button></div>
+    ${e.partyTally.length?`<h3>National seat tally</h3>${e.partyTally.map(x=>`<div class="national-ls-state-row"><b>${escapeHtml(x.party)}</b><strong>${x.seats}</strong></div>`).join('')}<p><b>Majority mark:</b> 272 · <b>Leading party:</b> ${escapeHtml(leader?.party||'—')} (${leader?.seats||0})</p>`:'<p class="panel-description">No constituency results yet. Complete campaigns and counting to calculate party seats automatically.</p>'}
+    ${e.results.length?`<details><summary>Constituency results · ${e.results.length}</summary><div class="candidate-register-list">${e.results.slice(0,543).map(r=>`<div class="finance-history" style="padding:10px;margin:6px 0"><b>${escapeHtml(r.constituency)}</b><div>${escapeHtml(r.winner)} · ${escapeHtml(r.partyName)}</div><small>${Number(r.votes).toLocaleString('en-IN')} votes · Margin ${Number(r.margin).toLocaleString('en-IN')}</small></div>`).join('')}</div></details>`:''}
+  </section>`;
+}
 
 function nationalElectionResultsCentre() {
   const history = Array.isArray(state.elections?.history) ? state.elections.history.filter(election => election.typeId === 'lok-sabha') : [];
@@ -4002,6 +4111,7 @@ function electionPage() {
 
     ${selectedElectionSection === 'lok-sabha' ? `
       ${nationalElectionResultsCentre()}
+      ${lokSabhaElectionEnginePanel()}
       ${verifiedLokSabhaDataPanel()}
       ${nationalLokSabhaCandidatePanel()}
       ${nationalElectionArchitecturePanel()}
@@ -6438,6 +6548,12 @@ document.addEventListener('click', event => {
   const rivalAction = event.target.closest('[data-rival-action]');
   if (rivalAction) { updateRivalPartyIntelligence(rivalAction.dataset.rivalAction, rivalAction.dataset.rivalId); return; }
 
+  const manualLsCampaign=event.target.closest('[data-ls-manual-campaign]');
+  if(manualLsCampaign){manageManualLokSabhaCampaign(manualLsCampaign.dataset.lsManualCampaign);return;}
+  const lsCampaignButton=event.target.closest('[data-ls-engine-campaign]');
+  if(lsCampaignButton){runLokSabhaCampaigns();return;}
+  const lsCountButton=event.target.closest('[data-ls-engine-count]');
+  if(lsCountButton){countLokSabhaElection();return;}
   const nationalLsGenerateButton = event.target.closest('[data-national-ls-generate]');
   if (nationalLsGenerateButton) { proposePartySlate('lok-sabha'); return; }
   const slateGenerateButton = event.target.closest('[data-party-slate-generate]');
