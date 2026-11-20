@@ -4716,7 +4716,7 @@ function createGovernmentProject() {
   const cost = Math.round(costCr * 10000000);
   if (cost > g.treasury) return toast('Insufficient government treasury for this project.');
   g.treasury -= cost;
-  g.projects.unshift({id:Date.now(),name:name.trim(),department:department.trim(),cost,durationMonths:duration,progress:0,status:'Approved',createdAt:dateText(),createdMonth:Number(state.month),createdYear:Number(state.year),milestones:[{name:'Administrative approval',status:'Completed'},{name:'Detailed project report',status:'Pending'},{name:'Tendering and procurement',status:'Pending'},{name:'Execution and monitoring',status:'Pending'}]});
+  g.projects.unshift({id:Date.now(),name:name.trim(),department:department.trim(),cost,durationMonths:duration,progress:12.5,status:'Administrative approval',createdAt:dateText(),createdMonth:Number(state.month),createdYear:Number(state.year),procurement:{method:'Open tender (simulated)',bidsReceived:0,selectedContractor:null},milestones:[{name:'Administrative approval',status:'Completed'},{name:'Detailed project report (DPR)',status:'Pending'},{name:'Technical and financial sanction',status:'Pending'},{name:'Tender publication',status:'Pending'},{name:'Bid evaluation and contractor selection',status:'Pending'},{name:'Work order issued',status:'Pending'},{name:'Construction and site monitoring',status:'Pending'},{name:'Quality inspection and completion',status:'Pending'}]});
   g.history.unshift({day:state.day,month:state.month,year:state.year,event:`Project approved: ${name.trim()} · ${department.trim()} · ${money(cost)}`});
   saveState(); render(); toast('Project approved and funds reserved in the government treasury.');
 }
@@ -4751,12 +4751,22 @@ function reviewGovernmentDepartment() {
 function advanceGovernmentProject(id) {
   const g=ensureGovernmentState(); const project=g.projects.find(p=>String(p.id)===String(id));
   if(!g.formed||!project||project.status==='Completed') return;
-  project.progress=Math.min(100,Number(project.progress||0)+25);
-  project.status=project.progress>=100?'Completed':'In progress';
-  const milestone=project.milestones?.find(m=>m.status==='Pending'); if(milestone) milestone.status='Completed';
+  if (!Array.isArray(project.milestones) || !project.milestones.length) project.milestones=[{name:'Administrative approval',status:'Completed'},{name:'Detailed project report',status:'Pending'},{name:'Tendering and procurement',status:'Pending'},{name:'Execution and monitoring',status:'Pending'}];
+  const milestone=project.milestones.find(m=>m.status==='Pending');
+  if(!milestone) { project.status='Completed'; project.progress=100; return toast('All project milestones are already complete.'); }
+  milestone.status='Completed'; milestone.completedAt=dateText();
+  if (/bid evaluation/i.test(milestone.name)) {
+    project.procurement=project.procurement||{method:'Open tender (simulated)',bidsReceived:0};
+    project.procurement.bidsReceived=Math.max(3,Number(project.procurement.bidsReceived||0));
+    project.procurement.selectedContractor=`Simulated Contractor ${project.procurement.bidsReceived}`;
+  }
+  if (/work order/i.test(milestone.name) && project.procurement) project.procurement.workOrderDate=dateText();
+  const completed=project.milestones.filter(m=>m.status==='Completed').length;
+  project.progress=Math.round(completed/project.milestones.length*100);
+  project.status=project.progress>=100?'Completed':milestone.name;
   if(project.status==='Completed'){g.performance=Math.min(100,Number(g.performance||50)+2);state.publicSupport=Math.min(100,Number(state.publicSupport||0)+1);}
-  g.history.unshift({day:state.day,month:state.month,year:state.year,event:`${project.name}: progress updated to ${project.progress}%`});
-  saveState();render();toast(`Project progress updated to ${project.progress}%.`);
+  g.history.unshift({day:state.day,month:state.month,year:state.year,event:`${project.name}: milestone completed — ${milestone.name} (${project.progress}%)`});
+  saveState();render();toast(`Milestone completed: ${milestone.name}. Project ${project.progress}% complete.`);
 }
 
 function governmentPage() {
@@ -4862,7 +4872,7 @@ function governmentPage() {
       <div class="command-section-head"><div><span class="eyebrow">STATE DEVELOPMENT</span><h2>Infrastructure projects</h2></div><b>${g.projects.length} projects</b></div>
       <p class="panel-description">Create capital projects, reserve treasury funds and track administrative approval, procurement and execution milestones.</p>
       <button class="primary-btn" data-action="gov-project-create" ${!formed?'disabled':''}>APPROVE NEW PROJECT</button>
-      ${g.projects.length?g.projects.slice(0,10).map(project=>`<div class="gov-scheme-row"><div><b>${escapeHtml(project.name)}</b><small>${escapeHtml(project.department)} · ${escapeHtml(project.status)} · ${project.durationMonths} months</small><div class="gov-budget-track"><i style="width:${Number(project.progress||0)}%"></i></div><small>${Number(project.progress||0)}% complete · ${money(project.cost)}</small></div><button class="secondary-btn" data-gov-project-progress="${escapeHtml(project.id)}" ${!formed||project.status==='Completed'?'disabled':''}>UPDATE MILESTONE</button></div>`).join(''):'<p class="panel-description">No capital projects approved yet.</p>'}
+      ${g.projects.length?g.projects.slice(0,10).map(project=>`<div class="gov-scheme-row"><div><b>${escapeHtml(project.name)}</b><small>${escapeHtml(project.department)} · ${escapeHtml(project.status)} · ${project.durationMonths} months</small><div class="gov-budget-track"><i style="width:${Number(project.progress||0)}%"></i></div><small>${Number(project.progress||0)}% complete · ${money(project.cost)}</small><small>${(project.milestones||[]).map(m=>`${escapeHtml(m.name)}: ${escapeHtml(m.status)}`).join(' · ')}</small>${project.procurement?.selectedContractor?`<small>Selected contractor (simulation): ${escapeHtml(project.procurement.selectedContractor)}</small>`:''}</div><button class="secondary-btn" data-gov-project-progress="${escapeHtml(project.id)}" ${!formed||project.status==='Completed'?'disabled':''}>COMPLETE NEXT STAGE</button></div>`).join(''):'<p class="panel-description">No capital projects approved yet.</p>'}
     </section>
     <section class="panel" style="margin-top:16px">
       <div class="command-section-head"><div><span class="eyebrow">EXECUTIVE GOVERNANCE</span><h2>Government orders & rules</h2></div><b>${g.governmentOrders.length} issued</b></div>
@@ -5711,17 +5721,73 @@ function ensureParliamentState() {
   p.oppositionSeats = Math.max(0, Number(p.oppositionSeats) || Math.max(0, p.seats-p.rulingSeats));
   return p;
 }
+function parliamentBillActionLabel(bill) {
+  const stage = String(bill.stage || 'introduced');
+  if (stage === 'introduced') return 'REFER TO COMMITTEE';
+  if (stage === 'committee') return 'COMPLETE COMMITTEE REPORT';
+  if (stage === 'reported') return 'START HOUSE DEBATE';
+  if (stage === 'debate') return 'PUT TO VOTE';
+  if (stage === 'passed') return 'SEND FOR GOVERNOR ASSENT';
+  return '';
+}
+function parliamentBillStageLabel(bill) {
+  const labels = {introduced:'First Reading · Introduced',committee:'Referred to Committee',reported:'Committee Report Submitted',debate:'House Debate',passed:'Passed by Assembly · Awaiting Assent',assent:'Assented · Enacted',defeated:'Defeated in House'};
+  return labels[bill.stage || (String(bill.status||'').toLowerCase().includes('passed')?'passed':'introduced')] || 'Introduced';
+}
 function parliamentPage() {
   const p = ensureParliamentState();
   const majority = Math.floor(p.seats/2)+1;
-  const billRows = p.bills.length ? p.bills.slice().reverse().map(b => `<div class="history-row"><b>${escapeHtml(b.title)}</b><span>${escapeHtml(b.status)}</span><small>${escapeHtml(b.date)}</small></div>`).join('') : '<p class="muted">No bills introduced yet.</p>';
-  return `<section class="page-heading"><span class="eyebrow">LEGISLATIVE POLITICS</span><h1>Parliament & Legislature</h1><p>Run sessions, debate legislation and test the government's majority.</p></section>
+  const billRows = p.bills.length ? p.bills.slice().reverse().map(b => {
+    const stage = b.stage || (String(b.status||'').toLowerCase().includes('passed') ? 'passed' : 'introduced');
+    const actionLabel = parliamentBillActionLabel({...b,stage});
+    const action = actionLabel ? `<button class="secondary-btn" data-bill-action="${escapeHtml(b.id)}">${actionLabel}</button>` : '';
+    return `<article class="panel government-portfolio"><div class="command-section-head"><div><b>${escapeHtml(b.title)}</b><small>${escapeHtml(b.type)} · ${escapeHtml(b.date)}</small></div><b>${escapeHtml(parliamentBillStageLabel({...b,stage}))}</b></div><p class="panel-description">${escapeHtml(b.lastAction || 'Bill introduced for legislative consideration.')}</p>${Number.isFinite(Number(b.votesFor)) ? `<small>Simulated vote: ${Number(b.votesFor)} for · ${Number(b.votesAgainst||0)} against</small>` : ''}${action}</article>`;
+  }).join('') : '<p class="muted">No bills introduced yet.</p>';
+  return `<section class="page-heading"><span class="eyebrow">LEGISLATIVE POLITICS</span><h1>Parliament & Legislature</h1><p>Introduce bills, scrutinise proposals, debate, vote and record assent through a simulated legislative process.</p></section>
   <div class="stats-grid">${statCard('Total seats',p.seats,'Illustrative Assembly model','▤')}${statCard('Ruling seats',p.rulingSeats,`Majority needed: ${majority}`,'🏛')}${statCard('Opposition seats',p.oppositionSeats,'Opposition benches','⚑')}${statCard('Sessions held',p.sessions,'Legislative sessions','◷')}</div>
-  <div class="dashboard-grid"><section class="panel"><span class="eyebrow">LEGISLATIVE SESSION</span><h2>House Business</h2><p>Open a session to conduct Question Hour and legislative business.</p><button class="primary-btn" data-parliament-action="session">OPEN LEGISLATIVE SESSION</button><button class="secondary-btn" data-parliament-action="question">CONDUCT QUESTION HOUR</button><button class="secondary-btn" data-parliament-action="confidence">TEST CONFIDENCE</button><p><b>Government confidence:</b> ${escapeHtml(p.confidence)}</p></section>
-  <section class="panel"><span class="eyebrow">INTRODUCE LEGISLATION</span><h2>New Bill</h2><input id="parliamentBillTitle" class="text-input" maxlength="70" placeholder="Enter bill title"><select id="parliamentBillType" class="text-input"><option>Development Bill</option><option>Education Bill</option><option>Healthcare Bill</option><option>Infrastructure Bill</option><option>Finance Bill</option><option>Welfare Bill</option></select><button class="primary-btn" data-parliament-action="bill">INTRODUCE BILL</button></section></div>
+  <div class="dashboard-grid"><section class="panel"><span class="eyebrow">LEGISLATIVE SESSION</span><h2>House Business</h2><p>Open a session before conducting formal debate and voting.</p><button class="primary-btn" data-parliament-action="session">OPEN LEGISLATIVE SESSION</button><button class="secondary-btn" data-parliament-action="question">CONDUCT QUESTION HOUR</button><button class="secondary-btn" data-parliament-action="confidence">TEST CONFIDENCE</button><p><b>Government confidence:</b> ${escapeHtml(p.confidence)}</p></section>
+  <section class="panel"><span class="eyebrow">INTRODUCE LEGISLATION</span><h2>New Bill</h2><input id="parliamentBillTitle" class="text-input" maxlength="70" placeholder="Enter bill title"><select id="parliamentBillType" class="text-input"><option>Development Bill</option><option>Education Bill</option><option>Healthcare Bill</option><option>Infrastructure Bill</option><option>Finance Bill</option><option>Welfare Bill</option></select><button class="primary-btn" data-parliament-action="bill">INTRODUCE BILL · FIRST READING</button><small class="creator-note">A bill is not automatically law. It must complete the simulated legislative stages and receive assent.</small></section></div>
   <section class="panel"><span class="eyebrow">BILL REGISTER</span><h2>Legislative Records</h2>${billRows}</section>
   <section class="panel"><span class="eyebrow">COALITION MANAGEMENT</span><h2>Alliance Partners</h2><button class="secondary-btn" data-parliament-action="alliance">NEGOTIATE ALLIANCE</button>${p.alliances.map(a=>`<div class="history-row"><b>${escapeHtml(a.name)}</b><span>+${a.seats} seats</span></div>`).join('')}</section>`;
 }
+function advanceParliamentBill(id) {
+  const p = ensureParliamentState();
+  const bill = p.bills.find(item => String(item.id) === String(id));
+  if (!bill) return toast('Bill record not found.');
+  bill.stage = bill.stage || (String(bill.status||'').toLowerCase().includes('passed') ? 'passed' : 'introduced');
+  if (bill.stage === 'introduced') {
+    bill.stage = 'committee'; bill.lastAction = 'Referred for detailed scrutiny and stakeholder review.';
+    toast('Bill referred to the committee for scrutiny.');
+  } else if (bill.stage === 'committee') {
+    bill.stage = 'reported'; bill.committeeReport = 'Committee report submitted with recommendations.'; bill.lastAction = bill.committeeReport;
+    toast('Committee report submitted.');
+  } else if (bill.stage === 'reported') {
+    if (p.sessions < 1) return toast('Open a legislative session before starting the House debate.');
+    bill.stage = 'debate'; bill.lastAction = 'House debate opened; members may now proceed to a simulated vote.';
+    toast('House debate opened.');
+  } else if (bill.stage === 'debate') {
+    if (p.sessions < 1) return toast('Open a legislative session before voting.');
+    const total = Math.max(1, Number(p.rulingSeats||0) + Number(p.oppositionSeats||0));
+    const present = Math.min(Number(p.seats||224), total);
+    const forVotes = Math.min(present, Math.max(0, Number(p.rulingSeats||0)));
+    const againstVotes = Math.max(0, present-forVotes);
+    bill.votesFor = forVotes; bill.votesAgainst = againstVotes; bill.votedAt = dateText();
+    if (forVotes > againstVotes) {
+      bill.stage = 'passed'; bill.status = 'Passed by simulated Assembly'; bill.lastAction = `Passed by ${forVotes} votes to ${againstVotes}; awaiting Governor's assent in this simulation.`;
+      toast('Bill passed by the simulated Assembly.');
+    } else {
+      bill.stage = 'defeated'; bill.status = 'Defeated in simulated Assembly'; bill.lastAction = `Defeated: ${forVotes} votes for and ${againstVotes} against.`;
+      toast('Bill was defeated in the simulated vote.');
+    }
+  } else if (bill.stage === 'passed') {
+    bill.stage = 'assent'; bill.status = 'Assented · Enacted in simulation'; bill.assentDate = dateText();
+    bill.lastAction = 'Assent recorded. The bill is now an enacted law in this fictional simulation.';
+    p.history.push({event:`Bill enacted after assent: ${bill.title}`,date:dateText()});
+    toast('Assent recorded. The bill is now enacted in the simulation.');
+  }
+  saveState(); render();
+}
+
 function parliamentAction(action) {
   const p = ensureParliamentState();
   if (action === 'session') { p.sessions++; p.history.push({event:'Session opened',date:dateText()}); toast('Legislative session opened.'); }
@@ -5731,9 +5797,10 @@ function parliamentAction(action) {
     const title = document.querySelector('#parliamentBillTitle')?.value.trim();
     const type = document.querySelector('#parliamentBillType')?.value || 'Development Bill';
     if (!title) { toast('Enter a bill title first.'); return; }
-    const passed = p.rulingSeats >= Math.floor(p.seats/2)+1;
-    p.bills.push({title, type, status: passed ? 'Passed by simulated house' : 'Introduced – majority not secured', date:dateText()});
-    toast(passed ? 'Bill passed in the simulation.' : 'Bill introduced; majority is not secured.');
+    const bill = { id: `bill-${Date.now()}-${p.bills.length+1}`, title, type, status:'Introduced', stage:'introduced', date:dateText(), lastAction:'First Reading recorded. The bill awaits committee scrutiny.' };
+    p.bills.push(bill);
+    p.history.push({event:`Bill introduced: ${title}`,date:dateText()});
+    toast('Bill introduced. It must now pass committee scrutiny, debate, voting and assent.');
   }
   if (action === 'alliance') {
     const name = `Regional Alliance ${p.alliances.length+1}`;
@@ -6405,6 +6472,9 @@ if (!Array.isArray(state.media.history)) state.media.history = [];
     }
     return;
   }
+
+  const billActionButton = event.target.closest('[data-bill-action]');
+  if (billActionButton) { advanceParliamentBill(billActionButton.dataset.billAction); return; }
 
   const parliamentButton = event.target.closest('[data-parliament-action]');
   if (parliamentButton) { parliamentAction(parliamentButton.dataset.parliamentAction); return; }
