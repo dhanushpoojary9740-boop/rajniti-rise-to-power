@@ -605,6 +605,8 @@ function escapeHtml(value) {
 function icon(name) {
   const icons = {
     Dashboard: '▦',
+    Parliament: '🏛',
+    Intelligence: '◈',
     Career: '♜',
     Activities: '✦',
     Party: '⚑',
@@ -669,10 +671,11 @@ function statCard(label, value, sub, symbol) {
 }
 
 function shell(content) {
+  // Primary navigation now follows India's political institutions.
+  // Secondary modules remain available through contextual section navigation.
   const nav = [
-    'Dashboard', 'Career', 'Activities', 'Party',
-    'Constituency', 'Constituency Intel', 'India Map', 'Elections', 'Executive Office', 'Government', 'Parliament', 'Alliances',
-    'National Command', 'Relationships', 'Intelligence', 'Opposition & Rivals', 'Public Opinion', 'Finance', 'News', 'Profile'
+    'Dashboard', 'Career', 'Party', 'Elections', 'Parliament',
+    'Government', 'Constituency', 'Intelligence', 'Finance', 'News', 'Profile'
   ];
 
   return `
@@ -682,7 +685,7 @@ function shell(content) {
           <div class="brand-mark">R</div>
           <div>
             <b>RAJNITI</b>
-            <small>RISE TO POWER</small>
+            <small>RISE TO POWER · 4.0</small>
           </div>
         </div>
 
@@ -730,7 +733,7 @@ function shell(content) {
       </main>
 
       <nav class="mobile-nav">
-        ${['Dashboard', 'Career', 'Party', 'Constituency', 'Constituency Intel', 'India Map', 'Elections', 'Executive Office', 'Government', 'Parliament', 'National Command', 'Intelligence', 'Opposition & Rivals', 'Public Opinion', 'Finance', 'News', 'Activities', 'Profile']
+        ${['Dashboard', 'Party', 'Elections', 'Government', 'Intelligence', 'Profile']
           .map(name => `
             <button class="${activeTab === name ? 'active' : ''}"
               data-tab="${name}">
@@ -5023,6 +5026,20 @@ function updateRivalPartyIntelligence(action, id) {
   saveState(); render();
 }
 
+function sectionNavigation(tab) {
+  const groups = {
+    Career: [{ label: 'Career overview', tab: 'Career' }, { label: 'Daily activities', tab: 'Activities' }],
+    Constituency: [{ label: 'Constituency', tab: 'Constituency' }, { label: 'District intelligence', tab: 'Constituency Intel' }, { label: 'India map', tab: 'India Map' }],
+    Elections: [{ label: 'Election calendar', tab: 'Elections' }, { label: 'Coalitions & alliances', tab: 'Alliances' }],
+    Government: [{ label: 'Government', tab: 'Government' }, { label: 'Executive office', tab: 'Executive Office' }, { label: 'National command', tab: 'National Command' }],
+    Parliament: [{ label: 'Parliament', tab: 'Parliament' }, { label: 'National command', tab: 'National Command' }],
+    Intelligence: [{ label: 'Political intelligence', tab: 'Intelligence' }, { label: 'Public opinion', tab: 'Public Opinion' }, { label: 'Opposition & rivals', tab: 'Opposition & Rivals' }, { label: 'Relationships', tab: 'Relationships' }]
+  };
+  const groupKey = Object.keys(groups).find(key => key === tab || groups[key].some(item => item.tab === tab));
+  if (!groupKey) return '';
+  return `<nav class="section-nav" aria-label="Related political systems">${groups[groupKey].map(item => `<button class="section-nav-item ${item.tab === tab ? 'active' : ''}" data-tab="${item.tab}">${item.label}</button>`).join('')}</nav>`;
+}
+
 /* MAIN RENDER */
 
 function render() {
@@ -5097,6 +5114,7 @@ function render() {
       content = genericPage(activeTab);
   }
 
+  content = sectionNavigation(activeTab) + content;
   document.querySelector('#app').innerHTML = shell(content);
 }
 

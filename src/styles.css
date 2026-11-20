@@ -2260,3 +2260,46 @@ input, select, textarea {
 .national-election-row small { color:#9eacbf; font-size:10px; }
 @media(max-width:850px){.national-unit-grid{grid-template-columns:repeat(2,minmax(0,1fr));}}
 @media(max-width:560px){.national-unit-grid{grid-template-columns:1fr;}.national-toolbar{grid-template-columns:1fr;}.national-election-row{align-items:flex-start;flex-direction:column;}.national-election-row button{width:100%;}}
+
+
+/* RAJNITI 4.0 — institutional navigation foundation */
+.section-nav {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  overflow-x: auto;
+  padding: 0 0 13px;
+  margin: -8px 0 22px;
+  border-bottom: 1px solid #263448;
+  scrollbar-width: thin;
+}
+.section-nav-item {
+  flex: 0 0 auto;
+  border: 1px solid #2b3a4e;
+  background: #101c2b;
+  color: #aab7c8;
+  border-radius: 7px;
+  padding: 9px 12px;
+  font-size: 10px;
+  letter-spacing: .2px;
+}
+.section-nav-item.active {
+  color: #f0d69a;
+  border-color: #a98b4e;
+  background: #c39e541b;
+}
+.mobile-nav {
+  justify-content: space-around;
+  gap: 2px;
+  overflow-x: auto;
+}
+.mobile-nav button {
+  flex: 1 0 0;
+  min-width: 0;
+  white-space: nowrap;
+}
+.mobile-nav small { font-size: 8px; }
+@media (max-width: 620px) {
+  .section-nav { margin-top: -5px; margin-bottom: 17px; }
+  .section-nav-item { padding: 8px 10px; font-size: 9px; }
+}
