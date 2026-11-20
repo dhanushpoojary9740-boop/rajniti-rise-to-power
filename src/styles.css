@@ -2232,3 +2232,31 @@ input, select, textarea {
   .meeting-status { align-items:flex-start; flex-direction:column; }
   .meeting-status small { text-align:left; }
 }
+
+
+/* RAJNITI 3.0.0 — national organisation command centre */
+.national-command { border-color:#34465e; background:linear-gradient(145deg,#122033,#0b1625); }
+.national-stats { margin:16px 0; }
+.national-toolbar { display:grid; grid-template-columns:2fr 1fr; gap:10px; margin:14px 0; }
+.national-toolbar .search-input { margin:0; }
+.national-unit-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:10px; }
+.national-unit-card { min-width:0; border:1px solid #2c3d53; border-radius:11px; padding:12px; background:#0c1726; }
+.national-unit-head { display:flex; justify-content:space-between; align-items:flex-start; gap:8px; }
+.national-unit-head b { font-size:12px; line-height:1.4; color:#edf2f8; }
+.national-unit-head span { font-size:8px; color:#d9c38f; letter-spacing:.8px; }
+.national-meter-label { display:flex; justify-content:space-between; margin-top:12px; }
+.national-meter-label small,.national-unit-meta,.national-unit-activity { color:#9eacbf; font-size:9px; }
+.national-meter-label b { font-size:10px; color:#e4d09e; }
+.national-meter { height:6px; border-radius:10px; overflow:hidden; background:#263449; margin:6px 0 10px; }
+.national-meter i { display:block; height:100%; border-radius:10px; background:linear-gradient(90deg,#9e7b43,#e4c77e); }
+.national-unit-meta { display:flex; justify-content:space-between; gap:6px; flex-wrap:wrap; }
+.national-unit-meta b { color:#e5eaf1; }
+.national-unit-activity { display:block; margin-top:9px; line-height:1.45; }
+.national-alert { border:1px solid #8c713f; background:#292315; color:#f1dba4; border-radius:10px; padding:12px; margin:14px 0; }
+.national-alert small { display:block; margin-top:4px; color:#c6b995; }
+.national-election-row { display:flex; justify-content:space-between; align-items:center; gap:10px; padding:12px 0; border-bottom:1px solid #29384d; }
+.national-election-row > div { display:flex; flex-direction:column; gap:4px; min-width:0; }
+.national-election-row b { font-size:12px; }
+.national-election-row small { color:#9eacbf; font-size:10px; }
+@media(max-width:850px){.national-unit-grid{grid-template-columns:repeat(2,minmax(0,1fr));}}
+@media(max-width:560px){.national-unit-grid{grid-template-columns:1fr;}.national-toolbar{grid-template-columns:1fr;}.national-election-row{align-items:flex-start;flex-direction:column;}.national-election-row button{width:100%;}}

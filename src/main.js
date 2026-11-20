@@ -1266,8 +1266,91 @@ function getPartyMember(id) {
   return state.partyMemberRecords.find(member => member.id === id);
 }
 
+const indiaPoliticalUnits = [
+  'Andhra Pradesh','Arunachal Pradesh','Assam','Bihar','Chhattisgarh','Goa','Gujarat','Haryana','Himachal Pradesh','Jharkhand','Karnataka','Kerala','Madhya Pradesh','Maharashtra','Manipur','Meghalaya','Mizoram','Nagaland','Odisha','Punjab','Rajasthan','Sikkim','Tamil Nadu','Telangana','Tripura','Uttar Pradesh','Uttarakhand','West Bengal',
+  'Andaman and Nicobar Islands','Chandigarh','Dadra and Nagar Haveli and Daman and Diu','Delhi','Jammu and Kashmir','Ladakh','Lakshadweep','Puducherry'
+];
+const nationalRoleNames = ['State President','State Working President','State General Secretary','State Treasurer','Organisation Secretary'];
+function ensureNationalPartySystem() {
+  if (!state.nationalParty || typeof state.nationalParty !== 'object') state.nationalParty = {};
+  const n=state.nationalParty;
+  if (!Array.isArray(n.units)) n.units=[];
+  if (!Array.isArray(n.reports)) n.reports=[];
+  if (!Array.isArray(n.decisions)) n.decisions=[];
+  if (!Array.isArray(n.electionQueue)) n.electionQueue=[];
+  if (!n.lastMonthProcessed) n.lastMonthProcessed=-1;
+  indiaPoliticalUnits.forEach((name,index)=>{
+    let unit=n.units.find(item=>item.name===name);
+    if(!unit){
+      unit={id:'national-unit-'+index,name,isUT:index>=28,presidentId:null,membership:index===10?Math.max(1,Math.round((Number(state.partyMembers)||1)*0.35)):Math.max(12,28+(index*17)%95),districtUnits:Math.max(1,Math.round((Number(state.partyMembers)||120)/36)),popularity:Math.max(5,Math.min(65,Number(state.partyPopularity||10)+((index*7)%19)-8)),organisation:Math.max(8,35+(index*11)%45),seatsHeld:0,assemblySeats:index===10?224:0,seatTarget:index===10?113:Math.max(1,Math.round(30+(index*13)%90)),treasury:Math.max(0,Math.round((Number(state.partyFunds)||0)*(index===10?0.35:0.012))),lastElection:null,activity:'Building organisation'};
+      n.units.push(unit);
+    }
+  });
+  n.units=n.units.filter(unit=>indiaPoliticalUnits.includes(unit.name));
+  return n;
+}
+function nationalMonthIndex(){return Math.max(0,(Number(state.year||1)-1)*12+(Number(state.month||1)-1));}
+function advanceNationalPartyAI(){
+  const n=ensureNationalPartySystem();
+  const month=nationalMonthIndex();
+  if(n.lastMonthProcessed===month)return;
+  n.lastMonthProcessed=month;
+  const due=[];
+  n.units.forEach((unit,index)=>{
+    const change=((month+index*3)%5)-2;
+    unit.popularity=Math.max(0,Math.min(100,Number(unit.popularity||0)+change));
+    unit.organisation=Math.max(0,Math.min(100,Number(unit.organisation||0)+(((month+index)%3)-1)));
+    unit.membership=Math.max(1,Math.round(Number(unit.membership||0)*(1+((((month+index*2)%5)-2)/100))));
+    unit.districtUnits=Math.max(1,Math.round(unit.membership/Math.max(25,unit.membership/Math.max(1,unit.districtUnits||1))));
+    unit.activity=unit.organisation<25?'Recruitment and district-building':unit.popularity<25?'Public outreach and issue campaigns':'Routine state organisation and voter outreach';
+    const interval=unit.isUT?60:60;
+    if(!unit.nextElectionAt)unit.nextElectionAt=month+((index*7+18)%48)+6;
+    if(month>=unit.nextElectionAt && !n.electionQueue.some(e=>e.unitId===unit.id&&e.status==='Awaiting review')){
+      const estimate=Math.max(0,Math.min(unit.assemblySeats||90,Math.round((unit.assemblySeats||90)*unit.popularity/100*0.55)));
+      const election={id:'national-election-'+unit.id+'-'+month,unitId:unit.id,stateName:unit.name,dueMonth:month,seatCount:unit.assemblySeats||90,aiProjectedSeats:estimate,approvedSeats:0,status:'Awaiting review',candidateSlate:Array.from({length:Math.max(1,Math.min(unit.assemblySeats||90,estimate+Math.max(3,Math.round((unit.assemblySeats||90)*0.12))))},(_,i)=>({id:`${unit.id}-candidate-${month}-${i}`,name:fictionalPartyMemberName((index*19+i+month)%fictionalIndianPartyNames.length),constituency:`${unit.name} Assembly Constituency ${String(i+1).padStart(2,'0')}`,status:'AI Proposed'})),createdAt:dateText()};
+      n.electionQueue.unshift(election); due.push(unit.name);
+      unit.nextElectionAt=month+interval;
+    }
+  });
+  n.reports.unshift({month,date:dateText(),summary:due.length?`Election review required in ${due.join(', ')}.`:'AI completed routine organisation reviews across 36 political units.',units:n.units.length,totalMembers:n.units.reduce((sum,u)=>sum+Number(u.membership||0),0),averagePopularity:Math.round(n.units.reduce((sum,u)=>sum+Number(u.popularity||0),0)/n.units.length)});
+  n.reports=n.reports.slice(0,36);
+  if(due.length) state.news.unshift({id:'national-ai-'+month,title:`National election review: ${due.join(', ')}`,category:'Party Organisation',summary:'AI state units have prepared candidate recommendations. Review the state election queue and approve major campaign decisions.',date:dateText(),read:false});
+  saveState();
+}
+function nationalPartySection(){
+  const n=ensureNationalPartySystem();
+  const totalMembers=n.units.reduce((sum,u)=>sum+Number(u.membership||0),0);
+  const average=Math.round(n.units.reduce((sum,u)=>sum+Number(u.popularity||0),0)/n.units.length);
+  const held=n.units.reduce((sum,u)=>sum+Number(u.seatsHeld||0),0);
+  const queued=n.electionQueue.filter(e=>e.status==='Awaiting review');
+  return `<section class="panel national-command">
+    <span class="eyebrow">BHARAT PRAGATI PARTY · NATIONAL ORGANISATION</span>
+    <h2>National Political Command Centre</h2>
+    <p class="panel-description">AI state units manage routine organisation, district outreach and election preparation across all 28 states and 8 Union Territories. You retain approval over candidates, major budgets, alliances and leadership decisions.</p>
+    <div class="stats-grid national-stats">${statCard('POLITICAL UNITS','36','28 states · 8 UTs','▦')}${statCard('ESTIMATED MEMBERS',totalMembers.toLocaleString('en-IN'),'Simulated party organisation','♟')}${statCard('AVERAGE SUPPORT',average+'/100','Simulated internal indicator','✦')}${statCard('ASSEMBLY SEATS HELD',held,'Recorded game results only','▤')}</div>
+    ${queued.length?`<div class="national-alert"><b>${queued.length} election review(s) need your decision</b><small>${queued.map(e=>escapeHtml(e.stateName)).join(' · ')}</small></div>`:''}
+    <div class="national-toolbar"><input class="search-input" id="nationalStateSearch" placeholder="Search state or Union Territory…" autocomplete="off"><select id="nationalUnitFilter" class="search-input"><option value="all">All political units</option><option value="state">States</option><option value="ut">Union Territories</option></select></div>
+    <div class="national-unit-grid" id="nationalUnitGrid">${n.units.slice().sort((a,b)=>b.popularity-a.popularity).map(unit=>`<article class="national-unit-card" data-national-unit="${escapeHtml((unit.name+' '+(unit.isUT?'UT':'State')).toLowerCase())}" data-unit-type="${unit.isUT?'ut':'state'}">
+      <div class="national-unit-head"><b>${escapeHtml(unit.name)}</b><span>${unit.isUT?'UT':'STATE'}</span></div>
+      <div class="national-meter-label"><small>Party support</small><b>${unit.popularity}/100</b></div><div class="national-meter"><i style="width:${unit.popularity}%"></i></div>
+      <div class="national-unit-meta"><span>Members <b>${Number(unit.membership).toLocaleString('en-IN')}</b></span><span>Organisation <b>${unit.organisation}/100</b></span></div>
+      <small class="national-unit-activity">${escapeHtml(unit.activity||'AI organisation active')}</small>
+    </article>`).join('')}</div>
+    <h3 style="margin-top:22px">National election review queue</h3>
+    ${queued.length?queued.slice(0,12).map(e=>`<div class="national-election-row"><div><b>${escapeHtml(e.stateName)}</b><small>${e.candidateSlate.length} AI-proposed candidates · projected ${e.aiProjectedSeats} seats (simulation)</small></div><button class="secondary-btn" data-national-election-review="${escapeHtml(e.id)}">Review list</button></div>`).join(''):'<p class="panel-description">No state election currently requires your approval. AI units continue routine organisation.</p>'}
+    <h3 style="margin-top:22px">Latest national AI reports</h3>
+    ${n.reports.slice(0,6).map(r=>`<div class="career-step"><div><b>${escapeHtml(r.date)} · National review</b><small>${escapeHtml(r.summary)} · ${r.totalMembers.toLocaleString('en-IN')} simulated members</small></div><span class="current-label">AI REPORT</span></div>`).join('')}
+    <p class="panel-description">All state-level support, membership and projections are fictional game simulations, not real polling or official party membership figures.</p>
+  </section>`;
+}
+function reviewNationalElection(id){
+  const n=ensureNationalPartySystem(), election=n.electionQueue.find(e=>e.id===id);
+  if(!election)return toast('Election review not found.');
+  const summary=election.candidateSlate.slice(0,8).map(c=>c.constituency).join(', ');
+  alert(`${election.stateName} election review\n${election.candidateSlate.length} AI-proposed candidates\nProjected seats: ${election.aiProjectedSeats}\n\nSample constituencies: ${summary}\n\nThe candidate slate is a fictional simulation. Review and approve candidates in the national election panel.`);
+}
 function partySectionTabs() {
-  return ['Overview', 'Treasury', 'Leadership', 'Members', 'Organisation', 'Elections', 'Operations'].map(section => `
+  return ['Overview', 'National', 'Treasury', 'Leadership', 'Members', 'Organisation', 'Elections', 'Operations'].map(section => `
     <button class="secondary-btn ${partySection === section ? 'active' : ''}" data-party-section="${section}">${section}</button>
   `).join('');
 }
@@ -1455,6 +1538,7 @@ function generatePartyAuditReport() {
 
 function createdPartyPage() {
   let sectionContent = partyOverviewSection();
+  if (partySection === 'National') sectionContent = nationalPartySection();
   if (partySection === 'Treasury') sectionContent = partyTreasurySection();
   if (partySection === 'Leadership') sectionContent = partyLeadershipSection();
   if (partySection === 'Members') sectionContent = partyMembersSection();
@@ -4841,6 +4925,7 @@ function nationalCommandAction(action) {
   saveState(); render();
 }
 function advanceNationalCommandMonth() {
+  advanceNationalPartyAI();
   const n = ensureNationalCommand();
   n.projects.filter(p=>p.status==='Active').forEach(p=>{
     p.months = Number(p.months||0)+1;
@@ -5017,6 +5102,8 @@ function render() {
 /* EVENT HANDLERS */
 
 document.addEventListener('input', event => {
+  if(event.target?.id==='nationalStateSearch'){const q=event.target.value.trim().toLowerCase();document.querySelectorAll('#nationalUnitGrid [data-national-unit]').forEach(card=>card.hidden=!card.dataset.nationalUnit.includes(q));}
+
   if (event.target && event.target.id === 'meetingMemberSearch') {
     const query = event.target.value.trim().toLocaleLowerCase('en-IN');
     document.querySelectorAll('#meetingMemberList [data-meeting-member-row]').forEach(card => { card.hidden = !card.dataset.meetingMemberRow.includes(query); });
@@ -5034,6 +5121,8 @@ document.addEventListener('input', event => {
 });
 
 document.addEventListener('change', event => {
+  if(event.target?.id==='nationalUnitFilter'){const f=event.target.value;document.querySelectorAll('#nationalUnitGrid [data-national-unit]').forEach(card=>card.hidden=(f!=='all'&&card.dataset.unitType!==f));}
+
   if (event.target && event.target.id === 'cabinetPortfolioSelect') {
     const g = ensureGovernmentState();
     g.pendingPortfolio = event.target.value;
@@ -5042,6 +5131,8 @@ document.addEventListener('change', event => {
 });
 
 document.addEventListener('click', event => {
+  const nationalReview=event.target.closest('[data-national-election-review]'); if(nationalReview){reviewNationalElection(nationalReview.dataset.nationalElectionReview);return;}
+
   const rivalSelect = event.target.closest('[data-rival-select]');
   if (rivalSelect) { state.selectedRivalPartyId = rivalSelect.dataset.rivalSelect; saveState(); render(); return; }
   const rivalAction = event.target.closest('[data-rival-action]');
