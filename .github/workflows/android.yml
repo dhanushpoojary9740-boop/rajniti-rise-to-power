@@ -94,9 +94,9 @@ jobs:
                       original = handle.read()
                   updated = original
                   if 'https://maven.aliyun.com/repository/google' not in updated:
-                      updated = updated.replace('google()', google_mirror + '\\n        google()')
+                      updated = updated.replace('google()', google_mirror + '\n        google()')
                   if 'https://maven.aliyun.com/repository/central' not in updated:
-                      updated = updated.replace('mavenCentral()', central_mirror + '\\n        mavenCentral()')
+                      updated = updated.replace('mavenCentral()', central_mirror + '\n        mavenCentral()')
                   if updated != original:
                       with open(path, 'w', encoding='utf-8') as handle:
                           handle.write(updated)
@@ -168,7 +168,7 @@ jobs:
           text = open(path, encoding='utf-8').read()
           run_number = int(os.environ['RUN_NUMBER'])
           version_code = 1000 + run_number
-          version_name = f"4.2.2.{run_number}"
+          version_name = f"4.2.3.{run_number}"
           text, count = re.subn(r'versionCode\s+\d+', f'versionCode {version_code}', text, count=1)
           if count != 1:
               raise SystemExit('Could not set Android versionCode')
