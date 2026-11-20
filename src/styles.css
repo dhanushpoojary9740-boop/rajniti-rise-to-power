@@ -2303,3 +2303,47 @@ input, select, textarea {
   .section-nav { margin-top: -5px; margin-bottom: 17px; }
   .section-nav-item { padding: 8px 10px; font-size: 9px; }
 }
+
+
+/* RAJNITI 4.1.0 · National electoral architecture */
+.national-election-foundation {
+  border-color: rgba(201, 165, 93, .28);
+  background: linear-gradient(145deg, rgba(18, 27, 40, .96), rgba(10, 16, 25, .98));
+}
+.election-national-seat-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px 18px;
+  margin: 18px 0;
+}
+.election-national-seat-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 11px;
+  border: 1px solid rgba(255,255,255,.07);
+  border-radius: 9px;
+  color: var(--text-secondary, #aab2c0);
+  font-size: .88rem;
+}
+.election-national-seat-row b {
+  color: #e0bd78;
+  font-variant-numeric: tabular-nums;
+}
+.election-national-note {
+  margin-top: 14px;
+  padding: 14px 15px;
+  border-left: 3px solid rgba(201,165,93,.7);
+  background: rgba(255,255,255,.025);
+  border-radius: 0 10px 10px 0;
+}
+.election-national-note p {
+  margin: 7px 0 0;
+  color: var(--text-secondary, #aab2c0);
+  line-height: 1.55;
+  font-size: .9rem;
+}
+@media (max-width: 520px) {
+  .election-national-seat-grid { grid-template-columns: 1fr; }
+}

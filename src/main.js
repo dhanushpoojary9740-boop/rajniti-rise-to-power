@@ -3294,7 +3294,53 @@ function decidePartySlate(id, decision) {
   toast(decision === 'approve' ? 'Candidate approved for the party slate. Campaign funding remains subject to a separate treasury allocation.' : 'Candidate proposal rejected.');
 }
 
-function electionPage() {
+
+const lokSabhaSeatAllocation = [{"unit": "Andhra Pradesh", "seats": 25}, {"unit": "Arunachal Pradesh", "seats": 2}, {"unit": "Assam", "seats": 14}, {"unit": "Bihar", "seats": 40}, {"unit": "Chhattisgarh", "seats": 11}, {"unit": "Goa", "seats": 2}, {"unit": "Gujarat", "seats": 26}, {"unit": "Haryana", "seats": 10}, {"unit": "Himachal Pradesh", "seats": 4}, {"unit": "Jharkhand", "seats": 14}, {"unit": "Karnataka", "seats": 28}, {"unit": "Kerala", "seats": 20}, {"unit": "Madhya Pradesh", "seats": 29}, {"unit": "Maharashtra", "seats": 48}, {"unit": "Manipur", "seats": 2}, {"unit": "Meghalaya", "seats": 2}, {"unit": "Mizoram", "seats": 1}, {"unit": "Nagaland", "seats": 1}, {"unit": "Odisha", "seats": 21}, {"unit": "Punjab", "seats": 13}, {"unit": "Rajasthan", "seats": 25}, {"unit": "Sikkim", "seats": 1}, {"unit": "Tamil Nadu", "seats": 39}, {"unit": "Telangana", "seats": 17}, {"unit": "Tripura", "seats": 2}, {"unit": "Uttar Pradesh", "seats": 80}, {"unit": "Uttarakhand", "seats": 5}, {"unit": "West Bengal", "seats": 42}, {"unit": "Andaman & Nicobar Islands", "seats": 1}, {"unit": "Chandigarh", "seats": 1}, {"unit": "Dadra & Nagar Haveli and Daman & Diu", "seats": 2}, {"unit": "Delhi", "seats": 7}, {"unit": "Jammu & Kashmir", "seats": 5}, {"unit": "Ladakh", "seats": 1}, {"unit": "Lakshadweep", "seats": 1}, {"unit": "Puducherry", "seats": 1}];
+
+function nationalElectionArchitecturePanel() {
+  const totalSeats = lokSabhaSeatAllocation.reduce((sum, item) => sum + item.seats, 0);
+  const majority = Math.floor(totalSeats / 2) + 1;
+  const calendar = ensureElectionCalendar();
+  const schedule = calendar.calendar['lok-sabha'] || { nextAt: currentMonthIndex() + 48, intervalMonths: 60, label: 'Lok Sabha general election' };
+  const monthsLeft = Math.max(0, Number(schedule.nextAt || 0) - currentMonthIndex());
+  const stage = monthsLeft <= 0 ? 'Election due' : monthsLeft <= 2 ? 'Campaign period approaching' : monthsLeft <= 4 ? 'Nomination preparation' : 'Pre-election period';
+  return `
+    <section class="panel national-election-foundation">
+      <div class="section-heading-row">
+        <div>
+          <span class="gold-tag">NATIONAL ELECTORAL STRUCTURE</span>
+          <h2>Lok Sabha · General Election</h2>
+          <p class="panel-description">A national election returns one Member of Parliament from each parliamentary constituency. The party's national seat position is calculated from constituency results, not from a single statewide vote-share estimate.</p>
+        </div>
+      </div>
+      <div class="stats-grid">
+        ${statCard('PARLIAMENTARY SEATS', totalSeats, '543 elected constituencies', '▤')}
+        ${statCard('MAJORITY MARK', majority, 'Simple majority of elected seats', '⚖')}
+        ${statCard('STATES & UTs', lokSabhaSeatAllocation.length, '36 electoral units', '🇮🇳')}
+        ${statCard('TIME TO POLL', `${monthsLeft} months`, stage, '◷')}
+      </div>
+      <div class="election-national-seat-grid">
+        ${lokSabhaSeatAllocation.map(item => `
+          <div class="election-national-seat-row">
+            <span>${escapeHtml(item.unit)}</span>
+            <b>${item.seats}</b>
+          </div>
+        `).join('')}
+      </div>
+      <div class="election-national-note">
+        <b>Institutional rules</b>
+        <p>Lok Sabha general elections are direct elections. A party's seat total is the sum of its constituency wins. Government formation requires a leader able to command the confidence of the House. The President appoints the Prime Minister.</p>
+        <p>Seat allocation is based on the Election Commission's 2024 state/UT parliamentary constituency reference. Future delimitation changes must be applied as a new electoral-boundary dataset, not silently assumed.</p>
+      </div>
+      <div class="election-national-note">
+        <b>Important limitation in this build</b>
+        <p>This panel establishes the national seat map and majority rule. It does not yet constitute a complete 543-seat candidate register, constituency-level counting engine or official nomination workflow. Those will be implemented as the next connected election-system stage.</p>
+      </div>
+    </section>
+  `;
+}
+
+\nfunction electionPage() {
   migrateAssemblyCountdownV260();
   archiveExpiredPartySlateCycles();
   ensureAssemblyElectionCountdown();
@@ -3332,7 +3378,7 @@ function electionPage() {
       ${statCard('WIN RATE', winRate + '%', 'Based on completed contests', '✦')}
       ${statCard('LOCAL SUPPORT', averageSupport + '%', 'Across your localities', '♥')}
     </div>
-
+\n    ${nationalElectionArchitecturePanel()}\n
     <section class="panel">
       <span class="gold-tag">RECURRING ELECTION CALENDAR</span>
       <h2>Upcoming election cycles</h2>
