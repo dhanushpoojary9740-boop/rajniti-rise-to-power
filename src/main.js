@@ -240,13 +240,8 @@ if (!state.lokSabhaElection7MonthRetryV630) {
   const oldCycle = Number(state.elections.calendar['lok-sabha']?.nextAt);
   const nextCycle = nowMonth + 7;
   state.elections.calendar['lok-sabha'] = { ...(state.elections.calendar['lok-sabha'] || {}), intervalMonths: 60, nextAt: nextCycle, label: 'Lok Sabha elections' };
-  if (state.elections.lokSabhaEngine && typeof state.elections.lokSabhaEngine === 'object') {
-    state.elections.lokSabhaEngine.cycle = nextCycle;
-    state.elections.lokSabhaEngine.campaigns = [];
-    state.elections.lokSabhaEngine.results = [];
-    state.elections.lokSabhaEngine.partyTally = [];
-    state.elections.lokSabhaEngine.completed = false;
-  }
+  // Do not mutate the active engine here. ensureLokSabhaElectionEngine() archives
+  // any completed 543-seat result before moving to the new scheduled cycle.
   if (Array.isArray(state.elections.partySlate)) state.elections.partySlate.forEach(item => {
     if (item && item.typeId === 'lok-sabha' && Number(item.scheduledAt) === oldCycle && ['Proposed','Party Approved','Funded'].includes(item.status)) item.scheduledAt = nextCycle;
   });
@@ -266,15 +261,8 @@ if (!state.lokSabhaElection7MonthRetryV632) {
   if (Array.isArray(state.elections.partySlate)) state.elections.partySlate.forEach(item => {
     if (item && item.typeId === 'lok-sabha' && Number(item.scheduledAt) === previousCycle && ['Proposed','Party Approved','Funded'].includes(item.status)) item.scheduledAt = retryCycle;
   });
-  if (state.elections.lokSabhaEngine && typeof state.elections.lokSabhaEngine === 'object') {
-    state.elections.lokSabhaEngine.cycle = retryCycle;
-    state.elections.lokSabhaEngine.campaigns = [];
-    state.elections.lokSabhaEngine.results = [];
-    state.elections.lokSabhaEngine.partyTally = [];
-    state.elections.lokSabhaEngine.completed = false;
-    state.elections.lokSabhaEngine.campaignsRunAt = '';
-  }
-  delete state.elections.lastLokSabhaSeatTally;
+  // Preserve the current engine and completed result. The engine's own cycle rollover
+  // archives a valid national tally before starting the next campaign cycle.
   state.lokSabhaElection7MonthRetryV632 = true;
   persistStateSafely();
 }
@@ -3983,6 +3971,17 @@ function nationalLokSabhaCandidatePanel() {
 
 
 
+function deriveLokSabhaTallyFromResults(rows) {
+  if (!Array.isArray(rows) || rows.length !== 543) return [];
+  const counts = {};
+  for (const row of rows) {
+    const party = String(row?.partyName || row?.party || '').trim();
+    if (!party) return [];
+    counts[party] = (counts[party] || 0) + 1;
+  }
+  return Object.entries(counts).map(([party,seats])=>({party,seats})).sort((a,b)=>b.seats-a.seats);
+}
+
 function ensureLokSabhaElectionEngine() {
   if (!state.elections || typeof state.elections !== 'object') state.elections = {};
   if (!state.elections.lokSabhaEngine || typeof state.elections.lokSabhaEngine !== 'object') {
@@ -3996,13 +3995,16 @@ function ensureLokSabhaElectionEngine() {
   const schedule = ensureElectionCalendar().calendar['lok-sabha'];
   const cycle = Number(schedule?.nextAt || currentMonthIndex());
   if (Number(engine.cycle) !== cycle) {
-    if (engine.completed && Array.isArray(engine.results) && engine.results.length === 543) {
-      const savedResults = engine.results.map(row=>({winner:row.winner,partyName:row.partyName,constituency:row.constituency,stateName:row.stateName,seatCode:row.seatCode,votes:Number(row.votes||0),runnerUp:row.runnerUp||'',runnerUpParty:row.runnerUpParty||'',runnerUpVotes:Number(row.runnerUpVotes||0),margin:Number(row.margin||0)}));
-      const savedTally = Array.isArray(engine.partyTally) ? engine.partyTally.map(row=>({party:row.party,seats:Number(row.seats||0)})) : [];
-      state.elections.lastLokSabhaResults = savedResults;
-      state.elections.lastLokSabhaCompletedCycle = Number(engine.cycle);
-      state.elections.lastLokSabhaNationalSnapshot = {cycle:Number(engine.cycle),tally:savedTally,results:savedResults,source:'Saved completed Lok Sabha election',completedAt:engine.lastRunAt||dateText()};
-      state.elections.lastLokSabhaSeatTally = {scheduledAt:Number(engine.cycle),totalSeats:543,majorityMark:272,seatsWon:savedTally,countingComplete:true};
+    if (Array.isArray(engine.results) && engine.results.length === 543) {
+      const savedResults = engine.results.map(row=>({winner:row.winner,partyName:row.partyName, constituency:row.constituency,stateName:row.stateName,seatCode:row.seatCode,votes:Number(row.votes||0),runnerUp:row.runnerUp||'',runnerUpParty:row.runnerUpParty||'',runnerUpVotes:Number(row.runnerUpVotes||0),margin:Number(row.margin||0)}));
+      const engineTallyValid = Array.isArray(engine.partyTally) && engine.partyTally.reduce((sum,row)=>sum+Number(row.seats||0),0) === 543;
+      const savedTally = engineTallyValid ? engine.partyTally.map(row=>({party:row.party,seats:Number(row.seats||0)})) : deriveLokSabhaTallyFromResults(savedResults);
+      if (savedTally.reduce((sum,row)=>sum+Number(row.seats||0),0) === 543) {
+        state.elections.lastLokSabhaResults = savedResults;
+        state.elections.lastLokSabhaCompletedCycle = Number(engine.cycle);
+        state.elections.lastLokSabhaNationalSnapshot = {cycle:Number(engine.cycle),tally:savedTally,results:[],source:'Saved completed Lok Sabha election',completedAt:engine.lastRunAt||dateText(),completed:true};
+        state.elections.lastLokSabhaSeatTally = {scheduledAt:Number(engine.cycle),totalSeats:543,majorityMark:272,seatsWon:savedTally,countingComplete:true};
+      }
     }
     engine.cycle = cycle; engine.campaigns = []; engine.results = []; engine.partyTally = []; engine.completed = false; engine.campaignsRunAt = '';
     engine.aiCampaignReport = [];
@@ -4018,11 +4020,14 @@ function lokSabhaCompletedResultSnapshot() {
   const validTally = rows => Array.isArray(rows) && rows.length > 0 &&
     rows.every(row => Number.isFinite(Number(row.seats)) && Number(row.seats) >= 0) &&
     rows.reduce((sum,row)=>sum+Number(row.seats||0),0) === 543;
-  if (engine.completed && Array.isArray(engine.results) && engine.results.length === 543 && validTally(engine.partyTally)) {
-    return { cycle:Number(engine.cycle), tally:engine.partyTally, results:engine.results||[], source:'Current Lok Sabha count', completedAt:engine.lastRunAt||'' };
+  if (Array.isArray(engine.results) && engine.results.length === 543) {
+    const currentTally = validTally(engine.partyTally) ? engine.partyTally : deriveLokSabhaTallyFromResults(engine.results);
+    if (validTally(currentTally)) return { cycle:Number(engine.cycle), tally:currentTally, results:engine.results||[], source:'Current Lok Sabha count', completedAt:engine.lastRunAt||'' };
   }
-  if (saved.completedAt && validTally(saved.tally)) {
-    return { cycle:Number(saved.cycle), tally:saved.tally, results:Array.isArray(saved.results)?saved.results:[], source:saved.source||'Saved completed Lok Sabha election', completedAt:saved.completedAt };
+  const savedRows = Array.isArray(saved.results) && saved.results.length ? saved.results : (Array.isArray(elections.lastLokSabhaResults) ? elections.lastLokSabhaResults : []);
+  const savedTally = validTally(saved.tally) ? saved.tally : deriveLokSabhaTallyFromResults(savedRows);
+  if ((saved.completedAt || saved.completed === true || savedRows.length === 543) && validTally(savedTally)) {
+    return { cycle:Number(saved.cycle), tally:savedTally, results:savedRows, source:saved.source||'Saved completed Lok Sabha election', completedAt:saved.completedAt||'' };
   }
   // Recover older saves where the engine was reset but its 543 completed result rows survived.
   const archived = Array.isArray(elections.lastLokSabhaResults) ? elections.lastLokSabhaResults : [];
@@ -4171,9 +4176,11 @@ function countLokSabhaElection() {
   })).sort((a,b)=>b.wins-a.wins);
   engine.completed=true;engine.lastRunAt=dateText();
   state.elections.lastLokSabhaSeatTally={scheduledAt:engine.cycle,totalSeats:543,majorityMark:272,seatsWon:engine.partyTally,countingComplete:true,date:engine.lastRunAt};
-  state.elections.lastLokSabhaResults=results.map(row=>({winner:row.winner,partyName:row.partyName,constituency:row.constituency,stateName:row.stateName,seatCode:row.seatCode,votes:Number(row.votes||0),runnerUp:row.runnerUp||'',runnerUpParty:row.runnerUpParty||'',runnerUpVotes:Number(row.runnerUpVotes||0),margin:Number(row.margin||0)}));
+  // Keep the detailed 543-row result in the active engine only. The snapshot stores the authoritative
+  // seat tally and cycle metadata; on cycle rollover the detailed rows are archived once.
+  state.elections.lastLokSabhaResults=[];
   state.elections.lastLokSabhaCompletedCycle=Number(engine.cycle);
-  state.elections.lastLokSabhaNationalSnapshot={cycle:Number(engine.cycle),tally:engine.partyTally.map(row=>({party:row.party,seats:Number(row.seats||0)})),results:state.elections.lastLokSabhaResults,source:'Completed 543-seat Lok Sabha count',completedAt:engine.lastRunAt};
+  state.elections.lastLokSabhaNationalSnapshot={cycle:Number(engine.cycle),tally:engine.partyTally.map(row=>({party:row.party,seats:Number(row.seats||0)})),results:[],source:'Completed 543-seat Lok Sabha count',completedAt:engine.lastRunAt,completed:true};
   saveState();render();
   toast(`Lok Sabha counting completed: ${results.length} constituency results recorded.`);
 }
@@ -4976,7 +4983,7 @@ function centralGovernmentPanel() {
   const c = ensureCentralGovernmentState();
   const engine = ensureLokSabhaElectionEngine();
   const resultSnapshot = lokSabhaCompletedResultSnapshot();
-  const tally = resultSnapshot?.tally || engine.partyTally || [];
+  const tally = resultSnapshot?.tally || [];
   const majorityParty = tally.find(row => Number(row.seats) >= 272);
   const counted = !!resultSnapshot;
   const currentCycle = Number(resultSnapshot?.cycle ?? engine.cycle);
@@ -4991,7 +4998,7 @@ function centralGovernmentPanel() {
   const stage = !counted ? 'Awaiting Lok Sabha counting' : formedThisCycle ? 'Government formed · floor test passed' : appointedThisCycle ? 'Prime Minister-designate · floor test pending' : 'Government formation available';
   return `<section class="panel central-government-panel"><span class="gold-tag">CENTRAL GOVERNMENT · LOK SABHA</span><h2>Central Government</h2><p class="panel-description">This is the Union Government only. It uses the completed Lok Sabha result (543 seats), a 272-seat majority, and a separate Prime Minister, coalition and Union cabinet record. It never changes the Karnataka State Government.</p>
     <div class="election-metrics"><div><small>LOK SABHA SEATS</small><b>543</b></div><div><small>MAJORITY MARK</small><b>272</b></div><div><small>COUNTING</small><b>${counted?'Complete':'Not complete'}</b></div><div><small>FORMATION</small><b>${escapeHtml(stage)}</b></div></div>
-    ${!counted?'<p class="creator-note">Complete candidate nomination, approval, funding, campaigning and counting in Elections → Lok Sabha. This section unlocks only after all 543 seats are counted.</p>':appointedThisCycle?`<p><b>Prime Minister-designate:</b> ${escapeHtml(c.primeMinister)} · <b>Lead party:</b> ${escapeHtml(c.party)} · <b>Declared support:</b> ${c.supportSeats}/543</p><p class="creator-note">The government is not considered formed until the Lok Sabha floor test is passed.</p><button class="primary-btn" data-central-gov-action="floor-test">CONDUCT LOK SABHA FLOOR TEST</button>`:formedThisCycle?`<p><b>Prime Minister:</b> ${escapeHtml(c.primeMinister)} · <b>Lead party:</b> ${escapeHtml(c.party)} · <b>Support:</b> ${c.supportSeats}/543 · <b>Floor test:</b> ${escapeHtml(c.floorTest)}</p>`:`<p class="creator-note">${majorityParty?`${escapeHtml(majorityParty.party)} won ${majorityParty.seats} seats and can nominate a Prime Minister-designate.`:'No party reached 272 seats. Select a lead party and supporting parties; support is calculated from the counted tally, not entered as an arbitrary number.'} After nomination, conduct a floor test to complete government formation.</p>
+    ${!counted?'<p class="creator-note">Complete candidate nomination, approval, funding, campaigning and counting in Elections → Lok Sabha. This section unlocks only after all 543 seats are counted.</p>':appointedThisCycle?`<p><b>Prime Minister-designate:</b> ${escapeHtml(c.primeMinister)} · <b>Lead party:</b> ${escapeHtml(c.party)} · <b>Declared support:</b> ${c.supportSeats}/543</p><p class="creator-note">The government is not considered formed until the Lok Sabha floor test is passed.</p><button class="primary-btn" data-central-gov-action="floor-test">CONDUCT LOK SABHA FLOOR TEST</button>`:formedThisCycle?`<p><b>Prime Minister:</b> ${escapeHtml(c.primeMinister)} · <b>Lead party:</b> ${escapeHtml(c.party)} · <b>Support:</b> ${c.supportSeats}/543 · <b>Floor test:</b> ${escapeHtml(c.floorTest)}</p>`:`<p class="creator-note">${majorityParty?`${escapeHtml(majorityParty.party)} won ${majorityParty.seats} seats and can nominate a Prime Minister-designate.`:`Hung Lok Sabha: no party reached 272 seats. The leading party is ${escapeHtml(tally[0]?.party||'—')} with ${Number(tally[0]?.seats||0)} seats; it needs ${Math.max(0,272-Number(tally[0]?.seats||0))} more seats. Select a lead party and supporting parties to begin coalition talks.`} After nomination, conduct a floor test to complete government formation.</p>
     <div class="creator-field"><label for="central-pm-select">Prime Minister-designate · choose an elected MP</label><select id="central-pm-select" data-central-pm-select><option value="">Select elected MP</option>${pmOptions}</select></div>
     <div class="national-lok-sabha-actions"><button class="primary-btn" data-central-gov-action="form-majority" ${!majorityParty?'disabled':''}>NOMINATE PRIME MINISTER</button><button class="secondary-btn" data-central-gov-action="coalition" ${!canNegotiate?'disabled':''}>START COALITION TALKS</button></div>
     <details class="coalition-picker"><summary>Choose parties for coalition talks</summary><div class="creator-field"><label for="central-lead-select">Lead party</label><select id="central-lead-select" data-central-lead-select>${leadOptions}</select></div><div class="creator-field"><label>Supporting parties · select all that agree to support</label><div class="coalition-party-list">${partnerOptions}</div></div><p class="creator-note">Only counted party seat totals are used. Select actual parties; their seats are added automatically. Prime Minister must be an elected MP of the lead party.</p></details>`}
@@ -5312,7 +5319,8 @@ function electedMemberRegister(level='assembly') {
   }else{
     const engine=state.elections?.lokSabhaEngine;
     const nationalResults = Array.isArray(state.elections?.lastLokSabhaResults) ? state.elections.lastLokSabhaResults : [];
-    [...(engine?.results||[]),...nationalResults].forEach(r=>add({candidateName:r.winner,partyName:r.partyName,constituency:r.constituency,stateName:r.stateName,seatCode:r.seatCode},'Lok Sabha constituency result'));
+    const snapshotResults = Array.isArray(state.elections?.lastLokSabhaNationalSnapshot?.results) ? state.elections.lastLokSabhaNationalSnapshot.results : [];
+    [...(engine?.results||[]),...nationalResults,...snapshotResults].forEach(r=>add({candidateName:r.winner||r.candidateName,partyName:r.partyName||r.party,constituency:r.constituency,stateName:r.stateName,seatCode:r.seatCode},'Lok Sabha constituency result')); 
     (state.elections?.history||[]).filter(x=>x.typeId==='lok-sabha').forEach(e=>(e.partyCandidateResults||[]).filter(x=>x.result==='Won').forEach(x=>add({...x,partyName:x.winnerParty||x.party||e.party},'Lok Sabha history')));
   }
   const seen=new Set();
