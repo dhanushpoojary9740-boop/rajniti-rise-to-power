@@ -6210,14 +6210,71 @@ function ensureExecutiveOffice() {
   return office;
 }
 
+function politicalOfficeDuties() {
+  const role = String(state.role || 'Political Volunteer');
+  if (/Prime Minister/.test(role)) return {
+    title:'Prime Minister · Union executive duties',
+    intro:'Lead the Union Council of Ministers, set national priorities, coordinate ministries and states, and remain accountable to the Lok Sabha.',
+    duties:[['cabinet-review','Chair Cabinet coordination','Review cross-ministry priorities and resolve one coordination bottleneck.'],['national-accountability','National policy accountability','Review a national programme and record a public-delivery direction.'],['parliamentary-accountability','Parliamentary accountability','Prepare a response brief for a parliamentary question or House discussion.']]
+  };
+  if (/Chief Minister/.test(role)) return {
+    title:'Chief Minister · State executive duties',
+    intro:'Lead the State Council of Ministers, coordinate departments and districts, set state policy priorities, and maintain Assembly confidence.',
+    duties:[['cabinet-review','Chair State Cabinet review','Set department priorities and resolve one inter-department issue.'],['district-review','District administration review','Review district delivery and direct follow-up by the responsible officers.'],['assembly-accountability','Assembly accountability','Prepare a response brief for an Assembly question or debate.']]
+  };
+  if (/Member of Parliament|MP/.test(role)) return {
+    title:'Member of Parliament · Lok Sabha duties',
+    intro:'Represent constituents in Parliament, scrutinise the Union Government, participate in legislation and committees, and raise local concerns with the Union.',
+    duties:[['constituency-hearing','Hold constituency hearing','Record public concerns and route them to the responsible ministry or agency.'],['committee-review','Committee scrutiny','Review a policy or expenditure brief and record an oversight recommendation.'],['parliamentary-question','Prepare parliamentary question','Create a question brief based on a constituency or national issue.']]
+  };
+  if (/MLA/.test(role)) return {
+    title:'Member of Legislative Assembly · State duties',
+    intro:'Represent your constituency in the Assembly, scrutinise the state executive, participate in lawmaking and budget review, and follow up on public grievances.',
+    duties:[['constituency-hearing','Hold constituency hearing','Record local concerns and refer them to the appropriate department.'],['committee-review','Assembly committee review','Review a state policy or expenditure issue and record an oversight recommendation.'],['assembly-accountability','Prepare Assembly question','Prepare a question brief about a state or constituency issue.']]
+  };
+  return {title:'Elected office duties',intro:'Your assigned work and signature desk reflect your current authority. Routine administration remains delegated to officials.',duties:[]};
+}
+
+function recordPoliticalOfficeDuty(action) {
+  const office = ensureExecutiveOffice();
+  if (!Array.isArray(office.dutyHistory)) office.dutyHistory = [];
+  const duties = politicalOfficeDuties();
+  const duty = duties.duties.find(item => item[0] === action);
+  if (!duty) return toast('This duty is not available for your current political role.');
+  const period = `${Number(state.year||1)}-${Number(state.month||1)}`;
+  if (office.dutyHistory.some(item => item.action === action && item.period === period)) return toast('You have already completed this office duty this month.');
+  const outcomes = {
+    'cabinet-review': {reputation:2,influence:2,publicSupport:1,summary:'Cabinet coordination reviewed; responsible departments received follow-up priorities.'},
+    'national-accountability': {reputation:2,influence:1,publicSupport:2,summary:'National programme review recorded with a public-delivery direction.'},
+    'parliamentary-accountability': {reputation:2,influence:2,publicSupport:1,summary:'Parliamentary accountability brief prepared for the House.'},
+    'district-review': {reputation:2,influence:1,publicSupport:2,summary:'District performance review recorded with administrative follow-up.'},
+    'assembly-accountability': {reputation:2,influence:2,publicSupport:1,summary:'Assembly accountability brief prepared for the legislature.'},
+    'constituency-hearing': {reputation:1,influence:1,publicSupport:3,summary:'Constituency hearing recorded; issues routed to responsible offices.'},
+    'committee-review': {reputation:2,influence:2,publicSupport:1,summary:'Committee scrutiny note recorded with an oversight recommendation.'},
+    'parliamentary-question': {reputation:1,influence:2,publicSupport:2,summary:'Parliamentary question brief prepared from public issues.'}
+  };
+  const result = outcomes[action] || {reputation:1,influence:1,publicSupport:1,summary:'Office duty completed.'};
+  state.reputation = Math.min(100,Number(state.reputation||0)+result.reputation);
+  state.influence = Math.min(100,Number(state.influence||0)+result.influence);
+  state.publicSupport = Math.min(100,Number(state.publicSupport||0)+result.publicSupport);
+  office.dutyHistory.unshift({action,title:duty[1],period,date:dateText(),summary:result.summary});
+  office.dutyHistory = office.dutyHistory.slice(0,60);
+  office.lastAiReport = result.summary;
+  saveState(); render(); toast(`${duty[1]} recorded. Reputation, influence and public support improved.`);
+}
+
 function executiveOfficePage() {
   const office = ensureExecutiveOffice();
   const scope = executiveRoleScope();
+  const charter = politicalOfficeDuties();
+  if (!Array.isArray(office.dutyHistory)) office.dutyHistory = [];
+  const currentPeriod = `${Number(state.year||1)}-${Number(state.month||1)}`;
   const pending = office.files.filter(f => f.status === 'Pending');
   const tasks = office.tasks;
   return `
     <div class="page-heading"><div><div class="eyebrow">EXECUTIVE OFFICE · ${escapeHtml(scope.level.toUpperCase())} LEVEL</div><h1>My <em>office</em></h1><p>Work is assigned according to your current post. Officials and AI teams handle routine administration.</p></div><div class="date-card"><span>CURRENT POST</span><b>${escapeHtml(state.role || 'Political Volunteer')}</b><small>${escapeHtml(scope.authority)}</small></div></div>
     <section class="panel"><span class="eyebrow">YOUR RESPONSIBILITY</span><h2>What only you must handle</h2><p class="panel-description">Your authority is limited to: ${escapeHtml(scope.authority)}. You are not expected to manage every district or department personally.</p><div class="government-unlock-grid"><div><b>${tasks.filter(t=>t.status==='Pending'||t.status==='In progress').length}</b><small>Assigned tasks</small></div><div><b>${pending.length}</b><small>Files awaiting signature</small></div><div><b>AI</b><small>Routine administration</small></div></div></section>
+    <section class="panel office-charter-panel"><span class="eyebrow">CONSTITUTIONAL & ELECTED-OFFICE RESPONSIBILITIES</span><h2>${escapeHtml(charter.title)}</h2><p class="panel-description">${escapeHtml(charter.intro)}</p>${charter.duties.length ? `<div class="government-unlock-grid">${charter.duties.map(duty=>{const done=office.dutyHistory.some(item=>item.action===duty[0]&&item.period===currentPeriod);return `<article class="government-portfolio"><span class="gold-tag">${done?'COMPLETED THIS MONTH':'OFFICE DUTY'}</span><h3>${escapeHtml(duty[1])}</h3><p>${escapeHtml(duty[2])}</p><button class="secondary-btn full" data-office-duty="${duty[0]}" ${done?'disabled':''}>${done?'RECORDED':'COMPLETE & RECORD'}</button></article>`;}).join('')}</div>`:'<p class="panel-description">Your current role does not have a separate elected-office duty checklist. Complete assigned work and review pending files.</p>'}<p class="creator-note">These actions are fictional gameplay simulations of office responsibilities. They do not enact real government decisions or replace constitutional procedures.</p></section>
     <section class="panel"><div class="command-section-head"><div><span class="eyebrow">PERSONAL WORK QUEUE</span><h2>My assigned work</h2><p class="panel-description">New assignments arrive monthly. You choose: take responsibility, keep pending for a later month, or reject. Unfinished work is carried forward; only your completion decision closes a mission.</p></div></div>${tasks.length ? tasks.map(t=>`<article class="panel office-task-card"><div class="command-section-head"><div><span class="gold-tag">${escapeHtml(t.level || scope.level)} · ${escapeHtml(t.status)}</span><h3>${escapeHtml(t.title)}</h3></div><b>${Number(t.carryForwardCount || 0) ? `Carried ${Number(t.carryForwardCount)}×` : 'New'}</b></div><p>${escapeHtml(t.detail || 'Assigned responsibility')}</p><div class="task-detail-grid"><div><small>FUNDS REQUIRED</small><b>${money(Number(t.budgetRequired || 0))}</b><small>${escapeHtml(t.fundingSource || 'Office allocation')}</small></div><div><small>TIME REQUIRED</small><b>${Number(t.estimatedDuration || 1)} months</b></div><div><small>TIME LEFT</small><b>${Number(t.monthsRemaining ?? t.estimatedDuration ?? 1)} months</b></div><div><small>ASSIGNED BY</small><b>${escapeHtml(t.assignedBy)}</b></div><div><small>PARTY IMPACT</small><b>+${Number(t.expectedPartyImpact || 1)}</b></div><div><small>REPUTATION IMPACT</small><b>+${Number(t.expectedReputationImpact || 1)}</b></div></div><p><b>Resources required:</b> ${escapeHtml(t.resources || 'Staff coordination and field work')}</p><p><b>How to use this assignment:</b> ${escapeHtml(t.expectedUse || '')}</p><p><b>Expected outcome:</b> ${escapeHtml(t.expectedOutcome || 'A measurable improvement in the relevant game system.')}</p><p><b>Risk:</b> ${escapeHtml(t.risk || 'Delay may reduce public confidence.')}</p><p><b>Progress:</b> ${Number(t.progress || 0)}% · ${Number(t.monthsWorked || 0)} month(s) worked</p><small>Assigned ${escapeHtml(t.createdAt || dateText())} · ${escapeHtml(t.due || 'This month')}</small><div class="gov-budget-actions">${t.status==='Pending'?`<button class="primary-btn" data-office-task="${t.id}">TAKE RESPONSIBILITY</button>`:''}${t.status==='In progress'?`<button class="primary-btn" data-office-complete="${t.id}">COMPLETE & REPORT</button>`:''}<button class="secondary-btn" data-office-keep="${t.id}">KEEP PENDING</button><button class="secondary-btn" data-office-reject="${t.id}">REJECT TASK</button></div></article>`).join('') : '<p class="panel-description">No work is currently assigned.</p>'}</section>
     <section class="panel"><span class="eyebrow">COMPLETED WORK ARCHIVE</span><h2>Completed and closed missions</h2>${office.taskHistory && office.taskHistory.length ? office.taskHistory.slice(-8).reverse().map(item=>`<div class="finance-history"><span><b>${escapeHtml(typeof item === 'string' ? item : item.title)}</b><small>${escapeHtml(typeof item === 'string' ? 'Legacy record' : (item.completedAt ? `Completed · ${item.completedAt}` : item.rejectedAt ? `Rejected · ${item.rejectedAt}` : 'Archived'))}</small></span><small>${escapeHtml(typeof item === 'string' ? '' : (item.impactSummary || ''))}</small></div>`).join('') : '<p class="panel-description">Completed missions will appear here.</p>'}</section>
     <section class="panel"><div class="command-section-head"><div><span class="eyebrow">SIGNATURE DESK</span><h2>Pending for my approval</h2></div><b>${pending.length} pending</b></div>${pending.length ? pending.map(f=>`<article class="panel government-portfolio"><span class="gold-tag">OFFICIAL FILE · ${escapeHtml(f.from)}</span><h3>${escapeHtml(f.title)}</h3><p class="panel-description">${escapeHtml(f.summary)}</p><p><b>AI / officer recommendation:</b> ${escapeHtml(f.recommendation)}</p><div class="gov-budget-actions"><button class="primary-btn" data-office-decision="approve" data-office-file="${f.id}">APPROVE & SIGN</button><button class="secondary-btn" data-office-decision="return" data-office-file="${f.id}">RETURN FOR REVISION</button><button class="secondary-btn" data-office-decision="reject" data-office-file="${f.id}">REJECT</button></div></article>`).join('') : '<p class="panel-description">No important files require your signature right now. Routine work is being handled by the administration.</p>'}</section>
@@ -8173,6 +8230,8 @@ document.addEventListener('click', event => {
   }
   const officeReject = event.target.closest('[data-office-reject]');
   if (officeReject) { rejectOfficeTask(officeReject.dataset.officeReject); return; }
+  const officeDuty = event.target.closest('[data-office-duty]');
+  if (officeDuty) { recordPoliticalOfficeDuty(officeDuty.dataset.officeDuty); return; }
   const officeStart = event.target.closest('[data-office-task]');
   if (officeStart) { updateOfficeTask(officeStart.dataset.officeTask, false); return; }
   const officeComplete = event.target.closest('[data-office-complete]');
