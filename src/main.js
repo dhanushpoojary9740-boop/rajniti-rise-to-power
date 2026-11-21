@@ -228,7 +228,30 @@ if (!state.assemblyElection8MonthScheduleV221) {
     activeAssemblyElection.scheduledAt = assemblySchedule.nextAt;
   }
   state.assemblyElection8MonthScheduleV221 = true;
-  localStorage.setItem(STORE_KEY, JSON.stringify(state));
+  persistStateSafely();
+}
+
+// Move the active Lok Sabha cycle to seven in-game months from the current month,
+// retaining existing candidate records by moving their cycle reference together.
+if (!state.lokSabhaElection7MonthRetryV630) {
+  if (!state.elections || typeof state.elections !== 'object') state.elections = JSON.parse(JSON.stringify(defaults.elections));
+  if (!state.elections.calendar || typeof state.elections.calendar !== 'object') state.elections.calendar = JSON.parse(JSON.stringify(defaults.elections.calendar));
+  const nowMonth = Math.max(0, (Number(state.year || 1) - 1) * 12 + (Number(state.month || 1) - 1));
+  const oldCycle = Number(state.elections.calendar['lok-sabha']?.nextAt);
+  const nextCycle = nowMonth + 7;
+  state.elections.calendar['lok-sabha'] = { ...(state.elections.calendar['lok-sabha'] || {}), intervalMonths: 60, nextAt: nextCycle, label: 'Lok Sabha elections' };
+  if (state.elections.lokSabhaEngine && typeof state.elections.lokSabhaEngine === 'object') {
+    state.elections.lokSabhaEngine.cycle = nextCycle;
+    state.elections.lokSabhaEngine.campaigns = [];
+    state.elections.lokSabhaEngine.results = [];
+    state.elections.lokSabhaEngine.partyTally = [];
+    state.elections.lokSabhaEngine.completed = false;
+  }
+  if (Array.isArray(state.elections.partySlate)) state.elections.partySlate.forEach(item => {
+    if (item && item.typeId === 'lok-sabha' && Number(item.scheduledAt) === oldCycle && ['Proposed','Party Approved','Funded'].includes(item.status)) item.scheduledAt = nextCycle;
+  });
+  state.lokSabhaElection7MonthRetryV630 = true;
+  persistStateSafely();
 }
 
 // One-time ₹300 crore special grant to the existing party treasury.
@@ -249,7 +272,7 @@ if (!state.partyTreasuryGrant300CrClaimed) {
   });
   state.partyTreasury.ledger = state.partyTreasury.ledger.slice(0, 60);
   state.partyTreasuryGrant300CrClaimed = true;
-  localStorage.setItem(STORE_KEY, JSON.stringify(state));
+  persistStateSafely();
 }
 // One-time additional ₹500 crore grant to the BPP party treasury.
 // This is independent of personal wealth and the earlier ₹300 crore grant.
@@ -269,7 +292,7 @@ if (!state.partyTreasuryGrant500CrClaimed) {
   });
   state.partyTreasury.ledger = state.partyTreasury.ledger.slice(0, 60);
   state.partyTreasuryGrant500CrClaimed = true;
-  localStorage.setItem(STORE_KEY, JSON.stringify(state));
+  persistStateSafely();
 }
 if (!state.partyTreasury || typeof state.partyTreasury !== 'object') state.partyTreasury = { incomeTotal: 0, expenseTotal: 0, ledger: [] };
 if (!Array.isArray(state.partyTreasury.ledger)) state.partyTreasury.ledger = [];
@@ -665,8 +688,37 @@ const parties = [
   }
 ];
 
+function persistStateSafely() {
+  const write = () => localStorage.setItem(STORE_KEY, JSON.stringify(state));
+  try { write(); return true; } catch (error) {
+    if (!(error && (error.name === 'QuotaExceededError' || error.name === 'NS_ERROR_DOM_QUOTA_REACHED'))) throw error;
+  }
+  // Preserve the live game and its candidate/election records. Trim only old, nonessential history
+  // until the current save fits; never clear the existing save as a recovery shortcut.
+  const trim = (value, key = '') => {
+    if (!value || typeof value !== 'object') return;
+    if (Array.isArray(value)) {
+      if (/(history|log|ledger|archive|notifications|activity|reports|feed)/i.test(key)) {
+        const keep = /ledger|history/i.test(key) ? 35 : 50;
+        if (value.length > keep) value.splice(keep);
+      }
+      value.forEach(item => trim(item, key));
+      return;
+    }
+    Object.keys(value).forEach(childKey => trim(value[childKey], childKey));
+  };
+  trim(state);
+  try { write(); return true; } catch (error) {
+    // Last-resort compaction removes only expendable timeline/feed detail, not game progress.
+    for (const key of ['activityHistory','reviewedNews']) if (Array.isArray(state[key])) state[key] = state[key].slice(0, 30);
+    if (state.media && Array.isArray(state.media.history)) state.media.history = state.media.history.slice(0, 20);
+    if (state.partyTreasury && Array.isArray(state.partyTreasury.ledger)) state.partyTreasury.ledger = state.partyTreasury.ledger.slice(0, 20);
+    try { write(); return true; } catch (_) { return false; }
+  }
+}
 function saveState() {
-  localStorage.setItem(STORE_KEY, JSON.stringify(state));
+  const saved = persistStateSafely();
+  if (!saved) toast('Save storage is full. Your current session remains open, but this change may not persist. Export or free device storage before continuing.');
 }
 
 function money(value) {
@@ -3821,6 +3873,8 @@ function nationalLokSabhaCandidatePanel() {
       </div>
       <div class="national-lok-sabha-actions">
         <button class="primary-btn" data-national-ls-generate>GENERATE NATIONAL CANDIDATE PROPOSALS</button>
+        <button class="secondary-btn" data-national-ls-bulk-approve>APPROVE ALL COMPLETE PROPOSALS</button>
+        <button class="secondary-btn" data-national-ls-bulk-fund>FUND ALL ELIGIBLE APPROVED CANDIDATES</button>
       </div>
       <p class="panel-description">The proposal generator assigns available party members once, in the official state/UT seat-count order. Unfilled seats remain vacant for recruitment and review. These numbered seat identifiers are not presented as official constituency names; the full ECI constituency-name and reservation-category dataset must be added before official-style nomination filing is simulated.</p>
       <details class="national-ls-state-details" open>
@@ -3891,6 +3945,54 @@ function manageManualLokSabhaCampaign(id) {
   item.playerControlledCampaign=true;item.manualCampaignScore=score;item.campaignScore=score;item.manualCampaignUpdatedAt=dateText();
   saveState();render();toast('Your candidate campaign settings have been saved.');
 }
+function bulkApproveLokSabhaSlate() {
+  const engine = ensureLokSabhaElectionEngine();
+  const slate = ensurePartySlate();
+  const pending = slate.filter(item => item.typeId === 'lok-sabha' && Number(item.scheduledAt) === engine.cycle && item.status === 'Proposed');
+  let approved = 0, skipped = 0;
+  pending.forEach(item => {
+    const valid = String(item.candidateName || '').trim().length >= 2 &&
+      String(item.stateName || '').trim() && String(item.district || '').trim() &&
+      String(item.constituency || '').trim() && !partySlateConflict(item, slate);
+    if (!valid) { skipped++; return; }
+    item.status = 'Party Approved';
+    item.approvedAt = dateText();
+    item.approvedBy = state.playerName || 'Party President';
+    item.approvalType = 'Bulk internal BPP ticket approval';
+    approved++;
+  });
+  saveState(); render();
+  toast(`Bulk Lok Sabha approval: ${approved} approved; ${skipped} incomplete/conflicting left pending.`);
+}
+function bulkFundLokSabhaSlate() {
+  const engine = ensureLokSabhaElectionEngine();
+  const slate = ensurePartySlate();
+  const candidates = slate.filter(item => item.typeId === 'lok-sabha' && Number(item.scheduledAt) === engine.cycle && item.status === 'Party Approved');
+  const total = 9500000, share = 4750000;
+  let funded = 0, skipped = 0, partyCost = 0;
+  candidates.forEach(item => {
+    const member = (state.partyMemberRecords || []).find(person => String(person.id) === String(item.memberId));
+    if (!member || Number(state.partyFunds || 0) - partyCost < share || Number(member.campaignFunds || 0) < share) { skipped++; return; }
+    member.campaignFunds = Number(member.campaignFunds) - share;
+    item.approvedBudget = total;
+    item.partyContribution = share;
+    item.candidateContribution = share;
+    item.status = 'Funded';
+    item.fundedAt = dateText();
+    partyCost += share; funded++;
+  });
+  if (partyCost) {
+    state.partyFunds = Number(state.partyFunds || 0) - partyCost;
+    state.partyTreasury = state.partyTreasury || { incomeTotal: 0, expenseTotal: 0, ledger: [] };
+    state.partyTreasury.expenseTotal = Number(state.partyTreasury.expenseTotal || 0) + partyCost;
+    if (!Array.isArray(state.partyTreasury.ledger)) state.partyTreasury.ledger = [];
+    state.partyTreasury.ledger.unshift({type:'Expense',amount:partyCost,note:`Bulk Lok Sabha candidate campaign funding (${funded} candidates)`,date:dateText()});
+    state.partyTreasury.ledger = state.partyTreasury.ledger.slice(0,60);
+  }
+  saveState(); render();
+  toast(`Bulk funding: ${funded} funded; ${skipped} skipped for insufficient candidate/party funds.`);
+}
+
 function runLokSabhaCampaigns() {
   const engine=ensureLokSabhaElectionEngine();
   if (engine.completed) return toast('This Lok Sabha election has already been counted.');
@@ -7329,6 +7431,16 @@ document.addEventListener('click', event => {
   if(lsCountButton){countLokSabhaElection();return;}
   const nationalLsGenerateButton = event.target.closest('[data-national-ls-generate]');
   if (nationalLsGenerateButton) { proposePartySlate('lok-sabha'); return; }
+  const nationalLsBulkApprove = event.target.closest('[data-national-ls-bulk-approve]');
+  if (nationalLsBulkApprove) {
+    if (confirm('Approve all complete, conflict-free proposed Lok Sabha candidates for the scheduled election?')) bulkApproveLokSabhaSlate();
+    return;
+  }
+  const nationalLsBulkFund = event.target.closest('[data-national-ls-bulk-fund]');
+  if (nationalLsBulkFund) {
+    if (confirm('Fund every approved Lok Sabha candidate for whom both the party and candidate shares are available?')) bulkFundLokSabhaSlate();
+    return;
+  }
   const slateGenerateButton = event.target.closest('[data-party-slate-generate]');
   if (slateGenerateButton) { proposePartySlate(document.querySelector('#partySlateElectionType')?.value || 'assembly'); return; }
   const slateBulkFundButton = event.target.closest('[data-party-slate-bulk-fund]');
