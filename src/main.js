@@ -2938,6 +2938,7 @@ function endDay() {
   processElectionCalendar();
   processPartySlateCampaignAI();
   advanceOfficeMonth();
+  generatePositionMissionAndAdvice();
   const totalIncome = report.salary + report.businessIncome + report.investmentIncome;
   const message = `New month: ${dateText()}. Income ${money(totalIncome)} · Expenses ${money(report.expenses)} · Net ${report.net >= 0 ? '+' : '−'}${money(Math.abs(report.net))}. Election calendar updated.`;
   saveState(); render(); toast(message);
@@ -6098,6 +6099,152 @@ function executiveRoleScope() {
 }
 
 
+
+/* POSITION-AWARE MISSION & PARTY ADVICE SYSTEM */
+function ensureMissionDecisionSystem() {
+  if (!state.missionDecisionSystem || typeof state.missionDecisionSystem !== 'object') {
+    state.missionDecisionSystem = { queue: [], history: [], seenKeys: [], nextId: 1, lastAdviceMonth: -99, lastGeneratedMonth: -1 };
+  }
+  const m = state.missionDecisionSystem;
+  for (const key of ['queue','history','seenKeys']) if (!Array.isArray(m[key])) m[key] = [];
+  if (!Number.isFinite(Number(m.nextId))) m.nextId = 1;
+  return m;
+}
+
+function missionFingerprint(value) {
+  const text=String(value);
+  let hash=2166136261;
+  for(let i=0;i<text.length;i++){hash^=text.charCodeAt(i);hash=Math.imul(hash,16777619);}
+  return (hash>>>0).toString(36);
+}
+
+function missionRoleKey() {
+  const role = String(state.role || '').toLowerCase();
+  if (role.includes('prime minister')) return 'pm';
+  if (role.includes('chief minister')) return 'cm';
+  if (role.includes('union minister') || role.includes('central minister')) return 'union';
+  if (role.includes('state minister')) return 'stateMinister';
+  if (role.includes('mla') || role.includes('member of legislative assembly')) return 'mla';
+  if (role.includes('mp') || role.includes('member of parliament')) return 'mp';
+  if (role.includes('mayor') || role.includes('municipal')) return 'local';
+  return 'party';
+}
+
+function generatePositionMissionAndAdvice() {
+  const m = ensureMissionDecisionSystem();
+  const month = typeof currentMonthIndex === 'function' ? currentMonthIndex() : Math.max(0,(Number(state.year||1)-1)*12+Number(state.month||1)-1);
+  if (m.lastGeneratedMonth === month) return;
+  m.lastGeneratedMonth = month;
+  const role = missionRoleKey();
+  const roleLabel = ({pm:'Prime Minister',cm:'Chief Minister',union:'Union Minister',stateMinister:'State Minister',mla:'MLA',mp:'MP',local:'Local Representative',party:'Party Leader'})[role] || 'Political Leader';
+  const subjects = [
+    ['public health','district health officials','service access'],['roads and bridges','engineering officers','project delays'],
+    ['school quality','education department','staffing gaps'],['water supply','water-board officials','summer shortages'],
+    ['employment','local employers','youth job access'],['agriculture support','farmer groups','irrigation needs'],
+    ['public transport','transport department','route coverage'],['clean energy','power officials','supply reliability'],
+    ['women’s safety','community representatives','response coordination'],['urban housing','municipal officials','service backlog'],
+    ['rural services','panchayat representatives','funding priorities'],['small businesses','trade associations','credit access'],
+    ['digital public services','IT officials','delivery delays'],['disaster readiness','district administration','agency coordination'],
+    ['environment protection','environment officers','compliance gaps'],['social welfare','beneficiary groups','access barriers'],
+    ['police accountability','senior officials','public confidence'],['public finance','finance officials','spending pressure'],
+    ['infrastructure quality','project engineers','cost escalation'],['constitutional accountability','legislative staff','oversight requirements'],
+    ['coalition coordination','party representatives','competing commitments'],['party organisation','district organisers','internal coordination'],
+    ['public grievance backlog','service departments','slow case resolution'],['investment and industry','industry representatives','infrastructure readiness']
+  ];
+  const places = ['your constituency','a neighbouring district','a rural block','an urban ward','a border district','a fast-growing town','a remote taluk','a flood-prone area','an industrial cluster','a public-service corridor','a university town','a farming belt'];
+  const triggers = ['a new audit note','a rise in citizen complaints','a delayed project review','a request from local representatives','a divided committee report','a sudden funding gap','a public consultation','a department performance review','a coalition partner’s concern','a new monthly data brief','a court or compliance reminder','a seasonal service pressure'];
+  const complications = ['while protecting the approved budget','without disrupting essential services','with limited staff available','before the next legislative sitting','while consulting affected communities','without making an unfunded promise','while preserving coalition confidence','with transparent progress reporting','after checking the evidence','while keeping routine work delegated'];
+  const roleFocus = {
+    pm:['national policy coordination','Union Cabinet review','Parliamentary agenda','inter-state coordination'],
+    cm:['statewide service delivery','State Cabinet review','Assembly agenda','district administration'],
+    union:['ministry delivery targets','inter-ministerial coordination','Parliamentary scrutiny','scheme implementation'],
+    stateMinister:['department delivery targets','cross-department coordination','Assembly scrutiny','field implementation'],
+    mla:['constituency service delivery','Assembly questions and committees','local project follow-up','citizen casework'],
+    mp:['constituency service delivery','Parliamentary questions and committees','national policy scrutiny','citizen casework'],
+    local:['ward and municipal services','council oversight','local project follow-up','citizen casework'],
+    party:['party organisation','public outreach','policy preparation','coalition and legislative strategy']
+  };
+  const focus = roleFocus[role] || roleFocus.party;
+  // 24 subjects × 12 places × 12 triggers × 10 constraints × 4 role focuses = 138,240 combinations.
+  // Use a deterministic rotating index, then skip previously seen fingerprints.
+  const seed = month * 7919 + (Number(state.age)||21) * 131 + (m.history.length * 37) + (m.seenKeys.length * 17);
+  let chosen = null;
+  for (let attempt=0; attempt<subjects.length*places.length*triggers.length*complications.length*focus.length; attempt++) {
+    const n = (seed + attempt * 104729) % (subjects.length*places.length*triggers.length*complications.length*focus.length);
+    let q=n, fi=q%focus.length; q=Math.floor(q/focus.length);
+    let ci=q%complications.length; q=Math.floor(q/complications.length);
+    let ti=q%triggers.length; q=Math.floor(q/triggers.length);
+    let pi=q%places.length; q=Math.floor(q/places.length);
+    let si=q%subjects.length;
+    const subj=subjects[si], place=places[pi], trigger=triggers[ti], constraint=complications[ci], officeFocus=focus[fi];
+    const key=missionFingerprint([role,subj[0],place,trigger,constraint,officeFocus].join('|'));
+    if (m.seenKeys.includes(key)) continue;
+    chosen={key,title:`${roleLabel}: ${subj[0]} in ${place}`,detail:`${trigger} identifies ${subj[2]}. Review the ${subj[1]} and choose a response focused on ${officeFocus}, ${constraint}.`,category:subj[0],place,trigger,constraint,officeFocus,roleLabel};
+    break;
+  }
+  if (chosen) {
+    m.seenKeys.push(chosen.key);
+    m.queue.push({id:m.nextId++,type:'mission',role,roleLabel,title:chosen.title,detail:chosen.detail,category:chosen.category,createdMonth:month,createdAt:dateText(),key:chosen.key,choices:[
+      {label:'Approve a targeted action plan',description:'Direct the responsible team to act and request a measurable follow-up.',effect:2},
+      {label:'Seek evidence and revise the plan',description:'Ask for a short evidence review before committing resources.',effect:1},
+      {label:'Defer with a written reason',description:'Keep the issue open and set a review for the next month.',effect:0}
+    ]});
+  }
+  if (month - Number(m.lastAdviceMonth||-99) >= 2) {
+    const people = (typeof ensurePoliticalRelationships==='function' ? ensurePoliticalRelationships().people : []) || [];
+    const eligible = people.filter(p=>!String(p.type||'').toLowerCase().includes('opposition'));
+    const person = eligible[(seed + 3) % Math.max(1,eligible.length)] || {id:'party-adviser',name:'Senior Party Adviser',role:'Party Adviser',trust:55,loyalty:60};
+    const adviceTopics = [
+      ['prioritise a stalled public project','citizens are losing confidence in the delivery timeline','release a milestone-based review'],
+      ['consult coalition partners before announcing policy','partners want earlier consultation on the proposal','hold a formal coordination meeting'],
+      ['review department spending before adding commitments','the current estimates show pressure on the available funds','request a finance note and reprioritise'],
+      ['address concerns raised by local party workers','field teams report that residents feel unheard','schedule a listening session'],
+      ['prepare a legislative response to the opposition','the issue may become a focus of the next sitting','ask the policy team for an evidence brief'],
+      ['improve transparency around a government project','residents have requested clearer progress information','publish a verified progress update'],
+      ['review candidate and organisation readiness','local organisers report uneven preparation','ask district teams for a readiness report'],
+      ['coordinate with the relevant level of government','the issue crosses administrative responsibilities','request a joint review and record responsibilities']
+    ];
+    const topic=adviceTopics[(seed+month)%adviceTopics.length];
+    m.queue.push({id:m.nextId++,type:'advice',role,roleLabel,title:`${person.name} requests your decision`,detail:`${person.role||'Party colleague'} advises you to ${topic[0]}. Their concern: ${topic[1]}.`,adviserId:person.id,adviserName:person.name,createdMonth:month,createdAt:dateText(),key:`advice|${person.id}|${topic[0]}|${month}`,choices:[
+      {label:'Accept the recommendation',description:`Proceed with the proposal: ${topic[2]}.`,effect:2},
+      {label:'Ask for supporting evidence',description:'Request a written note and reconsider at the next review.',effect:1},
+      {label:'Decline with explanation',description:'Record your reasons and keep the current plan.',effect:0}
+    ]});
+    m.lastAdviceMonth=month;
+  }
+}
+
+function missionDecisionOverlay() {
+  const m=ensureMissionDecisionSystem();
+  const month=typeof currentMonthIndex==='function'?currentMonthIndex():Math.max(0,(Number(state.year||1)-1)*12+Number(state.month||1)-1);
+  const item=m.queue.find(entry=>Number(entry.snoozeUntil||-1)<=month);
+  if(!item)return '';
+  return `<div class="mission-decision-backdrop"><section class="mission-decision-modal" role="dialog" aria-modal="true" aria-labelledby="missionDecisionTitle"><div class="mission-modal-top"><span class="eyebrow">${item.type==='advice'?'PARTY MEMBER OPINION':'NEW POSITION-AWARE MISSION'} · ${escapeHtml(item.roleLabel||'Political Career')}</span><button class="mission-close" data-mission-decision="defer" data-mission-id="${item.id}" aria-label="Defer">×</button></div><h2 id="missionDecisionTitle">${escapeHtml(item.title)}</h2><p>${escapeHtml(item.detail)}</p><div class="mission-choice-list">${item.choices.map((choice,index)=>`<button class="mission-choice" data-mission-decision="${index}" data-mission-id="${item.id}"><b>${escapeHtml(choice.label)}</b><small>${escapeHtml(choice.description)}</small></button>`).join('')}</div><div class="mission-modal-footer"><span>Decision is saved to your political history.</span><button class="secondary-btn" data-mission-decision="defer" data-mission-id="${item.id}">Decide later</button></div></section></div>`;
+}
+
+function resolveMissionDecision(id, choiceIndex) {
+  const m=ensureMissionDecisionSystem();
+  const item=m.queue.find(entry=>String(entry.id)===String(id));
+  if(!item)return;
+  const month=typeof currentMonthIndex==='function'?currentMonthIndex():Math.max(0,(Number(state.year||1)-1)*12+Number(state.month||1)-1);
+  if(choiceIndex==='defer') { item.snoozeUntil=month+1; saveState(); render(); toast('Decision deferred until next in-game month.'); return; }
+  const choice=item.choices[Number(choiceIndex)];
+  if(!choice)return;
+  const effect=Number(choice.effect)||0;
+  state.media=state.media||{};
+  state.media.approval=Math.max(0,Math.min(100,Number(state.media.approval??state.publicSupport??42)+(effect===2?1:effect===1?0.3:-0.4)));
+  state.publicSupport=Math.max(0,Math.min(100,Number(state.publicSupport||0)+(effect===2?1:effect===1?0:-1)));
+  state.reputation=Math.max(0,Math.min(100,Number(state.reputation||50)+(effect===2?1:effect===1?0.5:0)));
+  if(item.type==='advice' && typeof ensurePoliticalRelationships==='function') {
+    const person=ensurePoliticalRelationships().people.find(p=>String(p.id)===String(item.adviserId));
+    if(person){person.trust=Math.max(0,Math.min(100,Number(person.trust||50)+(effect===2?2:effect===1?1:-1)));person.loyalty=Math.max(0,Math.min(100,Number(person.loyalty||50)+(effect===2?1:effect===1?0:-1)));}
+  }
+  m.history.unshift({id:item.id,type:item.type,title:item.title,decision:choice.label,detail:item.detail,role:item.role,month,createdAt:item.createdAt,resolvedAt:dateText()});
+  m.history=m.history.slice(0,500);
+  m.queue=m.queue.filter(entry=>String(entry.id)!==String(id));
+  saveState();render();toast(item.type==='advice'?'Party member opinion recorded.':'Mission decision recorded.');
+}
+
 function generateMonthlyOfficeTasks() {
   const office = state.executiveOffice;
   const scope = executiveRoleScope();
@@ -8591,7 +8738,7 @@ function render() {
   }
 
   content = sectionNavigation(activeTab) + content;
-  document.querySelector('#app').innerHTML = shell(content);
+  document.querySelector('#app').innerHTML = shell(content) + missionDecisionOverlay();
   if (activeTab === 'India Map') renderAtlasGeometry();
 }
 
@@ -8664,6 +8811,8 @@ document.addEventListener('change', event => {
 });
 
 document.addEventListener('click', event => {
+  const missionDecisionButton=event.target.closest('[data-mission-decision]');
+  if(missionDecisionButton){resolveMissionDecision(missionDecisionButton.dataset.missionId,missionDecisionButton.dataset.missionDecision);return;}
   const economyActionButton=event.target.closest('[data-economy-action]');
   if(economyActionButton){economyAction(economyActionButton.dataset.economyAction);return;}
   const economyProjectButton=event.target.closest('[data-economy-project]');
