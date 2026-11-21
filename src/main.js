@@ -355,16 +355,25 @@ function assignPartyElectionSeats(typeId, members, scheduledAt) {
   }));
   if (typeId === 'lok-sabha') {
     const seats = [];
+    const verifiedUnits = Array.isArray(lokSabhaConstituencyReference?.units) ? lokSabhaConstituencyReference.units : [];
     lokSabhaSeatAllocation.forEach(unit => {
       const stateCode = unit.unit.toUpperCase().replace(/[^A-Z0-9]+/g,'-').replace(/^-|-$/g,'');
+      const verifiedUnit = verifiedUnits.find(row => String(row.state).toLowerCase() === String(unit.unit).toLowerCase());
+      const verifiedByNumber = new Map((verifiedUnit?.constituencies || []).map(pc => [Number(pc.number), pc]));
       for (let number=1; number<=unit.seats; number++) {
+        const verifiedPc = verifiedByNumber.get(number);
+        const seatNumber = String(number).padStart(2,'0');
         seats.push({
           stateName:unit.unit, district:'Parliamentary constituency',
           constituencyNumber:number,
-          constituency:`${unit.unit} · PC ${String(number).padStart(2,'0')}`,
-          constituencyAssignment:'2024 Election Commission of India state/UT parliamentary seat allocation; official constituency name mapping is a separate data layer',
-          seatType:'Official reservation category to be verified',
-          seatCode:`${stateCode}-PC-${String(number).padStart(2,'0')}`
+          constituency:verifiedPc ? verifiedPc.name : `${unit.unit} · PC ${seatNumber}`,
+          constituencyAssignment:verifiedPc
+            ? `ECI ${lokSabhaConstituencyReference.referenceElection} reference · ${verifiedPc.officialLabel}`
+            : 'Numbered state/UT seat identifier · official constituency name and reservation category not yet loaded',
+          seatType:verifiedPc?.reservation || 'Not verified in loaded constituency register',
+          verifiedConstituency:!!verifiedPc,
+          officialConstituencyLabel:verifiedPc?.officialLabel || null,
+          seatCode:`${stateCode}-PC-${seatNumber}`
         });
       }
     });
