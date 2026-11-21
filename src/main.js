@@ -190,7 +190,8 @@ const defaults = {
   },
   mapState: 'Karnataka',
   mapDistrict: 'Udupi',
-  activeTab: 'Dashboard'
+  activeTab: 'Dashboard',
+  electionSection: 'assembly'
 };
 
 function loadState() {
@@ -321,7 +322,8 @@ if (!state.phone || typeof state.phone !== 'object') state.phone = { view: 'home
 for (const key of ['posts','messages','notifications']) if (!Array.isArray(state.phone[key])) state.phone[key] = [];
 if (!['home','social','messages','calls','contacts','news','calendar','notes','email','camera','gallery','browser','music','wallet','settings'].includes(state.phone.view)) state.phone.view = 'home';
 let partySection = 'Overview';
-let electionSection = 'assembly';
+const validElectionSections = ['assembly', 'lok-sabha', 'local', 'other'];
+let electionSection = validElectionSections.includes(state.electionSection) ? state.electionSection : 'assembly';
 if (!Array.isArray(state.reviewedNews)) state.reviewedNews = [];
 if (!state.media || typeof state.media !== 'object') state.media = JSON.parse(JSON.stringify(defaults.media));
 for (const key of ['approval', 'trust', 'reach']) {
@@ -2297,36 +2299,33 @@ function migrateLokSabhaElectionToSevenMonths() {
   if (!elections.calendar['lok-sabha']) return;
   const newCycle = currentMonthIndex() + 7;
   const previousCycle = Number(elections.calendar['lok-sabha'].nextAt || 0);
-  elections.calendar['lok-sabha'].nextAt = newCycle;
-  elections.calendar['lok-sabha'].intervalMonths = 60;
-  elections.calendar['lok-sabha'].label = 'Lok Sabha Election';
-  if (elections.active && elections.active.typeId === 'lok-sabha' &&
-      !['counting','voting'].includes(elections.active.phase)) {
-    elections.active.scheduledAt = newCycle;
+  const activeLokSabha = elections.active &&
+    elections.active.typeId === 'lok-sabha' &&
+    !['completed', 'declared', 'cancelled'].includes(elections.active.phase);
+
+  // Do not move the schedule or candidate cycle while a Lok Sabha election is
+  // active. The former migration changed engine.cycle and cleared campaigns,
+  // results and counting data whenever an updated app first launched.
+  if (!activeLokSabha) {
+    elections.calendar['lok-sabha'].nextAt = newCycle;
+    elections.calendar['lok-sabha'].intervalMonths = 60;
+    elections.calendar['lok-sabha'].label = 'Lok Sabha Election';
+    const slate = ensurePartySlate();
+    slate.forEach(item => {
+      if (item && item.typeId === 'lok-sabha' &&
+          ['Proposed', 'Party Approved', 'Funded'].includes(item.status) &&
+          Number(item.scheduledAt || 0) >= previousCycle - 1) {
+        item.scheduledAt = newCycle;
+        item.retryCycleUpdated = true;
+      }
+    });
   }
-  const slate = ensurePartySlate();
-  slate.forEach(item => {
-    if (item && item.typeId === 'lok-sabha' &&
-        ['Proposed','Party Approved','Funded'].includes(item.status) &&
-        Number(item.scheduledAt || 0) >= previousCycle - 1) {
-      item.scheduledAt = newCycle;
-      item.retryCycleUpdated = true;
-    }
-  });
-  const engine = state.elections.lokSabhaEngine;
-  if (engine && typeof engine === 'object') {
-    engine.cycle = newCycle;
-    engine.campaigns = [];
-    engine.results = [];
-    engine.partyTally = [];
-    engine.completed = false;
-    engine.lastRunAt = '';
-    engine.campaignsRunAt = '';
-  }
+
+  // Let ensureLokSabhaElectionEngine() perform a safe cycle rollover when
+  // appropriate; migrations must never clear a saved campaign or count.
   state.lokSabhaSevenMonthRetryApplied = true;
   saveState();
 }
-
 function ensureElectionCalendar() {
   if (!state.elections || typeof state.elections !== 'object') state.elections = JSON.parse(JSON.stringify(defaults.elections));
   if (!state.elections.calendar) state.elections.calendar = JSON.parse(JSON.stringify(defaults.elections.calendar));
@@ -8232,7 +8231,12 @@ document.addEventListener('change', event => {
 document.addEventListener('click', event => {
   const electionSectionButton = event.target.closest('[data-election-section]');
   if (electionSectionButton) {
-    electionSection = electionSectionButton.dataset.electionSection;
+    const requestedSection = electionSectionButton.dataset.electionSection;
+    if (validElectionSections.includes(requestedSection)) {
+      electionSection = requestedSection;
+      state.electionSection = requestedSection;
+      saveState();
+    }
     render();
     return;
   }
