@@ -1481,6 +1481,7 @@ function ensureNationalPartySystem() {
   if (!Array.isArray(n.reports)) n.reports=[];
   if (!Array.isArray(n.decisions)) n.decisions=[];
   if (!Array.isArray(n.electionQueue)) n.electionQueue=[];
+  if (!Array.isArray(n.highCommandInbox)) n.highCommandInbox=[];
   if (!n.lastMonthProcessed) n.lastMonthProcessed=-1;
   indiaPoliticalUnits.forEach((name,index)=>{
     let unit=n.units.find(item=>item.name===name);
@@ -1500,24 +1501,51 @@ function advanceNationalPartyAI(){
   n.lastMonthProcessed=month;
   const due=[];
   n.units.forEach((unit,index)=>{
-    const change=((month+index*3)%5)-2;
+    const change=((month+index*3)%5)-2+Math.round((Number(state.partyPopularity||unit.popularity||10)-50)/35)+Math.round((Number(unit.governance?.performance||45)-50)/40);
     unit.popularity=Math.max(0,Math.min(100,Number(unit.popularity||0)+change));
     unit.organisation=Math.max(0,Math.min(100,Number(unit.organisation||0)+(((month+index)%3)-1)));
-    unit.membership=Math.max(1,Math.round(Number(unit.membership||0)*(1+((((month+index*2)%5)-2)/100))));
+    const nationalPopularity=Math.max(0,Math.min(100,Number(state.partyPopularity||unit.popularity||10)));
+    const growthRate=Math.max(-0.01,Math.min(0.035,(unit.popularity-42)/1800+(unit.organisation-40)/4000+(nationalPopularity-45)/5000));
+    unit.membership=Math.max(1,Math.round(Number(unit.membership||0)*(1+growthRate)));
     unit.districtUnits=Math.max(1,Math.round(unit.membership/Math.max(25,unit.membership/Math.max(1,unit.districtUnits||1))));
-    unit.activity=unit.organisation<25?'Recruitment and district-building':unit.popularity<25?'Public outreach and issue campaigns':'Routine state organisation and voter outreach';
+    unit.stateLeadership=unit.stateLeadership||{president:fictionalPartyMemberName((index*13+month)%fictionalIndianPartyNames.length),decisionStyle:'Pragmatic'};
+    unit.governance=unit.governance||{status:'Organisation-building',performance:45,monthsInOffice:0,majorDecisions:0};
+    unit.governance.performance=Math.max(0,Math.min(100,Number(unit.governance.performance||45)+(((unit.popularity+unit.organisation+month+index)%5)-2)));
+    unit.governance.monthsInOffice=Number(unit.governance.monthsInOffice||0)+(unit.governance.status==='Governing'?1:0);
+    unit.activity=unit.governance.status==='Governing'?'AI state leadership managing administration, delivery and public outreach':unit.organisation<25?'AI leadership recruiting members and building district units':unit.popularity<25?'AI leadership conducting public listening and issue campaigns':'AI state leadership running outreach, organisation and policy planning';
     const interval=unit.isUT?60:60;
     if(!unit.nextElectionAt)unit.nextElectionAt=month+((index*7+18)%48)+6;
     if(month>=unit.nextElectionAt && !n.electionQueue.some(e=>e.unitId===unit.id&&e.status==='Awaiting review')){
       const estimate=Math.max(0,Math.min(unit.assemblySeats||90,Math.round((unit.assemblySeats||90)*unit.popularity/100*0.55)));
-      const election={id:'national-election-'+unit.id+'-'+month,unitId:unit.id,stateName:unit.name,dueMonth:month,seatCount:unit.assemblySeats||90,aiProjectedSeats:estimate,approvedSeats:0,status:'Awaiting review',candidateSlate:Array.from({length:Math.max(1,Math.min(unit.assemblySeats||90,estimate+Math.max(3,Math.round((unit.assemblySeats||90)*0.12))))},(_,i)=>({id:`${unit.id}-candidate-${month}-${i}`,name:fictionalPartyMemberName((index*19+i+month)%fictionalIndianPartyNames.length),constituency:`${unit.name} Assembly Constituency ${String(i+1).padStart(2,'0')}`,status:'AI Proposed'})),createdAt:dateText()};
+      const election={id:'national-election-'+unit.id+'-'+month,unitId:unit.id,stateName:unit.name,dueMonth:month,seatCount:unit.assemblySeats||90,aiProjectedSeats:estimate,approvedSeats:0,status:'AI Contested',candidateSlate:Array.from({length:Math.max(1,Math.min(unit.assemblySeats||90,estimate+Math.max(3,Math.round((unit.assemblySeats||90)*0.12))))},(_,i)=>({id:`${unit.id}-candidate-${month}-${i}`,name:fictionalPartyMemberName((index*19+i+month)%fictionalIndianPartyNames.length),constituency:`${unit.name} Assembly Constituency ${String(i+1).padStart(2,'0')}`,status:'AI Selected'})),createdAt:dateText()};
+      const performanceBonus=Math.round((unit.organisation-50)/12+(unit.governance.performance-50)/20);
+      const won=Math.max(0,Math.min(election.seatCount,Math.round(election.seatCount*(unit.popularity/100)*0.52)+performanceBonus));
+      election.resultSeats=won;
+      election.status='Contested · AI managed';
+      election.resultSummary=won>election.seatCount/2?'AI state unit formed a simulated government':`AI state unit continues as a simulated opposition party`;
+      if(Math.abs(won-election.seatCount/2)<=Math.max(3,Math.round(election.seatCount*0.08))){n.highCommandInbox.unshift({id:`hc-${election.id}`,unitId:unit.id,stateName:unit.name,type:'Coalition talks',title:`Review coalition mandate in ${unit.name}`,detail:`The AI state unit has a close result (${won}/${election.seatCount} seats) and requests authority to explore coalition support.`,status:'Pending',createdAt:dateText()});}
+      unit.seatsHeld=won;
+      unit.lastElection={month,seatsWon:won,totalSeats:election.seatCount,status:election.resultSummary};
+      unit.governance.status=won>election.seatCount/2?'Governing':'Opposition';
+      unit.governance.monthsInOffice=0;
+      unit.governance.performance=Math.max(0,Math.min(100,unit.governance.performance+(won>election.seatCount/2?3:-2)));
       n.electionQueue.unshift(election); due.push(unit.name);
       unit.nextElectionAt=month+interval;
     }
   });
-  n.reports.unshift({month,date:dateText(),summary:due.length?`Election review required in ${due.join(', ')}.`:'AI completed routine organisation reviews across 36 political units.',units:n.units.length,totalMembers:n.units.reduce((sum,u)=>sum+Number(u.membership||0),0),averagePopularity:Math.round(n.units.reduce((sum,u)=>sum+Number(u.popularity||0),0)/n.units.length)});
+  const memberDecisions=['Organised local member outreach','Raised a constituency issue with the state committee','Started a local recruitment effort','Prepared a policy suggestion for the party','Coordinated volunteer activity'];
+  (Array.isArray(state.partyMemberRecords)?state.partyMemberRecords:[]).forEach((member,index)=>{
+    if(!member||typeof member!=='object')return;
+    const decision=memberDecisions[(month+index*3)%memberDecisions.length];
+    member.aiDecision=decision;
+    member.aiDecisionMonth=month;
+    member.aiDecisionHistory=Array.isArray(member.aiDecisionHistory)?member.aiDecisionHistory:[];
+    if(member.aiDecisionHistory[0]?.month!==month)member.aiDecisionHistory.unshift({month,date:dateText(),decision});
+    member.aiDecisionHistory=member.aiDecisionHistory.slice(0,12);
+  });
+  n.reports.unshift({month,date:dateText(),summary:due.length?`AI state units independently contested elections in ${due.join(', ')} and updated their government/opposition status.`:'AI state leaders completed routine organisation, administration and popularity-led recruitment across 36 political units.',units:n.units.length,totalMembers:n.units.reduce((sum,u)=>sum+Number(u.membership||0),0),averagePopularity:Math.round(n.units.reduce((sum,u)=>sum+Number(u.popularity||0),0)/n.units.length)});
   n.reports=n.reports.slice(0,36);
-  if(due.length) state.news.unshift({id:'national-ai-'+month,title:`National election review: ${due.join(', ')}`,category:'Party Organisation',summary:'AI state units have prepared candidate recommendations. Review the state election queue and approve major campaign decisions.',date:dateText(),read:false});
+  if(due.length) state.news.unshift({id:'national-ai-'+month,title:`Autonomous state election results: ${due.join(', ')}`,category:'Party Organisation',summary:'Your state units selected candidates, contested their simulated elections and updated their government or opposition status independently. High-impact party decisions remain for national high-command review.',date:dateText(),read:false});
   saveState();
 }
 function nationalPartySection(){
@@ -1526,22 +1554,24 @@ function nationalPartySection(){
   const average=Math.round(n.units.reduce((sum,u)=>sum+Number(u.popularity||0),0)/n.units.length);
   const held=n.units.reduce((sum,u)=>sum+Number(u.seatsHeld||0),0);
   const queued=n.electionQueue.filter(e=>e.status==='Awaiting review');
+  const recentResults=n.electionQueue.filter(e=>e.status==='Contested · AI managed').slice(0,5);
+  const highCommand=n.highCommandInbox.filter(item=>item.status==='Pending').slice(0,6);
   return `<section class="panel national-command">
     <span class="eyebrow">BHARAT PRAGATI PARTY · NATIONAL ORGANISATION</span>
     <h2>National Political Command Centre</h2>
-    <p class="panel-description">AI state units manage routine organisation, district outreach and election preparation across all 28 states and 8 Union Territories. You retain approval over candidates, major budgets, alliances and leadership decisions.</p>
+    <p class="panel-description">AI state leaders independently organise, select candidates, contest simulated elections and manage state-level administration. You act as national high command for major alliances, leadership changes and exceptional decisions.</p>
     <div class="stats-grid national-stats">${statCard('POLITICAL UNITS','36','28 states · 8 UTs','▦')}${statCard('ESTIMATED MEMBERS',totalMembers.toLocaleString('en-IN'),'Simulated party organisation','♟')}${statCard('AVERAGE SUPPORT',average+'/100','Simulated internal indicator','✦')}${statCard('ASSEMBLY SEATS HELD',held,'Recorded game results only','▤')}</div>
-    ${queued.length?`<div class="national-alert"><b>${queued.length} election review(s) need your decision</b><small>${queued.map(e=>escapeHtml(e.stateName)).join(' · ')}</small></div>`:''}
+    ${highCommand.length?`<div class="national-alert"><b>${highCommand.length} high-command decision(s) need your guidance</b><small>${highCommand.map(item=>escapeHtml(item.stateName)).join(' · ')}</small></div>`:''}${queued.length?`<div class="national-alert"><b>${queued.length} election review(s) need your decision</b><small>${queued.map(e=>escapeHtml(e.stateName)).join(' · ')}</small></div>`:''}
     <div class="national-toolbar"><input class="search-input" id="nationalStateSearch" placeholder="Search state or Union Territory…" autocomplete="off"><select id="nationalUnitFilter" class="search-input"><option value="all">All political units</option><option value="state">States</option><option value="ut">Union Territories</option></select></div>
     <div class="national-unit-grid" id="nationalUnitGrid">${n.units.slice().sort((a,b)=>b.popularity-a.popularity).map(unit=>`<article class="national-unit-card" data-national-unit="${escapeHtml((unit.name+' '+(unit.isUT?'UT':'State')).toLowerCase())}" data-unit-type="${unit.isUT?'ut':'state'}">
       <div class="national-unit-head"><b>${escapeHtml(unit.name)}</b><span>${unit.isUT?'UT':'STATE'}</span></div>
       <div class="national-meter-label"><small>Party support</small><b>${unit.popularity}/100</b></div><div class="national-meter"><i style="width:${unit.popularity}%"></i></div>
       <div class="national-unit-meta"><span>Members <b>${Number(unit.membership).toLocaleString('en-IN')}</b></span><span>Organisation <b>${unit.organisation}/100</b></span></div>
-      <small class="national-unit-activity">${escapeHtml(unit.activity||'AI organisation active')}</small>
+      <small class="national-unit-activity">${escapeHtml(unit.governance?.status||'AI organisation active')} · ${escapeHtml(unit.activity||'AI organisation active')}${unit.lastElection?` · Last result ${unit.lastElection.seatsWon}/${unit.lastElection.totalSeats} seats`:''}</small>
     </article>`).join('')}</div>
     <h3 style="margin-top:22px">National election review queue</h3>
-    ${queued.length?queued.slice(0,12).map(e=>`<div class="national-election-row"><div><b>${escapeHtml(e.stateName)}</b><small>${e.candidateSlate.length} AI-proposed candidates · projected ${e.aiProjectedSeats} seats (simulation)</small></div><button class="secondary-btn" data-national-election-review="${escapeHtml(e.id)}">Review list</button></div>`).join(''):'<p class="panel-description">No state election currently requires your approval. AI units continue routine organisation.</p>'}
-    <h3 style="margin-top:22px">Latest national AI reports</h3>
+    ${queued.length?queued.slice(0,12).map(e=>`<div class="national-election-row"><div><b>${escapeHtml(e.stateName)}</b><small>${e.candidateSlate.length} AI-proposed candidates · projected ${e.aiProjectedSeats} seats (simulation)</small></div><button class="secondary-btn" data-national-election-review="${escapeHtml(e.id)}">Review list</button></div>`).join(''):'<p class="panel-description">State units contest elections and govern independently; only exceptional high-command matters require your approval.</p>'}
+    <h3 style="margin-top:22px">High-command decisions</h3>${highCommand.length?highCommand.map(item=>`<div class="national-election-row"><div><b>${escapeHtml(item.title)}</b><small>${escapeHtml(item.detail)}</small></div><button class="secondary-btn" data-high-command-decision="${escapeHtml(item.id)}">Review</button></div>`).join(''):'<p class="panel-description">No major state-level decision is awaiting your guidance.</p>'}<h3 style="margin-top:22px">Autonomous state election outcomes</h3>${recentResults.length?recentResults.map(e=>`<div class="national-election-row"><div><b>${escapeHtml(e.stateName)}</b><small>${e.resultSeats}/${e.seatCount} seats · ${escapeHtml(e.resultSummary||e.status)}</small></div></div>`).join(''):'<p class="panel-description">AI state units will record outcomes as their simulated election dates arrive.</p>'}<h3 style="margin-top:22px">Latest national AI reports</h3>
     ${n.reports.slice(0,6).map(r=>`<div class="career-step"><div><b>${escapeHtml(r.date)} · National review</b><small>${escapeHtml(r.summary)} · ${r.totalMembers.toLocaleString('en-IN')} simulated members</small></div><span class="current-label">AI REPORT</span></div>`).join('')}
     <p class="panel-description">All state-level support, membership and projections are fictional game simulations, not real polling or official party membership figures.</p>
   </section>`;
@@ -1551,6 +1581,16 @@ function reviewNationalElection(id){
   if(!election)return toast('Election review not found.');
   const summary=election.candidateSlate.slice(0,8).map(c=>c.constituency).join(', ');
   alert(`${election.stateName} election review\n${election.candidateSlate.length} AI-proposed candidates\nProjected seats: ${election.aiProjectedSeats}\n\nSample constituencies: ${summary}\n\nThe candidate slate is a fictional simulation. Review and approve candidates in the national election panel.`);
+}
+function respondNationalHighCommand(id){
+  const n=ensureNationalPartySystem(), item=n.highCommandInbox.find(entry=>entry.id===id&&entry.status==='Pending');
+  if(!item)return toast('High-command request is no longer pending.');
+  const approve=confirm(`${item.title}\n\n${item.detail}\n\nApprove the state unit to proceed?`);
+  item.status=approve?'Approved by High Command':'Declined by High Command';
+  item.respondedAt=dateText();
+  const unit=n.units.find(entry=>entry.id===item.unitId);
+  if(unit){unit.governance.majorDecisions=Number(unit.governance?.majorDecisions||0)+1;unit.governance.lastHighCommandDecision=item.status;if(approve){unit.governance.status='Coalition negotiations';unit.influence=Math.min(100,Number(unit.influence||0)+2);}}
+  saveState();render();toast(approve?'High-command approval recorded.':'High-command request declined.');
 }
 function partySectionTabs() {
   return ['Overview', 'National', 'Treasury', 'Leadership', 'Members', 'Organisation', 'Elections', 'Operations'].map(section => `
@@ -8837,6 +8877,7 @@ document.addEventListener('click', event => {
     return;
   }
   const nationalReview=event.target.closest('[data-national-election-review]'); if(nationalReview){reviewNationalElection(nationalReview.dataset.nationalElectionReview);return;}
+  const highCommandDecision=event.target.closest('[data-high-command-decision]'); if(highCommandDecision){respondNationalHighCommand(highCommandDecision.dataset.highCommandDecision);return;}
 
   const rivalSelect = event.target.closest('[data-rival-select]');
   if (rivalSelect) { state.selectedRivalPartyId = rivalSelect.dataset.rivalSelect; saveState(); render(); return; }
