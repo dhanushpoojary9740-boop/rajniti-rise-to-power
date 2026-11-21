@@ -3859,7 +3859,7 @@ function nationalElectionArchitecturePanel() {
       </div>
       <div class="election-national-note">
         <b>Important limitation in this build</b>
-        <p>This panel establishes the national seat map and majority rule. It does not yet constitute a complete 543-seat candidate register, constituency-level counting engine or official nomination workflow. Those will be implemented as the next connected election-system stage.</p>
+        <p>The connected election workflow supports a 543-seat simulated candidate slate, proposal review, approval, funding, campaigning and constituency-level counting. The included official-name reference currently verifies Karnataka's 28 constituency names; other seats remain clearly labelled numbered references until verified constituency names are added.</p>
       </div>
     </section>
   `;
@@ -3981,18 +3981,40 @@ function nationalLokSabhaCandidatePanel() {
 function ensureLokSabhaElectionEngine() {
   if (!state.elections || typeof state.elections !== 'object') state.elections = {};
   if (!state.elections.lokSabhaEngine || typeof state.elections.lokSabhaEngine !== 'object') {
-    state.elections.lokSabhaEngine = { cycle:null, campaigns:[], results:[], partyTally:[], completed:false, lastRunAt:'', campaignsRunAt:'' };
+    state.elections.lokSabhaEngine = { cycle:null, campaigns:[], results:[], partyTally:[], aiCampaignReport:[], completed:false, lastRunAt:'', campaignsRunAt:'' };
   }
   const engine = state.elections.lokSabhaEngine;
   if (!Array.isArray(engine.campaigns)) engine.campaigns = [];
   if (!Array.isArray(engine.results)) engine.results = [];
   if (!Array.isArray(engine.partyTally)) engine.partyTally = [];
+  if (!Array.isArray(engine.aiCampaignReport)) engine.aiCampaignReport = [];
   const schedule = ensureElectionCalendar().calendar['lok-sabha'];
   const cycle = Number(schedule?.nextAt || currentMonthIndex());
   if (Number(engine.cycle) !== cycle) {
+    if (engine.completed && Array.isArray(engine.results) && engine.results.length === 543) {
+      state.elections.lastLokSabhaResults = engine.results.map(row=>({winner:row.winner,partyName:row.partyName,constituency:row.constituency,stateName:row.stateName,seatCode:row.seatCode}));
+      state.elections.lastLokSabhaCompletedCycle = Number(engine.cycle);
+    }
     engine.cycle = cycle; engine.campaigns = []; engine.results = []; engine.partyTally = []; engine.completed = false; engine.campaignsRunAt = '';
+    engine.aiCampaignReport = [];
+    saveState();
   }
   return engine;
+}
+function lokSabhaCompletedResultSnapshot() {
+  const elections = state.elections || {};
+  const engine = elections.lokSabhaEngine || {};
+  const stored = elections.lastLokSabhaSeatTally || {};
+  const validTally = rows => Array.isArray(rows) && rows.length > 0 &&
+    rows.every(row => Number.isFinite(Number(row.seats)) && Number(row.seats) >= 0) &&
+    rows.reduce((sum,row)=>sum+Number(row.seats||0),0) === 543;
+  if (engine.completed && validTally(engine.partyTally)) {
+    return { cycle:Number(engine.cycle), tally:engine.partyTally, results:engine.results||[], source:'Current Lok Sabha count' };
+  }
+  if (stored.countingComplete && validTally(stored.seatsWon)) {
+    return { cycle:Number(stored.scheduledAt), tally:stored.seatsWon, results:[], source:'Saved completed Lok Sabha tally' };
+  }
+  return null;
 }
 function lokSabhaSeed(text) {
   let h=2166136261;
@@ -4085,6 +4107,7 @@ function countLokSabhaElection() {
   if (!engine.campaignsRunAt) return toast('Run national campaigns before polling and counting.');
   const slate=ensurePartySlate().filter(x=>x.typeId==='lok-sabha' && Number(x.scheduledAt)===engine.cycle && x.status==='Funded');
   const results=[];
+  const campaignStats={};
   const rivalNames=['National Democratic Alliance','Indian National Congress','Regional Alliance','Independent Front'];
   const seats=assignPartyElectionSeats('lok-sabha',[],engine.cycle);
   seats.forEach(seat=>{
@@ -4104,7 +4127,13 @@ function countLokSabhaElection() {
     }).sort((a,b)=>b.votes-a.votes);
     const total=scored.reduce((sum,x)=>sum+x.votes,0);
     const winner=scored[0];
-    results.push({seatCode:seat.seatCode,stateName:seat.stateName,constituency:seat.constituency,winner:winner.candidateName,partyName:winner.partyName,votes:winner.votes,totalVotes:total,margin:winner.votes-(scored[1]?.votes||0)});
+    scored.forEach(candidate=>{
+      const key=candidate.partyName;
+      if(!campaignStats[key]) campaignStats[key]={party:key,contests:0,wins:0,votes:0,performance:0};
+      const stats=campaignStats[key];stats.contests++;stats.votes+=Number(candidate.votes||0);stats.performance+=Number(candidate.performance||0);
+      if(candidate===winner) stats.wins++;
+    });
+    results.push({seatCode:seat.seatCode,stateName:seat.stateName,constituency:seat.constituency,winner:winner.candidateName,partyName:winner.partyName,votes:winner.votes,runnerUp:scored[1]?.candidateName||'',runnerUpParty:scored[1]?.partyName||'',runnerUpVotes:Number(scored[1]?.votes||0),totalVotes:total,turnout:total,margin:winner.votes-(scored[1]?.votes||0)});
     const ownSlate=slate.find(x=>x.stateName===seat.stateName && Number(x.constituencyNumber)===Number(seat.constituencyNumber));
     if(ownSlate){ownSlate.status=winner.player?'Elected':'Not Elected';ownSlate.electionResult=winner.player?'Won':'Lost';ownSlate.votes=scored.find(x=>x.player)?.votes||0;ownSlate.resultDate=dateText();}
   });
@@ -4112,6 +4141,13 @@ function countLokSabhaElection() {
   results.forEach(r=>{tally[r.partyName]=(tally[r.partyName]||0)+1;});
   engine.results=results;
   engine.partyTally=Object.entries(tally).map(([party,seats])=>({party,seats})).sort((a,b)=>b.seats-a.seats);
+  const campaignStyles=['Ground outreach & local meetings','Issue-led manifesto messaging','Regional alliance & community outreach','Digital communication & volunteer mobilisation'];
+  engine.aiCampaignReport=Object.values(campaignStats).map((row,index)=>({
+    party:row.party,style:campaignStyles[lokSabhaSeed(`${engine.cycle}|${row.party}|style`)%campaignStyles.length],
+    contests:row.contests,wins:row.wins,averagePerformance:Math.round(row.performance/Math.max(1,row.contests)),
+    votes:row.votes,voteShare:Math.round(row.votes/Math.max(1,results.reduce((sum,r)=>sum+Number(r.totalVotes||0),0))*1000)/10,
+    averageWinningMargin:Math.round(results.filter(r=>r.partyName===row.party).reduce((sum,r)=>sum+Number(r.margin||0),0)/Math.max(1,row.wins))
+  })).sort((a,b)=>b.wins-a.wins);
   engine.completed=true;engine.lastRunAt=dateText();
   state.elections.lastLokSabhaSeatTally={scheduledAt:engine.cycle,totalSeats:543,majorityMark:272,seatsWon:engine.partyTally,countingComplete:true};
   saveState();render();
@@ -4127,11 +4163,13 @@ function lokSabhaElectionEnginePanel() {
     <p class="panel-description">This simulation generates constituency-level campaign and vote outcomes from funded player candidates and simulated AI competitors. Numbered constituency labels are used where verified official names are not available in the current dataset.</p>
     <div class="national-lok-sabha-actions"><button class="primary-btn" data-ls-engine-campaign ${e.completed?'disabled':''}>RUN AI NATIONAL CAMPAIGNS</button><button class="primary-btn" data-ls-engine-count ${!e.campaignsRunAt||e.completed?'disabled':''}>POLL & COUNT ALL CONSTITUENCIES</button></div>
     ${e.partyTally.length?`<h3>National seat tally</h3>${e.partyTally.map(x=>`<div class="national-ls-state-row"><b>${escapeHtml(x.party)}</b><strong>${x.seats}</strong></div>`).join('')}<p><b>Majority mark:</b> 272 · <b>Leading party:</b> ${escapeHtml(leader?.party||'—')} (${leader?.seats||0})</p>`:'<p class="panel-description">No constituency results yet. Complete campaigns and counting to calculate party seats automatically.</p>'}
+    ${e.aiCampaignReport?.length?`<details class="campaign-report-details" open><summary>AI campaign performance report · ${e.aiCampaignReport.length} parties</summary><p class="creator-note">The report summarizes simulated campaign style, modeled performance, vote share and seat outcomes. These are game estimates, not real polling.</p>${e.aiCampaignReport.map(row=>`<article class="campaign-report-row"><b>${escapeHtml(row.party)}</b><small>${escapeHtml(row.style)}</small><div class="campaign-report-metrics"><span>Modeled score <strong>${row.averagePerformance}/100</strong></span><span>Vote share <strong>${Number(row.voteShare).toFixed(1)}%</strong></span><span>Seats <strong>${row.wins}/543</strong></span><span>Votes <strong>${Number(row.votes).toLocaleString('en-IN')}</strong></span></div><small>${row.wins?`Average winning margin: ${Number(row.averageWinningMargin).toLocaleString('en-IN')} votes`:'No seats won in this simulation'}</small></article>`).join('')}</details>`:''}
     ${e.results.length?`<details><summary>Constituency results · ${e.results.length}</summary><div class="candidate-register-list">${e.results.slice(0,543).map(r=>`<div class="finance-history" style="padding:10px;margin:6px 0"><b>${escapeHtml(r.constituency)}</b><div>${escapeHtml(r.winner)} · ${escapeHtml(r.partyName)}</div><small>${Number(r.votes).toLocaleString('en-IN')} votes · Margin ${Number(r.margin).toLocaleString('en-IN')}</small></div>`).join('')}</div></details>`:''}
   </section>`;
 }
 
 function nationalElectionResultsCentre() {
+  const nationalSnapshot = lokSabhaCompletedResultSnapshot();
   const history = Array.isArray(state.elections?.history) ? state.elections.history.filter(election => election.typeId === 'lok-sabha') : [];
   const records = history.flatMap((election, electionIndex) =>
     (Array.isArray(election.partyCandidateResults) ? election.partyCandidateResults : []).map(candidate => ({
@@ -4162,7 +4200,8 @@ function nationalElectionResultsCentre() {
     <section class="panel national-results-centre">
       <span class="gold-tag">ELECTION ARCHIVE · SAVED RESULTS</span>
       <h2>National election results centre</h2>
-      <p class="panel-description">This report reads completed candidate results saved in your election history. Opening this page never reruns counting or generates replacement vote totals. Only constituencies with saved results are included.</p>
+      <p class="panel-description">This archive lists saved candidate-level election records. These records may include more than one contest or repeat candidates; they are not the authoritative 543-seat Lok Sabha tally. The national tally is complete only when the connected Lok Sabha engine declares all 543 constituency results.</p>
+      <div class="election-note"><b>Authoritative Lok Sabha count:</b> ${nationalSnapshot ? `Complete · ${nationalSnapshot.tally.reduce((sum,row)=>sum+Number(row.seats||0),0)}/543 seats · ${escapeHtml(nationalSnapshot.source)}` : 'Not complete · complete all 543 constituency results in the National campaign, polling & counting section.'}</div>
       <div class="stats-grid">
         ${statCard('CANDIDATE RESULTS', records.length, 'Saved constituency records', '▤')}
         ${statCard('WON', won, 'Saved winning results', '★')}
@@ -4534,6 +4573,7 @@ function electionPage() {
                 ${electionTypes.filter(type => type.id === selectedElectionTypeId).map(type => `<option value="${type.id}">${type.name} · ${type.level}</option>`).join('')}
               </select>
             </div>
+            ${selectedElectionTypeId === 'lok-sabha' ? lokSabhaContestSelectHtml() : ''}
             <div class="creator-field">
               <label for="electionCandidate">Candidate</label>
               <select id="electionCandidate" name="candidateId" required>
@@ -4556,7 +4596,7 @@ function electionPage() {
             <label for="electionManifesto">Election manifesto summary</label>
             <textarea id="electionManifesto" name="manifesto" rows="4" maxlength="320" placeholder="Describe your priorities: roads, water, education, healthcare and jobs..." required></textarea>
           </div>
-          <div class="election-note"><b>Constituency:</b> ${escapeHtml(state.constituency.constituencyName)} · ${escapeHtml(state.constituency.district)}, ${escapeHtml(state.constituency.state)}<br><b>Estimated local voters:</b> ${totalVoters.toLocaleString('en-IN')}<br><b>Party:</b> ${escapeHtml(state.party)}<br><b>Available party treasury:</b> ${money(state.partyFunds || 0)}<br><b>Funding rule:</b> Party candidates use party treasury only; personal wealth is not used for party campaigns. Independent candidates fund their own campaign.<br><b>Illustrative candidate expenditure ceilings:</b> Local ₹5 lakh · Assembly ₹40 lakh · Lok Sabha ₹95 lakh. Verify applicable legal limits for the game's election year and state.</div>
+          <div class="election-note">${selectedElectionTypeId === 'lok-sabha' ? '<b>Constituency:</b> Select a Lok Sabha constituency above before registering.' : `<b>Constituency:</b> ${escapeHtml(state.constituency.constituencyName)} · ${escapeHtml(state.constituency.district)}, ${escapeHtml(state.constituency.state)}`}<br><b>Estimated local voters:</b> ${totalVoters.toLocaleString('en-IN')}<br><b>Party:</b> ${escapeHtml(state.party)}<br><b>Available party treasury:</b> ${money(state.partyFunds || 0)}<br><b>Funding rule:</b> Party candidates use party treasury only; personal wealth is not used for party campaigns. Independent candidates fund their own campaign.<br><b>Illustrative candidate expenditure ceilings:</b> Local ₹5 lakh · Assembly ₹40 lakh · Lok Sabha ₹95 lakh. Verify applicable legal limits for the game's election year and state.</div>
           <button type="submit" class="primary-btn full">REGISTER CANDIDACY & RESERVE BUDGET →</button>
         </form>
       </section>
@@ -4581,6 +4621,22 @@ function electionPage() {
   `;
 }
 
+function lokSabhaContestSelectHtml() {
+  const referenceUnits = Array.isArray(lokSabhaConstituencyReference?.units) ? lokSabhaConstituencyReference.units : [];
+  const options = lokSabhaSeatAllocation.map(unit => {
+    const verified = referenceUnits.find(row => row.state === unit.unit);
+    const named = new Map((verified?.constituencies || []).map(pc => [Number(pc.number), pc.name]));
+    const items = Array.from({length:Number(unit.seats)},(_,index)=>{
+      const number=index+1;
+      const official=named.get(number);
+      const label=official ? `${String(number).padStart(2,'0')} · ${official}` : `PC ${String(number).padStart(2,'0')} · numbered reference (official name unavailable)`;
+      return `<option value="${escapeHtml(unit.unit)}|${number}">${escapeHtml(label)}</option>`;
+    }).join('');
+    return `<optgroup label="${escapeHtml(unit.unit)}">${items}</optgroup>`;
+  }).join('');
+  return `<div class="creator-field lok-sabha-constituency-field"><label for="lokSabhaContest">Lok Sabha constituency · choose state/UT and seat</label><select id="lokSabhaContest" name="lokSabhaContest" required><option value="">Select constituency</option>${options}</select><small>All 543 seats are selectable. Official constituency names are shown where verified in the included dataset; other seats use clearly marked numbered references.</small></div>`;
+}
+
 function startElection(form) {
   if (!state.characterCreated) return toast('Create your politician profile first.');
   if (state.elections.active) return toast('An election campaign is already active.');
@@ -4589,6 +4645,18 @@ function startElection(form) {
   const candidate = electionCandidates().find(item => item.id === String(data.get('candidateId')));
   const budget = Number(data.get('campaignBudget'));
   const manifesto = String(data.get('manifesto') || '').trim();
+  const contestValue = String(data.get('lokSabhaContest') || '');
+  let contestState = '', contestNumber = 0, contestName = '';
+  if (type?.id === 'lok-sabha') {
+    const [rawState,rawNumber] = contestValue.split('|');
+    contestState = String(rawState || '');
+    contestNumber = Number(rawNumber || 0);
+    const unit = lokSabhaSeatAllocation.find(row=>row.unit===contestState);
+    if (!unit || !Number.isInteger(contestNumber) || contestNumber<1 || contestNumber>Number(unit.seats)) return toast('Choose a valid Lok Sabha constituency from the selector.');
+    const referenceUnit = lokSabhaConstituencyReference.units.find(row=>row.state===contestState);
+    const verifiedPC = (referenceUnit?.constituencies||[]).find(row=>Number(row.number)===contestNumber);
+    contestName = verifiedPC ? verifiedPC.name : `${contestState} · PC ${String(contestNumber).padStart(2,'0')}`;
+  }
   if (!type || !candidate || manifesto.length < 20) return toast('Choose a candidate and write a manifesto of at least 20 characters.');
   if (state.partyId !== 'independent' && candidate.id !== 'player' && !(state.partyMemberRecords || []).some(member => String(member.id) === String(candidate.id))) return toast('Select a registered party member as the party candidate.');
   if (state.partyId === 'independent' && candidate.id !== 'player') return toast('An independent candidate must be you.');
@@ -4624,7 +4692,11 @@ function startElection(form) {
     campaignScore: 0, estimatedSupport, activities: [],
     opponentName: ['Arjun Rao', 'Meera Kulkarni', 'Ravi Shetty', 'Ananya Menon', 'Vikram Desai'][state.elections.totalContested % 5],
     opponentParty: ['National Development Front', 'People\'s Democratic Union', 'Bharatiya Jan Collective', 'Regional Progress Party'][state.elections.totalContested % 4],
-    started: dateText(), constituency: state.constituency.constituencyName,
+    started: dateText(),
+    constituency: type.id === 'lok-sabha' ? contestName : state.constituency.constituencyName,
+    stateName: type.id === 'lok-sabha' ? contestState : (state.constituency.state || state.stateName || 'Karnataka'),
+    district: type.id === 'lok-sabha' ? 'Parliamentary constituency' : state.constituency.district,
+    constituencyNumber: type.id === 'lok-sabha' ? contestNumber : null,
     scheduledAt, phase: electionPhase({ scheduledAt }), phaseUpdatedAt: dateText(),
     preparationChecklist: { candidateSelected: true, manifestoPrepared: true, fundingReserved: true }
   };
@@ -4799,17 +4871,21 @@ function ensureCentralGovernmentState() {
 function centralGovernmentAction(action) {
   const engine = ensureLokSabhaElectionEngine();
   const c = ensureCentralGovernmentState();
-  if (!engine.completed || !state.elections?.lastLokSabhaSeatTally?.countingComplete) return toast('Complete Lok Sabha counting before Central Government formation.');
-  const tally = engine.partyTally || [];
+  const resultSnapshot = lokSabhaCompletedResultSnapshot();
+  if (!resultSnapshot) return toast('Complete and declare all 543 Lok Sabha constituency results before Central Government formation.');
+  const tally = resultSnapshot.tally;
   const majority = 272;
-  const currentCycle = Number(engine.cycle);
+  const currentCycle = Number(resultSnapshot.cycle);
   const eligibleForCycle = ['appointed','formed'].includes(c.status) && Number(c.electionCycle) === currentCycle;
   if (action === 'form-majority') {
     const winner = tally.find(row => Number(row.seats) >= majority);
     if (!winner) return toast('No party has 272 seats. Start coalition talks using the counted party tally.');
-    const leader = prompt(`Enter the Prime Minister-designate from ${winner.party}:`, state.playerName || '');
-    if (!leader || !leader.trim()) return;
-    c.status = 'appointed'; c.electionCycle = currentCycle; c.primeMinister = leader.trim(); c.party = winner.party;
+    const leaderSelect = document.querySelector('[data-central-pm-select]');
+    const leader = String(leaderSelect?.value || '').trim();
+    if (!leader) return toast('Select an elected Lok Sabha member from the lead party as Prime Minister-designate.');
+    const eligibleLeaders = electedMemberRegister('lok-sabha').filter(member => member.party.toLowerCase() === winner.party.toLowerCase());
+    if (!eligibleLeaders.some(member => member.name === leader)) return toast('The selected Prime Minister-designate must be an elected MP of the lead party.');
+    c.status = 'appointed'; c.electionCycle = currentCycle; c.primeMinister = leader; c.party = winner.party;
     c.supportSeats = Number(winner.seats); c.coalition = []; c.formedAt = dateText(); c.floorTest = 'Not held';
     c.history.unshift({date:dateText(),event:`${winner.party} nominated ${leader.trim()} as Prime Minister-designate with ${winner.seats} Lok Sabha seats. Floor test pending.`});
     saveState(); render(); toast('Prime Minister-designate recorded. Conduct the Lok Sabha floor test to complete formation.');
@@ -4822,21 +4898,18 @@ function centralGovernmentAction(action) {
     c.history.unshift({date:dateText(),event:`Union Council of Ministers constituted with ${c.cabinet.length} portfolio assignments.`});
     saveState(); render(); toast(`Union cabinet recorded with ${c.cabinet.length} portfolios.`);
   } else if (action === 'coalition') {
-    const leadName = prompt(`Enter the lead party exactly as shown in the counted Lok Sabha tally:\n${tally.map(row=>`${row.party}: ${row.seats}`).join('\n')}`);
-    if (!leadName || !leadName.trim()) return;
-    const own = tally.find(row => row.party.toLowerCase() === leadName.trim().toLowerCase());
+    const leadName = String(document.querySelector('[data-central-lead-select]')?.value || '').trim();
+    const own = tally.find(row => row.party.toLowerCase() === leadName.toLowerCase());
     if (!own) return toast('Choose a lead party from the counted Lok Sabha tally.');
-    const partnerText = prompt('Enter supporting party names exactly as shown in the tally, separated by commas. Do not include the lead party.','');
-    if (partnerText === null) return;
-    const names = [...new Set(partnerText.split(',').map(name=>name.trim()).filter(Boolean))];
-    const partners = names.map(name=>tally.find(row=>row.party.toLowerCase()===name.toLowerCase())).filter(row=>row && row.party.toLowerCase()!==own.party.toLowerCase());
-    if (partners.length !== names.length) return toast('One or more partner names do not match a party in the counted tally.');
+    const selectedNames = [...document.querySelectorAll('[data-central-partner-select]:checked')].map(input=>input.value);
+    const partners = [...new Set(selectedNames)].map(name=>tally.find(row=>row.party.toLowerCase()===name.toLowerCase())).filter(row=>row && row.party.toLowerCase()!==own.party.toLowerCase());
     const supportSeats = Number(own.seats) + partners.reduce((sum,row)=>sum+Number(row.seats||0),0);
-    if (supportSeats < majority) return toast(`Those parties have ${supportSeats} seats together; at least 272 are required. Add more actual seat-winning parties.`);
+    if (supportSeats < majority) return toast(`Those parties have ${supportSeats} seats together; at least 272 are required. Select more supporting parties.`);
     if (supportSeats > 543) return toast('The combined support exceeds the 543 Lok Sabha seats.');
-    const leader = prompt(`Enter the Prime Minister-designate for the ${own.party}-led coalition:`, state.playerName || '');
-    if (!leader || !leader.trim()) return;
-    c.status='appointed'; c.electionCycle=currentCycle; c.primeMinister=leader.trim(); c.party=own.party;
+    const leader = String(document.querySelector('[data-central-pm-select]')?.value || '').trim();
+    const eligibleLeaders = electedMemberRegister('lok-sabha').filter(member => member.party.toLowerCase() === own.party.toLowerCase());
+    if (!leader || !eligibleLeaders.some(member=>member.name===leader)) return toast('Select an elected MP of the lead party as Prime Minister-designate.');
+    c.status='appointed'; c.electionCycle=currentCycle; c.primeMinister=leader; c.party=own.party;
     c.supportSeats=supportSeats; c.coalition=partners.map(row=>({name:row.party,seats:Number(row.seats),status:'supporting'}));
     c.formedAt=dateText(); c.floorTest='Not held';
     c.history.unshift({date:dateText(),event:`Coalition talks recorded for ${own.party} with ${partners.length} supporting parties and ${supportSeats} declared Lok Sabha seats. Floor test pending.`});
@@ -4858,10 +4931,16 @@ function centralGovernmentAction(action) {
 function centralGovernmentPanel() {
   const c = ensureCentralGovernmentState();
   const engine = ensureLokSabhaElectionEngine();
-  const tally = engine.partyTally || [];
+  const resultSnapshot = lokSabhaCompletedResultSnapshot();
+  const tally = resultSnapshot?.tally || engine.partyTally || [];
   const majorityParty = tally.find(row => Number(row.seats) >= 272);
-  const counted = !!engine.completed && !!state.elections?.lastLokSabhaSeatTally?.countingComplete;
-  const sameCycle = Number(c.electionCycle) === Number(engine.cycle);
+  const counted = !!resultSnapshot;
+  const currentCycle = Number(resultSnapshot?.cycle ?? engine.cycle);
+  const electedMPs = counted ? electedMemberRegister('lok-sabha') : [];
+  const pmOptions = electedMPs.map(member=>`<option value="${escapeHtml(member.name)}">${escapeHtml(member.name)} · ${escapeHtml(member.party)}</option>`).join('');
+  const leadOptions = tally.map(row=>`<option value="${escapeHtml(row.party)}">${escapeHtml(row.party)} · ${Number(row.seats)} seats</option>`).join('');
+  const partnerOptions = tally.map(row=>`<label class="coalition-party-option"><input type="checkbox" data-central-partner-select value="${escapeHtml(row.party)}"><span>${escapeHtml(row.party)} · ${Number(row.seats)} seats</span></label>`).join('');
+  const sameCycle = counted && Number(c.electionCycle) === currentCycle;
   const appointedThisCycle = sameCycle && c.status === 'appointed';
   const formedThisCycle = sameCycle && c.status === 'formed';
   const canNegotiate = counted && !appointedThisCycle && !formedThisCycle;
@@ -4869,7 +4948,9 @@ function centralGovernmentPanel() {
   return `<section class="panel central-government-panel"><span class="gold-tag">CENTRAL GOVERNMENT · LOK SABHA</span><h2>Central Government</h2><p class="panel-description">This is the Union Government only. It uses the completed Lok Sabha result (543 seats), a 272-seat majority, and a separate Prime Minister, coalition and Union cabinet record. It never changes the Karnataka State Government.</p>
     <div class="election-metrics"><div><small>LOK SABHA SEATS</small><b>543</b></div><div><small>MAJORITY MARK</small><b>272</b></div><div><small>COUNTING</small><b>${counted?'Complete':'Not complete'}</b></div><div><small>FORMATION</small><b>${escapeHtml(stage)}</b></div></div>
     ${!counted?'<p class="creator-note">Complete candidate nomination, approval, funding, campaigning and counting in Elections → Lok Sabha. This section unlocks only after all 543 seats are counted.</p>':appointedThisCycle?`<p><b>Prime Minister-designate:</b> ${escapeHtml(c.primeMinister)} · <b>Lead party:</b> ${escapeHtml(c.party)} · <b>Declared support:</b> ${c.supportSeats}/543</p><p class="creator-note">The government is not considered formed until the Lok Sabha floor test is passed.</p><button class="primary-btn" data-central-gov-action="floor-test">CONDUCT LOK SABHA FLOOR TEST</button>`:formedThisCycle?`<p><b>Prime Minister:</b> ${escapeHtml(c.primeMinister)} · <b>Lead party:</b> ${escapeHtml(c.party)} · <b>Support:</b> ${c.supportSeats}/543 · <b>Floor test:</b> ${escapeHtml(c.floorTest)}</p>`:`<p class="creator-note">${majorityParty?`${escapeHtml(majorityParty.party)} won ${majorityParty.seats} seats and can nominate a Prime Minister-designate.`:'No party reached 272 seats. Select a lead party and supporting parties; support is calculated from the counted tally, not entered as an arbitrary number.'} After nomination, conduct a floor test to complete government formation.</p>
-    <div class="national-lok-sabha-actions"><button class="primary-btn" data-central-gov-action="form-majority" ${!majorityParty?'disabled':''}>NOMINATE PRIME MINISTER</button><button class="secondary-btn" data-central-gov-action="coalition" ${!canNegotiate?'disabled':''}>START COALITION TALKS</button></div>`}
+    <div class="creator-field"><label for="central-pm-select">Prime Minister-designate · choose an elected MP</label><select id="central-pm-select" data-central-pm-select><option value="">Select elected MP</option>${pmOptions}</select></div>
+    <div class="national-lok-sabha-actions"><button class="primary-btn" data-central-gov-action="form-majority" ${!majorityParty?'disabled':''}>NOMINATE PRIME MINISTER</button><button class="secondary-btn" data-central-gov-action="coalition" ${!canNegotiate?'disabled':''}>START COALITION TALKS</button></div>
+    <details class="coalition-picker"><summary>Choose parties for coalition talks</summary><div class="creator-field"><label for="central-lead-select">Lead party</label><select id="central-lead-select" data-central-lead-select>${leadOptions}</select></div><div class="creator-field"><label>Supporting parties · select all that agree to support</label><div class="coalition-party-list">${partnerOptions}</div></div><p class="creator-note">Only counted party seat totals are used. Select actual parties; their seats are added automatically. Prime Minister must be an elected MP of the lead party.</p></details>`}
     ${appointedThisCycle || formedThisCycle ? `<h3>Coalition support</h3><div class="history-row"><b>${escapeHtml(c.party||'Lead party')}</b><small>${Number(tally.find(row=>row.party===c.party)?.seats||0)} seats · lead party</small></div>${(c.coalition||[]).map(partner=>`<div class="history-row"><b>${escapeHtml(partner.name)}</b><small>${Number(partner.seats||0)} seats · ${escapeHtml(partner.status||'supporting')}</small></div>`).join('')}${formedThisCycle ? `<button class="secondary-btn" data-central-gov-action="cabinet">FORM UNION CABINET FROM ELECTED MPS</button>${c.cabinet.length ? `<h3>Union Council of Ministers</h3>${c.cabinet.map(member=>`<div class="history-row"><b>${escapeHtml(member.portfolio)}</b><small>${escapeHtml(member.name)} · ${escapeHtml(member.party)}</small></div>`).join('')}` : ''}` : ''}` : ''}
     ${tally.length?`<h3>Lok Sabha party seat tally</h3>${tally.map(row=>`<div class="national-ls-state-row"><b>${escapeHtml(row.party)}</b><strong>${Number(row.seats)}</strong></div>`).join('')}`:''}
     ${c.history.length?`<h3>Central Government record</h3>${c.history.slice(0,5).map(row=>`<div class="history-row"><b>${escapeHtml(row.event)}</b><small>${escapeHtml(row.date||'')}</small></div>`).join('')}`:''}</section>`;
@@ -5186,7 +5267,8 @@ function electedMemberRegister(level='assembly') {
     ensurePartySlate().filter(x=>x.typeId==='assembly'&&x.status==='Elected').forEach(x=>add({candidateId:x.memberId,candidateName:x.candidateName,partyName:x.partyName,constituency:x.constituency,stateName:x.stateName},'Elected party slate'));
   }else{
     const engine=state.elections?.lokSabhaEngine;
-    (engine?.results||[]).forEach(r=>add({candidateName:r.winner,partyName:r.partyName,constituency:r.constituency,stateName:r.stateName,seatCode:r.seatCode},'Lok Sabha constituency result'));
+    const nationalResults = Array.isArray(state.elections?.lastLokSabhaResults) ? state.elections.lastLokSabhaResults : [];
+    [...(engine?.results||[]),...nationalResults].forEach(r=>add({candidateName:r.winner,partyName:r.partyName,constituency:r.constituency,stateName:r.stateName,seatCode:r.seatCode},'Lok Sabha constituency result'));
     (state.elections?.history||[]).filter(x=>x.typeId==='lok-sabha').forEach(e=>(e.partyCandidateResults||[]).filter(x=>x.result==='Won').forEach(x=>add({...x,partyName:x.winnerParty||x.party||e.party},'Lok Sabha history')));
   }
   const seen=new Set();
@@ -7012,9 +7094,8 @@ function nationalCommandPage() {
   const history = n.history.length ? n.history.slice(0,8).map(x=>`<div class="history-row"><b>${escapeHtml(x.event)}</b><small>${escapeHtml(x.date)}</small></div>`).join('') : '<p class="muted">Political and government decisions will appear here.</p>';
   return `<section class="page-heading"><div><span class="eyebrow">NATIONAL LEADERSHIP · VERSION 1.5.0</span><h1>National <em>Command Centre</em></h1><p>Manage government formation, cabinet responsibilities, legislation, public finances and development programmes in one place.</p></div></section>
   <section class="panel national-command"><span class="gold-tag">UNION LEGISLATURE · LOK SABHA</span><h2>National House dashboard</h2><div class="stats-grid">${statCard('LOK SABHA SEATS','543','National elected House','🏛')}${statCard('MAJORITY MARK','272','Simple majority of full House','⚖')}${statCard('GOVERNMENT SUPPORT',rulingSeats,'Declared support seats','▤')}${statCard('OPPOSITION / OTHER',oppositionSeats,'Remaining seats; not party transfers','⚑')}</div><p><b>Election:</b> ${escapeHtml(electionStatus)} · <b>Union Government:</b> ${escapeHtml(ls.government.status)}</p><p class="muted">National seat arithmetic is independent of Karnataka's 224-seat Assembly. Party membership and alliance support are tracked separately.</p></section>
-  <section class="panel"><span class="eyebrow">GENERAL ELECTION & CAMPAIGN CONTROL</span><h2>Lok Sabha election operations</h2><p>AI campaign simulation can be run for national party candidates; the player's own campaign remains manually controlled.</p><button class="secondary-btn" data-national-action="campaign-ai">RUN AI NATIONAL CAMPAIGNS</button><button class="secondary-btn" data-national-action="election-poll">RECORD GENERAL ELECTION RESULTS</button><button class="secondary-btn" data-national-action="add-party-seats">ADD PARTY SEAT RESULT</button><p><b>AI campaign reports:</b> ${ls.campaignLog.length} · <b>Party result records:</b> ${ls.partySeats.length}</p>${ls.campaignLog.slice(0,4).map(x=>`<div class="history-row"><b>${escapeHtml(x.party)}</b><span>${escapeHtml(x.activity)} · ${x.score}/100</span></div>`).join('')}</section>
-  <section class="panel"><span class="eyebrow">PRESIDENT & UNION GOVERNMENT FORMATION</span><h2>Government formation and floor test</h2><p><b>Prime Minister:</b> ${escapeHtml(ls.government.primeMinister||'Not appointed')} · <b>Status:</b> ${escapeHtml(ls.government.status)}</p><p><b>Declared support:</b> ${rulingSeats}/543 · Majority required: 272</p><button class="secondary-btn" data-national-action="president-invite">PRESIDENT INVITES LEADER</button><button class="secondary-btn" data-national-action="national-coalition">RECORD COALITION SUPPORT</button><button class="secondary-btn" data-national-action="appoint-pm">APPOINT PRIME MINISTER</button><button class="primary-btn" data-national-action="national-floor-test">CONDUCT LOK SABHA FLOOR TEST</button><button class="secondary-btn" data-national-action="national-no-confidence">MOVE NO-CONFIDENCE MOTION</button><p class="muted">The President appoints the Prime Minister; the ministry is collectively responsible to the Lok Sabha. A floor test demonstrates House confidence.</p></section>
-  ${nationalLeadershipPanel(ls)}
+  <section class="panel"><span class="eyebrow">LOK SABHA CAMPAIGN & COUNTING</span><h2>National election operations</h2><p class="panel-description">Use the single connected Lok Sabha workflow in Elections: candidate proposals, approval, funding, AI campaigns, constituency counting and the final 543-seat tally. This legacy command panel no longer runs a second, independent election count.</p></section>
+  <section class="panel"><span class="eyebrow">UNION GOVERNMENT FORMATION</span><h2>Continue in Central Government</h2><p class="panel-description">The President invitation, party coalition talks, Prime Minister appointment, floor test and Union cabinet are managed only in Government → Central Government. That section reads the completed Lok Sabha constituency tally and keeps Union records separate from the Karnataka State Government.</p></section>
   <section class="panel"><span class="eyebrow">LOK SABHA PROCEEDINGS</span><h2>Question Hour, debates and legislation</h2><input id="lsQuestion" class="text-input" maxlength="160" placeholder="Question to a Union Minister"><button class="secondary-btn" data-national-action="question-hour">SUBMIT MINISTERIAL QUESTION</button><input id="lsDebate" class="text-input" maxlength="120" placeholder="Debate subject"><button class="secondary-btn" data-national-action="national-debate">RECORD HOUSE DEBATE</button><p><b>Sessions held:</b> ${ls.sessionsLog.filter(x=>x.type==='session').length} · <b>Questions:</b> ${ls.questions.length} · <b>Motions:</b> ${ls.motions.length}</p></section>
   <section class="panel"><span class="eyebrow">NATIONAL PARTY STRENGTH</span><h2>Lok Sabha party seat ledger</h2>${partySeatRows}</section>
   <section class="panel"><span class="eyebrow">UNION CABINET</span><h2>Ministries and portfolios</h2>${nationalCabinetRows}</section>
