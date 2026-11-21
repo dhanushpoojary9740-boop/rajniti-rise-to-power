@@ -229,74 +229,9 @@ function loadState() {
 let state = loadState();
 if (!state.mapLayer) state.mapLayer = 'states';
 
-// RAJNITI 2.2.1: move the next State Assembly election to eight months
-// from the player's current game month, without resetting other election cycles.
-if (!state.assemblyElection8MonthScheduleV221) {
-  if (!state.elections || typeof state.elections !== 'object') {
-    state.elections = JSON.parse(JSON.stringify(defaults.elections));
-  }
-  if (!state.elections.calendar || typeof state.elections.calendar !== 'object') {
-    state.elections.calendar = JSON.parse(JSON.stringify(defaults.elections.calendar));
-  }
-  const currentGameMonth = Math.max(0, (Number(state.year || 1) - 1) * 12 + (Number(state.month || 1) - 1));
-  const assemblySchedule = state.elections.calendar.assembly ||
-    (state.elections.calendar.assembly = { intervalMonths: 60, label: 'State Assembly elections' });
-  const previousScheduledAt = Number(assemblySchedule.nextAt);
-  assemblySchedule.intervalMonths = 60;
-  assemblySchedule.label = 'State Assembly elections';
-  if (!Number.isFinite(Number(assemblySchedule.nextAt))) assemblySchedule.nextAt = currentGameMonth + 7;
-  const activeAssemblyElection = state.elections.active;
-  if (activeAssemblyElection &&
-      activeAssemblyElection.typeId === 'assembly' &&
-      Number(activeAssemblyElection.scheduledAt) === previousScheduledAt &&
-      !['counting', 'voting'].includes(activeAssemblyElection.phase)) {
-    activeAssemblyElection.scheduledAt = assemblySchedule.nextAt;
-  }
-  state.assemblyElection8MonthScheduleV221 = true;
-  persistStateSafely();
-}
-
-// Move the active Lok Sabha cycle to seven in-game months from the current month,
-// retaining existing candidate records by moving their cycle reference together.
-if (!state.lokSabhaElection7MonthRetryV630) {
-  if (!state.elections || typeof state.elections !== 'object') state.elections = JSON.parse(JSON.stringify(defaults.elections));
-  if (!state.elections.calendar || typeof state.elections.calendar !== 'object') state.elections.calendar = JSON.parse(JSON.stringify(defaults.elections.calendar));
-  const nowMonth = Math.max(0, (Number(state.year || 1) - 1) * 12 + (Number(state.month || 1) - 1));
-  const oldCycle = Number(state.elections.calendar['lok-sabha']?.nextAt);
-  const nextCycle = nowMonth + 7;
-  const savedLokSchedule = state.elections.calendar['lok-sabha'] || {};
-  state.elections.calendar['lok-sabha'] = { ...savedLokSchedule, intervalMonths: 60,
-    nextAt: Number.isFinite(Number(savedLokSchedule.nextAt)) ? Number(savedLokSchedule.nextAt) : nextCycle,
-    label: savedLokSchedule.label || 'Lok Sabha elections' };
-  // Do not mutate the active engine here. ensureLokSabhaElectionEngine() archives
-  // any completed 543-seat result before moving to the new scheduled cycle.
-  if (Array.isArray(state.elections.partySlate)) state.elections.partySlate.forEach(item => {
-    if (item && item.typeId === 'lok-sabha' && Number(item.scheduledAt) === oldCycle && ['Proposed','Party Approved','Funded'].includes(item.status)) item.scheduledAt = nextCycle;
-  });
-  state.lokSabhaElection7MonthRetryV630 = true;
-  persistStateSafely();
-}
-
-// RAJNITI 6.3.2: set a fresh Lok Sabha test election seven in-game months ahead.
-// Keep candidate records and their approval/funding states, but clear only transient campaign/count data.
-if (!state.lokSabhaElection7MonthRetryV632) {
-  if (!state.elections || typeof state.elections !== 'object') state.elections = JSON.parse(JSON.stringify(defaults.elections));
-  if (!state.elections.calendar || typeof state.elections.calendar !== 'object') state.elections.calendar = JSON.parse(JSON.stringify(defaults.elections.calendar));
-  const nowMonth = Math.max(0, (Number(state.year || 1) - 1) * 12 + (Number(state.month || 1) - 1));
-  const previousCycle = Number(state.elections.calendar['lok-sabha']?.nextAt);
-  const retryCycle = nowMonth + 7;
-  const savedLokSchedule = state.elections.calendar['lok-sabha'] || {};
-  state.elections.calendar['lok-sabha'] = { ...savedLokSchedule, intervalMonths: 60,
-    nextAt: Number.isFinite(Number(savedLokSchedule.nextAt)) ? Number(savedLokSchedule.nextAt) : retryCycle,
-    label: savedLokSchedule.label || 'Lok Sabha elections' };
-  if (Array.isArray(state.elections.partySlate)) state.elections.partySlate.forEach(item => {
-    if (item && item.typeId === 'lok-sabha' && Number(item.scheduledAt) === previousCycle && ['Proposed','Party Approved','Funded'].includes(item.status)) item.scheduledAt = retryCycle;
-  });
-  // Preserve the current engine and completed result. The engine's own cycle rollover
-  // archives a valid national tally before starting the next campaign cycle.
-  state.lokSabhaElection7MonthRetryV632 = true;
-  persistStateSafely();
-}
+// Election calendar dates are now preserved from the saved game. Older one-time
+// update migrations that moved elections to a fixed number of months from startup
+// were removed because they could overwrite valid schedules after reload.
 
 // One-time ₹300 crore special grant to the existing party treasury.
 // This flag is persisted in the same save, so reloads and future updates cannot credit it again.
@@ -392,6 +327,90 @@ function fictionalPartyMemberName(index) {
   const cycle = Math.floor(index / fictionalIndianPartyNames.length);
   return cycle ? `${base} ${cycle + 1}` : base;
 }
+
+const fictionalCandidateFirstNames = [
+  'Aarav','Aditi','Aditya','Aishwarya','Ajay','Akash','Amara','Ameya','Ananya','Aniket',
+  'Anil','Anjali','Ananya','Arjun','Arvind','Ashwini','Bhavna','Charan','Deepa','Deepak',
+  'Devika','Dhruv','Divya','Farhan','Gaurav','Gayatri','Harish','Ira','Ishaan','Jaya',
+  'Kavya','Kiran','Lakshmi','Madhav','Manish','Meera','Mihir','Mira','Nandita','Naveen',
+  'Neel','Neha','Nikhil','Nisha','Pallavi','Pranav','Priya','Rahul','Rhea','Rohan',
+  'Sahana','Sameer','Sanjana','Sanjay','Shreya','Siddharth','Sneha','Tanvi','Varun','Vidya'
+];
+const fictionalCandidateMiddleNames = [
+  'Anand','Ashok','Bala','Chandra','Dev','Hari','Jay','Kiran','Kumar','Mohan',
+  'Narayana','Prasad','Raj','Ravi','Shankar','Vijay','Arun','Bharat','Dinesh','Gopal',
+  'Iyer','Krishna','Mahesh','Nitin','Raghav','Suresh','Uday','Vasudev','Yash','Zubin'
+];
+const fictionalCandidateSurnames = [
+  'Acharya','Bhat','Chatterjee','Chauhan','Desai','Dutta','Ghosh','Gowda','Gupta','Hegde',
+  'Iyer','Jadhav','Jain','Joshi','Kadam','Kapoor','Kulkarni','Menon','Mishra','Mukherjee',
+  'Naidu','Nair','Patel','Patil','Pillai','Rao','Reddy','Saxena','Shetty','Sharma',
+  'Singh','Sinha','Tiwari','Tripathi','Varma','Yadav','Banerjee','Bose','Das','Khan',
+  'Kumar','Lal','Mandal','Mehta','Pawar','Rathore','Roy','Saha','Thakur','Venkatesh'
+];
+function fictionalCandidateHash(value) {
+  let hash = 2166136261;
+  for (const char of String(value || '')) {
+    hash ^= char.charCodeAt(0);
+    hash = Math.imul(hash, 16777619);
+  }
+  return hash >>> 0;
+}
+function fictionalIndianCandidateName(party, seatCode, priorLabel = '') {
+  const code = String(seatCode || '');
+  const marker = code.lastIndexOf('-PC-');
+  let ordinal = -1;
+  if (marker > 0) {
+    const stateCode = code.slice(0, marker);
+    const seatNumber = Number(code.slice(marker + 4));
+    const unitIndex = lokSabhaSeatAllocation.findIndex(unit => unit.unit.toUpperCase().replace(/[^A-Z0-9]+/g,'-').replace(/^-|-$/g,'') === stateCode);
+    if (unitIndex >= 0 && Number.isFinite(seatNumber) && seatNumber > 0) {
+      const offset = lokSabhaSeatAllocation.slice(0, unitIndex).reduce((sum, unit) => sum + Number(unit.seats || 0), 0);
+      ordinal = offset + seatNumber - 1;
+    }
+  }
+  const slotMatch = String(priorLabel || '').match(/rival-(\d+)/i);
+  const slot = slotMatch ? Math.max(0, Math.min(2, Number(slotMatch[1]) || 0)) : /player/i.test(String(priorLabel)) ? 3 : fictionalCandidateHash(`${party}|${code}|${priorLabel}`) % 4;
+  const poolSize = fictionalCandidateFirstNames.length * fictionalCandidateMiddleNames.length * fictionalCandidateSurnames.length;
+  const uniqueIndex = ordinal >= 0 ? ordinal * 4 + slot : fictionalCandidateHash(`${party}|${code}|${priorLabel}`) % poolSize;
+  const first = fictionalCandidateFirstNames[uniqueIndex % fictionalCandidateFirstNames.length];
+  const middle = fictionalCandidateMiddleNames[Math.floor(uniqueIndex / fictionalCandidateFirstNames.length) % fictionalCandidateMiddleNames.length];
+  const surname = fictionalCandidateSurnames[Math.floor(uniqueIndex / (fictionalCandidateFirstNames.length * fictionalCandidateMiddleNames.length)) % fictionalCandidateSurnames.length];
+  return `${first} ${middle} ${surname}`;
+}
+function isGenericAiCandidateName(name) {
+  return /\bCandidate(?:\s+\d+)?\s*$/i.test(String(name || '').trim());
+}
+function normalizeSavedLokSabhaCandidateNames() {
+  const elections = state.elections;
+  if (!elections || typeof elections !== 'object') return false;
+  let changed = false;
+  const normalizeResult = row => {
+    if (!row || typeof row !== 'object') return;
+    const seat = row.seatCode || row.constituency || row.stateName || 'national-seat';
+    const normalize = (name, party) => isGenericAiCandidateName(name)
+      ? fictionalIndianCandidateName(party || 'Independent', seat, name)
+      : name;
+    if (row.winner && isGenericAiCandidateName(row.winner)) { row.winner = normalize(row.winner, row.partyName || row.party); changed = true; }
+    if (row.runnerUp && isGenericAiCandidateName(row.runnerUp)) { row.runnerUp = normalize(row.runnerUp, row.runnerUpParty || row.partyName || row.party); changed = true; }
+    if (row.candidateName && isGenericAiCandidateName(row.candidateName)) { row.candidateName = normalize(row.candidateName, row.partyName || row.party); changed = true; }
+    if (row.playerCandidateName && isGenericAiCandidateName(row.playerCandidateName)) { row.playerCandidateName = normalize(row.playerCandidateName, row.playerCandidateParty || row.partyName || row.party); changed = true; }
+    if (Array.isArray(row.candidateResults)) row.candidateResults.forEach(candidate => {
+      if (candidate && isGenericAiCandidateName(candidate.name)) { candidate.name = normalize(candidate.name, candidate.party); changed = true; }
+    });
+  };
+  const engine = elections.lokSabhaEngine || {};
+  for (const key of ['results','liveResults','pendingResults']) if (Array.isArray(engine[key])) engine[key].forEach(normalizeResult);
+  if (Array.isArray(engine.campaigns)) engine.campaigns.forEach(row => {
+    if (row && isGenericAiCandidateName(row.candidateName)) {
+      row.candidateName = fictionalIndianCandidateName(row.partyName || 'Independent', row.seatCode || row.constituency, row.candidateName);
+      changed = true;
+    }
+  });
+  for (const key of ['lastLokSabhaResults']) if (Array.isArray(elections[key])) elections[key].forEach(normalizeResult);
+  if (Array.isArray(elections.lastLokSabhaNationalSnapshot?.results)) elections.lastLokSabhaNationalSnapshot.results.forEach(normalizeResult);
+  return changed;
+}
 function isGeneratedPlaceholderName(name) {
   return /^(Party Member|New Party Member)\s+\d+$/i.test(String(name || '').trim());
 }
@@ -483,33 +502,26 @@ function ensureKarnataka224PartyRoster() {
 }
 function ensureAssemblyElectionCountdown() {
   const elections = ensureElectionCalendar();
+  if (!elections.calendar.assembly || typeof elections.calendar.assembly !== 'object') {
+    elections.calendar.assembly = { intervalMonths: 60, nextAt: currentMonthIndex() + 8, label: 'State Assembly Election' };
+  }
   const schedule = elections.calendar.assembly;
-  if (schedule && !elections.assembly224ScheduleV240Applied) {
-    if (!Number.isFinite(Number(schedule.nextAt))) schedule.nextAt = currentMonthIndex() + 7;
-    schedule.intervalMonths = 60;
-    schedule.label = 'State Assembly Election';
-    delete schedule.proposalKey;
-    elections.assembly224ScheduleV240Applied = true;
+  if (!Number.isFinite(Number(schedule.nextAt))) schedule.nextAt = currentMonthIndex() + 8;
+  if (!Number.isFinite(Number(schedule.intervalMonths)) || Number(schedule.intervalMonths) <= 0) schedule.intervalMonths = 60;
+  schedule.label = schedule.label || 'State Assembly Election';
+  return schedule;
+}
+
+function migrateAssemblyCountdownV260() {
+  // Compatibility shim for older callers. Never move a valid saved election date.
+  const schedule = ensureAssemblyElectionCountdown();
+  if (!state.assemblyCountdownV260Applied) {
+    state.assemblyCountdownV260Applied = true;
     saveState();
   }
   return schedule;
 }
-function migrateAssemblyCountdownV260() {
-  if (state.assemblyCountdownV260Applied) return;
-  const elections = ensureElectionCalendar();
-  const schedule = elections.calendar.assembly;
-  if (schedule) {
-    const active = elections.active;
-    if (!active || active.typeId !== 'assembly' || !['voting','counting'].includes(active.phase)) {
-      if (!Number.isFinite(Number(schedule.nextAt))) schedule.nextAt = currentMonthIndex() + 7;
-      schedule.intervalMonths = 60;
-      schedule.label = 'State Assembly Election';
-      delete schedule.proposalKey;
-    }
-  }
-  state.assemblyCountdownV260Applied = true;
-  saveState();
-}
+
 function archiveExpiredPartySlateCycles() {
   const elections = ensureElectionCalendar();
   const currentCycle = Number(elections.calendar.assembly?.nextAt || currentMonthIndex());
@@ -2485,40 +2497,74 @@ function showNextElectionAlert() {
   elections.lastAlertPopupId = next.id;
   toast(`ELECTION ALERT · ${next.title}`);
 }
-function repairLokSabhaCalendarAfterReload() {
+function repairAllElectionCalendarsAfterReload() {
   const elections = ensureElectionCalendar();
-  const schedule = elections.calendar['lok-sabha'];
-  if (!schedule || typeof schedule !== 'object') return false;
-
-  // Never disturb an election that is currently in progress.
-  const active = elections.active;
-  if (active && active.typeId === 'lok-sabha' &&
-      !['completed', 'declared', 'cancelled'].includes(active.phase)) return false;
-
   const now = currentMonthIndex();
-  const rawNextAt = Number(schedule.nextAt);
-  // A saved zero/invalid/expired date was rendered as "0 months" after reload.
-  // Roll it forward by whole configured cycles, preserving its calendar anchor.
-  if (Number.isFinite(rawNextAt) && rawNextAt > now) return false;
-  const intervalRaw = Number(schedule.intervalMonths);
-  const interval = Number.isFinite(intervalRaw) && intervalRaw > 0 ? intervalRaw : 60;
-  const base = Number.isFinite(rawNextAt) ? rawNextAt : now;
-  const cyclesToAdvance = Math.max(1, Math.floor((now - base) / interval) + 1);
-  schedule.lastReloadRepair = {
-    from: Number.isFinite(rawNextAt) ? rawNextAt : null,
-    at: now,
-    reason: 'Recovered expired or invalid Lok Sabha calendar date'
-  };
-  schedule.nextAt = base + cyclesToAdvance * interval;
-  schedule.intervalMonths = interval;
-  schedule.label = schedule.label || 'Lok Sabha Election';
-  delete schedule.proposalKey;
-  saveState();
-  return true;
+  const definitions = [
+    { id: 'local', interval: 60, initialOffset: 36, label: 'Local Body Election' },
+    { id: 'assembly', interval: 60, initialOffset: 8, label: 'State Assembly Election' },
+    { id: 'lok-sabha', interval: 60, initialOffset: 48, label: 'Lok Sabha Election' }
+  ];
+  let changed = false;
+  for (const definition of definitions) {
+    let schedule = elections.calendar[definition.id];
+    if (!schedule || typeof schedule !== 'object') {
+      schedule = elections.calendar[definition.id] = {
+        intervalMonths: definition.interval,
+        nextAt: now + definition.initialOffset,
+        label: definition.label
+      };
+      changed = true;
+    }
+    const intervalNumber = Number(schedule.intervalMonths);
+    const interval = Number.isFinite(intervalNumber) && intervalNumber > 0 && intervalNumber <= 120
+      ? intervalNumber : definition.interval;
+    if (Number(schedule.intervalMonths) !== interval) { schedule.intervalMonths = interval; changed = true; }
+    let nextAt = Number(schedule.nextAt);
+    if (!Number.isFinite(nextAt) || nextAt < 0) {
+      nextAt = now + definition.initialOffset;
+      schedule.nextAt = nextAt;
+      changed = true;
+    }
+    const active = elections.active;
+    const activeCycle = !!(active && active.typeId === definition.id &&
+      !['completed', 'declared', 'cancelled'].includes(String(active.phase || '').toLowerCase()));
+    if (!activeCycle) {
+      // Keep the existing cycle anchor. Roll forward/back by whole intervals only,
+      // so a 176-month anomaly becomes a realistic 56-month countdown, not a new date.
+      if (nextAt < now) {
+        const skipped = Math.floor((now - nextAt) / interval) + 1;
+        nextAt += skipped * interval;
+      } else if (nextAt - now > interval) {
+        const excess = Math.ceil((nextAt - now - interval) / interval);
+        nextAt -= excess * interval;
+      }
+      if (Number(schedule.nextAt) !== nextAt) {
+        schedule.nextAt = nextAt;
+        delete schedule.proposalKey;
+        changed = true;
+      }
+    }
+    if (schedule.label !== definition.label) { schedule.label = definition.label; changed = true; }
+  }
+  // Historical alerts remain in the archive, but old polling-day alerts should not
+  // continue to appear unread after the calendar has advanced to a later cycle.
+  if (Array.isArray(elections.alertHistory)) {
+    elections.alertHistory.forEach(alert => {
+      if (!alert || alert.read) return;
+      const oldCycle = Number(alert.cycleAt) < now;
+      const activeMatches = elections.active && elections.active.typeId === alert.typeId &&
+        Number(elections.active.scheduledAt) === Number(alert.cycleAt) &&
+        !['completed', 'declared', 'cancelled'].includes(String(elections.active.phase || '').toLowerCase());
+      if (oldCycle && !activeMatches) { alert.read = true; changed = true; }
+    });
+  }
+  if (changed) saveState();
+  return changed;
 }
 
 function electionMonthsUntil(typeId) {
-  if (typeId === 'lok-sabha') repairLokSabhaCalendarAfterReload();
+  repairAllElectionCalendarsAfterReload();
   const schedule = ensureElectionCalendar().calendar[typeId];
   const nextAt = Number(schedule?.nextAt);
   if (!Number.isFinite(nextAt)) return 0;
@@ -2535,9 +2581,8 @@ function electionPhase(active) {
   return 'preparation';
 }
 function processElectionCalendar() {
-  migrateAssemblyCountdownV260();
   const elections = ensureElectionCalendar();
-  repairLokSabhaCalendarAfterReload();
+  repairAllElectionCalendarsAfterReload();
   migrateAssemblySeatCapAndSchedule250();
   ensureAssemblyElectionCountdown();
   const now = currentMonthIndex();
@@ -4561,13 +4606,13 @@ function countLokSabhaElection() {
     if(own) contestants.push({...own});
     else {
       const seed=lokSabhaSeed(`${engine.cycle}|${seat.seatCode}|player-party`);
-      contestants.push({seatCode:seat.seatCode,stateName:seat.stateName,constituency:seat.constituency,candidateName:`${playerParty} Candidate`,partyName:playerParty,player:false,performance:42+(seed%27)});
+      contestants.push({seatCode:seat.seatCode,stateName:seat.stateName,constituency:seat.constituency,candidateName:fictionalIndianCandidateName(playerParty,seat.seatCode,'player-party'),partyName:playerParty,player:false,performance:42+(seed%27)});
     }
     const rivalPool=rivalNames.filter(name=>String(name).toLowerCase()!==playerParty.toLowerCase());
     for(let rivalIndex=0;rivalIndex<3;rivalIndex++){
       const seed=lokSabhaSeed(`${engine.cycle}|${seat.seatCode}|rival-${rivalIndex}`);
       const rivalParty=rivalPool[seed%rivalPool.length];
-      contestants.push({seatCode:seat.seatCode,stateName:seat.stateName,constituency:seat.constituency,candidateName:`${rivalParty} Candidate ${rivalIndex+1}`,partyName:rivalParty,player:false,performance:35+(seed%51)});
+      contestants.push({seatCode:seat.seatCode,stateName:seat.stateName,constituency:seat.constituency,candidateName:fictionalIndianCandidateName(rivalParty,seat.seatCode,`rival-${rivalIndex}`),partyName:rivalParty,player:false,performance:35+(seed%51)});
     }
     const scored=contestants.map(c=>{
       const seed=lokSabhaSeed(`${engine.cycle}|${seat.seatCode}|${c.partyName}|${c.candidateName}`);
@@ -4757,7 +4802,6 @@ function nationalElectionResultsCentre() {
 }
 
 function electionPage() {
-  migrateAssemblyCountdownV260();
   archiveExpiredPartySlateCycles();
   ensureAssemblyElectionCountdown();
   migrateAssemblySeatCapAndSchedule250();
@@ -5520,9 +5564,9 @@ function centralGovernmentPanel() {
   const nationalPendingSeats = Math.max(0,543-nationalCountedSeats);
   const currentCycle = Number(resultSnapshot?.cycle ?? engine.cycle);
   const electedMPs = counted ? electedMemberRegister('lok-sabha') : [];
-  const pmOptions = electedMPs.map(member=>`<option value="${escapeHtml(member.name)}">${escapeHtml(member.name)} · ${escapeHtml(member.party)}</option>`).join('');
+  const pmOptions = electedMPs.map(member=>`<option value="${escapeHtml(member.name)}" label="${escapeHtml(member.party)} · ${escapeHtml(member.stateName||'India')} · ${escapeHtml(member.constituency||'Constituency')}"></option>`).join('');
   const governingMPs = electedMPs.filter(member => member.party === c.party || c.coalition.some(partner => String(partner.name).toLowerCase() === String(member.party).toLowerCase()));
-  const ministerOptions = governingMPs.map(member=>`<option value="${escapeHtml(member.name)}">${escapeHtml(member.name)} · ${escapeHtml(member.party)} · ${escapeHtml(member.constituency||'Constituency not recorded')}</option>`).join('');
+  const ministerOptions = governingMPs.map(member=>`<option value="${escapeHtml(member.name)}" label="${escapeHtml(member.party)} · ${escapeHtml(member.stateName||'India')} · ${escapeHtml(member.constituency||'Constituency not recorded')}"></option>`).join('');
   const appointedMinisterNames = new Set((c.cabinet||[]).map(row=>String(row.name||'').toLowerCase()));
   const defaultMinister = governingMPs.find(member=>!appointedMinisterNames.has(String(member.name||'').toLowerCase())) || null;
   const portfolios = ['Home Affairs','Finance','Defence','External Affairs','Road Transport & Highways','Agriculture','Health','Education','Railways','Commerce & Industry','Power','Law & Justice','Rural Development','Environment','Social Justice'];
@@ -8809,7 +8853,6 @@ function politicalJourneyAction(action, button) {
 
 function render() {
   migrateAssemblySeatCapAndSchedule250();
-  migrateLokSabhaElectionToSevenMonths();
   let content;
 
   switch (activeTab) {
@@ -9702,6 +9745,9 @@ window.addEventListener('storage', event => {
 });
 
 try {
+  const calendarChanged = repairAllElectionCalendarsAfterReload();
+  const candidateNamesChanged = normalizeSavedLokSabhaCandidateNames();
+  if (calendarChanged || candidateNamesChanged) saveState();
   render();
 } catch (error) {
   showStartupError(error, 'Initial render');
