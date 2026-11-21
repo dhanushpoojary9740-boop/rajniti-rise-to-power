@@ -3956,7 +3956,7 @@ function allocatePartyCandidateBudget(id) {
 }
 function bulkFundPartySlate() {
   const schedule = ensureElectionCalendar().calendar.assembly;
-  const cycle = Number(schedule?.nextAt || currentMonthIndex());
+  const cycle = Number(schedule?.nextAt ?? currentMonthIndex());
   const candidates = ensurePartySlate().filter(item => item.typeId === 'assembly' && Number(item.scheduledAt) === cycle && item.status === 'Party Approved');
   let funded = 0, skipped = 0, partyCost = 0;
   const total = 4000000, partyShare = 2000000, candidateShare = 2000000;
@@ -4007,8 +4007,8 @@ function nationalElectionArchitecturePanel() {
   const totalSeats = lokSabhaSeatAllocation.reduce((sum, item) => sum + item.seats, 0);
   const majority = Math.floor(totalSeats / 2) + 1;
   const calendar = ensureElectionCalendar();
-  const schedule = calendar.calendar['lok-sabha'] || { nextAt: currentMonthIndex() + 48, intervalMonths: 60, label: 'Lok Sabha general election' };
-  const monthsLeft = Math.max(0, Number(schedule.nextAt || 0) - currentMonthIndex());
+  const schedule = calendar.calendar['lok-sabha'] || (calendar.calendar['lok-sabha'] = { nextAt: currentMonthIndex() + 48, intervalMonths: 60, label: 'Lok Sabha general election' });
+  const monthsLeft = Math.max(0, Number(schedule.nextAt ?? currentMonthIndex()) - currentMonthIndex());
   const stage = monthsLeft <= 0 ? 'Election due' : monthsLeft <= 2 ? 'Campaign period approaching' : monthsLeft <= 4 ? 'Nomination preparation' : 'Pre-election period';
   return `
     <section class="panel national-election-foundation">
@@ -4170,6 +4170,32 @@ function deriveLokSabhaTallyFromResults(rows) {
   return Object.entries(counts).map(([party,seats])=>({party,seats})).sort((a,b)=>b.seats-a.seats);
 }
 
+function advanceLokSabhaScheduleAfterNationalCount(engine) {
+  if (!engine || engine.completed !== true) return false;
+  const schedule = ensureElectionCalendar().calendar['lok-sabha'];
+  if (!schedule) return false;
+  const completedCycle = Number(engine.cycle);
+  if (!Number.isFinite(completedCycle)) return false;
+  const interval = Number(schedule.intervalMonths);
+  const cycleLength = Number.isFinite(interval) && interval > 0 ? interval : 60;
+  const lastCompletedCycle = Number(schedule.lastCompletedCycle);
+  if (lastCompletedCycle === completedCycle) return false;
+
+  // If the personal constituency flow already advanced this cycle, preserve it.
+  // Otherwise advance the national calendar from the completed cycle, not from
+  // the current month, so delayed counting cannot drift or remain stuck at 0.
+  const nextAt = Number(schedule.nextAt);
+  if (!Number.isFinite(nextAt) || nextAt <= completedCycle) {
+    schedule.nextAt = completedCycle + cycleLength;
+  }
+  schedule.intervalMonths = cycleLength;
+  schedule.lastCompletedCycle = completedCycle;
+  schedule.lastCompletedAt = dateText();
+  schedule.label = 'Lok Sabha Election';
+  delete schedule.proposalKey;
+  return true;
+}
+
 function ensureLokSabhaElectionEngine() {
   if (!state.elections || typeof state.elections !== 'object') state.elections = {};
   if (!state.elections.lokSabhaEngine || typeof state.elections.lokSabhaEngine !== 'object') {
@@ -4180,8 +4206,11 @@ function ensureLokSabhaElectionEngine() {
   if (!Array.isArray(engine.results)) engine.results = [];
   if (!Array.isArray(engine.partyTally)) engine.partyTally = [];
   if (!Array.isArray(engine.aiCampaignReport)) engine.aiCampaignReport = [];
+  // Repair existing saves whose national count completed but whose calendar
+  // was never advanced by the old completion path.
+  if (advanceLokSabhaScheduleAfterNationalCount(engine)) saveState();
   const schedule = ensureElectionCalendar().calendar['lok-sabha'];
-  const cycle = Number(schedule?.nextAt || currentMonthIndex());
+  const cycle = Number(schedule?.nextAt ?? currentMonthIndex());
   if (Number(engine.cycle) !== cycle) {
     if (Array.isArray(engine.results) && engine.results.length === 543) {
       const savedResults = engine.results.map(row=>({winner:row.winner,partyName:row.partyName, constituency:row.constituency,stateName:row.stateName,seatCode:row.seatCode,votes:Number(row.votes||0),runnerUp:row.runnerUp||'',runnerUpParty:row.runnerUpParty||'',runnerUpVotes:Number(row.runnerUpVotes||0),margin:Number(row.margin||0)}));
@@ -4438,6 +4467,7 @@ function advanceLokSabhaNationalCount(engine) {
     delete engine.pendingResults;
     delete engine.pendingCampaignReport;
     engine.liveResults=[];
+    advanceLokSabhaScheduleAfterNationalCount(engine);
     const active=state.elections.active;
     if(active&&active.typeId==='lok-sabha'){active.phase='counting';active.nationalCountingComplete=true;}
   }
