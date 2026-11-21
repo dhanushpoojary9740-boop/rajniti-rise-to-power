@@ -2800,10 +2800,3 @@ html {
   .election-performance-panel .assembly-counting-detail { flex-direction:column; }
   .election-performance-panel .assembly-counting-detail span { text-align:left; }
 }
-
-
-/* Compact connected election/government workspace navigation */
-.eg-quick-nav{display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;margin:0 0 14px;padding:14px 16px;border:1px solid rgba(213,189,131,.28);border-radius:14px;background:linear-gradient(135deg,rgba(16,31,49,.96),rgba(20,29,43,.96));}
-.eg-quick-nav-heading{display:flex;flex-direction:column;gap:4px;min-width:180px}.eg-quick-nav-heading strong{font-size:16px;color:var(--text,#edf2fb)}.eg-quick-nav-heading small{font-size:11px;line-height:1.4;color:var(--muted,#9eacbf)}
-.eg-quick-nav-actions{display:flex;gap:6px;flex-wrap:wrap}.eg-quick-nav-actions button{border:1px solid rgba(213,189,131,.25);border-radius:8px;padding:9px 12px;background:rgba(255,255,255,.035);color:var(--text,#edf2fb);font:600 12px inherit;cursor:pointer}.eg-quick-nav-actions button.active{background:rgba(213,189,131,.16);border-color:#d5bd83;color:#f3d99b}.eg-quick-nav-actions button:focus-visible{outline:2px solid #d5bd83;outline-offset:2px}
-@media(max-width:600px){.eg-quick-nav{align-items:stretch;padding:12px}.eg-quick-nav-actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr))}.eg-quick-nav-actions button{min-height:38px;padding:8px 6px}.eg-quick-nav-heading small{max-width:32ch}}

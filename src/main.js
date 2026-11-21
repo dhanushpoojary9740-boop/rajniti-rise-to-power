@@ -7757,18 +7757,6 @@ function render() {
   }
 
   content = sectionNavigation(activeTab) + content;
-  if (['Elections', 'Government', 'Central Government', 'Parliament'].includes(activeTab)) {
-    const electionGovernmentNav = `<nav class="eg-quick-nav" aria-label="Election and government navigation">
-      <div class="eg-quick-nav-heading"><span class="gold-tag">POLITICAL WORKSPACE</span><strong>Election &amp; Government</strong><small>Connected election results, party strength and government decisions</small></div>
-      <div class="eg-quick-nav-actions">
-        <button type="button" data-tab="Elections" class="${activeTab === 'Elections' ? 'active' : ''}">Elections</button>
-        <button type="button" data-tab="Government" class="${activeTab === 'Government' ? 'active' : ''}">State Government</button>
-        <button type="button" data-tab="Central Government" class="${activeTab === 'Central Government' ? 'active' : ''}">Union Government</button>
-        <button type="button" data-tab="Parliament" class="${activeTab === 'Parliament' ? 'active' : ''}">Parliament</button>
-      </div>
-    </nav>`;
-    content = electionGovernmentNav + content;
-  }
   document.querySelector('#app').innerHTML = shell(content);
   if (activeTab === 'India Map') renderAtlasGeometry();
 }
