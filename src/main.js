@@ -2469,9 +2469,44 @@ function showNextElectionAlert() {
   elections.lastAlertPopupId = next.id;
   toast(`ELECTION ALERT · ${next.title}`);
 }
+function repairLokSabhaCalendarAfterReload() {
+  const elections = ensureElectionCalendar();
+  const schedule = elections.calendar['lok-sabha'];
+  if (!schedule || typeof schedule !== 'object') return false;
+
+  // Never disturb an election that is currently in progress.
+  const active = elections.active;
+  if (active && active.typeId === 'lok-sabha' &&
+      !['completed', 'declared', 'cancelled'].includes(active.phase)) return false;
+
+  const now = currentMonthIndex();
+  const rawNextAt = Number(schedule.nextAt);
+  // A saved zero/invalid/expired date was rendered as "0 months" after reload.
+  // Roll it forward by whole configured cycles, preserving its calendar anchor.
+  if (Number.isFinite(rawNextAt) && rawNextAt > now) return false;
+  const intervalRaw = Number(schedule.intervalMonths);
+  const interval = Number.isFinite(intervalRaw) && intervalRaw > 0 ? intervalRaw : 60;
+  const base = Number.isFinite(rawNextAt) ? rawNextAt : now;
+  const cyclesToAdvance = Math.max(1, Math.floor((now - base) / interval) + 1);
+  schedule.lastReloadRepair = {
+    from: Number.isFinite(rawNextAt) ? rawNextAt : null,
+    at: now,
+    reason: 'Recovered expired or invalid Lok Sabha calendar date'
+  };
+  schedule.nextAt = base + cyclesToAdvance * interval;
+  schedule.intervalMonths = interval;
+  schedule.label = schedule.label || 'Lok Sabha Election';
+  delete schedule.proposalKey;
+  saveState();
+  return true;
+}
+
 function electionMonthsUntil(typeId) {
+  if (typeId === 'lok-sabha') repairLokSabhaCalendarAfterReload();
   const schedule = ensureElectionCalendar().calendar[typeId];
-  return Math.max(0, Number(schedule?.nextAt || 0) - currentMonthIndex());
+  const nextAt = Number(schedule?.nextAt);
+  if (!Number.isFinite(nextAt)) return 0;
+  return Math.max(0, nextAt - currentMonthIndex());
 }
 function electionPhase(active) {
   if (!active) return null;
@@ -2486,6 +2521,7 @@ function electionPhase(active) {
 function processElectionCalendar() {
   migrateAssemblyCountdownV260();
   const elections = ensureElectionCalendar();
+  repairLokSabhaCalendarAfterReload();
   migrateAssemblySeatCapAndSchedule250();
   ensureAssemblyElectionCountdown();
   const now = currentMonthIndex();
