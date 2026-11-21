@@ -4002,7 +4002,7 @@ function ensureLokSabhaElectionEngine() {
       if (savedTally.reduce((sum,row)=>sum+Number(row.seats||0),0) === 543) {
         state.elections.lastLokSabhaResults = savedResults;
         state.elections.lastLokSabhaCompletedCycle = Number(engine.cycle);
-        state.elections.lastLokSabhaNationalSnapshot = {cycle:Number(engine.cycle),tally:savedTally,results:[],source:'Saved completed Lok Sabha election',completedAt:engine.lastRunAt||dateText(),completed:true};
+        state.elections.lastLokSabhaNationalSnapshot = {cycle:Number(engine.cycle),tally:savedTally,results:savedResults,source:'Saved completed Lok Sabha election · archived constituency ledger',completedAt:engine.lastRunAt||dateText(),completed:true};
         state.elections.lastLokSabhaSeatTally = {scheduledAt:Number(engine.cycle),totalSeats:543,majorityMark:272,seatsWon:savedTally,countingComplete:true};
       }
     }
@@ -4174,10 +4174,20 @@ function countLokSabhaElection() {
     const ownSlate=slate.find(x=>x.stateName===seat.stateName && Number(x.constituencyNumber)===Number(seat.constituencyNumber));
     if(ownSlate){ownSlate.status=winner.player?'Elected':'Not Elected';ownSlate.electionResult=winner.player?'Won':'Lost';ownSlate.votes=scored.find(x=>x.player)?.votes||0;ownSlate.resultDate=dateText();}
   });
+  // Do not publish a completed election unless every official seat has exactly one result.
+  // This ledger is the single source for the result archive, seat tally and government formation.
+  const uniqueSeatCodes = new Set(results.map(row=>String(row.seatCode || '')));
+  if (results.length !== 543 || uniqueSeatCodes.size !== 543 || uniqueSeatCodes.has('')) {
+    return toast(`Counting stopped: expected 543 unique Lok Sabha constituencies, received ${results.length} rows and ${uniqueSeatCodes.size} unique seats.`);
+  }
   const tally={};
   results.forEach(r=>{tally[r.partyName]=(tally[r.partyName]||0)+1;});
+  const authoritativeTally = Object.entries(tally).map(([party,seats])=>({party,seats})).sort((a,b)=>b.seats-a.seats);
+  if (authoritativeTally.reduce((sum,row)=>sum+Number(row.seats||0),0) !== results.length) {
+    return toast('Counting stopped: party seat totals do not reconcile with the constituency ledger.');
+  }
   engine.results=results;
-  engine.partyTally=Object.entries(tally).map(([party,seats])=>({party,seats})).sort((a,b)=>b.seats-a.seats);
+  engine.partyTally=authoritativeTally;
   const campaignStyles=['Ground outreach & local meetings','Issue-led manifesto messaging','Regional alliance & community outreach','Digital communication & volunteer mobilisation'];
   engine.aiCampaignReport=Object.values(campaignStats).map((row,index)=>({
     party:row.party,style:campaignStyles[lokSabhaSeed(`${engine.cycle}|${row.party}|style`)%campaignStyles.length],
@@ -4187,11 +4197,11 @@ function countLokSabhaElection() {
   })).sort((a,b)=>b.wins-a.wins);
   engine.completed=true;engine.lastRunAt=dateText();
   state.elections.lastLokSabhaSeatTally={scheduledAt:engine.cycle,totalSeats:543,majorityMark:272,seatsWon:engine.partyTally,countingComplete:true,date:engine.lastRunAt};
-  // Keep the detailed 543-row result in the active engine only. The snapshot stores the authoritative
-  // seat tally and cycle metadata; on cycle rollover the detailed rows are archived once.
-  state.elections.lastLokSabhaResults=[];
+  // Persist the exact constituency ledger with the derived tally. Every downstream government
+  // calculation and the recent-results archive can now read the same 543 rows after cycle rollover.
+  state.elections.lastLokSabhaResults=results.map(row=>({...row}));
   state.elections.lastLokSabhaCompletedCycle=Number(engine.cycle);
-  state.elections.lastLokSabhaNationalSnapshot={cycle:Number(engine.cycle),tally:engine.partyTally.map(row=>({party:row.party,seats:Number(row.seats||0)})),results:[],source:'Completed 543-seat Lok Sabha count',completedAt:engine.lastRunAt,completed:true};
+  state.elections.lastLokSabhaNationalSnapshot={cycle:Number(engine.cycle),tally:engine.partyTally.map(row=>({party:row.party,seats:Number(row.seats||0)})),results:results.map(row=>({...row})),source:'Completed 543-seat Lok Sabha count · authoritative constituency ledger',completedAt:engine.lastRunAt,completed:true};
   saveState();render();
   toast(`Lok Sabha counting completed: ${results.length} constituency results recorded.`);
 }
