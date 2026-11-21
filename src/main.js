@@ -9557,6 +9557,19 @@ document.addEventListener('submit', event => {
   }
 });
 
+// Keep separate open RAJNITI windows in sync through the same saved game state.
+window.addEventListener('storage', event => {
+  if (event.key !== STORE_KEY || !event.newValue) return;
+  try {
+    const incoming = JSON.parse(event.newValue);
+    if (!incoming || typeof incoming !== 'object') return;
+    state = { ...defaults, ...incoming };
+    render();
+  } catch (error) {
+    console.warn('Could not sync RAJNITI state from another open window.', error);
+  }
+});
+
 try {
   render();
 } catch (error) {

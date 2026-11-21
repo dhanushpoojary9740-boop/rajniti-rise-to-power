@@ -2852,3 +2852,52 @@ html {
 .mission-choice small{font-size:12px;line-height:1.5;color:var(--muted,#687386)}
 .mission-modal-footer{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:18px;color:var(--muted,#687386);font-size:11px}
 @media(max-width:520px){.mission-decision-backdrop{padding:10px}.mission-decision-modal{padding:18px}.mission-modal-footer{align-items:flex-start;flex-direction:column}}
+
+
+/* Mobile navigation: horizontal, readable, and independently scrollable. */
+@media (max-width: 620px) {
+  .mobile-nav {
+    display: flex;
+    flex-wrap: nowrap;
+    justify-content: flex-start;
+    overflow-x: auto;
+    overflow-y: hidden;
+    overscroll-behavior-x: contain;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    gap: 4px;
+    padding: 6px 8px calc(6px + env(safe-area-inset-bottom));
+    scroll-padding-inline: 8px;
+  }
+  .mobile-nav::-webkit-scrollbar { display: none; }
+  .mobile-nav button {
+    flex: 0 0 76px;
+    width: 76px;
+    min-width: 76px;
+    max-width: 76px;
+    padding: 0 3px;
+    white-space: normal;
+    line-height: 1.1;
+  }
+  .mobile-nav button > span:first-child {
+    font-size: 17px;
+    line-height: 1;
+  }
+  .mobile-nav .nav-item-label {
+    display: block;
+    width: 100%;
+    font-size: 9px;
+    text-align: center;
+    overflow-wrap: anywhere;
+  }
+  .mobile-nav button small {
+    display: block;
+    font-size: 7px;
+    line-height: 1.1;
+    margin-top: 2px;
+  }
+  .mobile-nav button.active {
+    background: #18263a;
+    border-radius: 8px;
+  }
+}
