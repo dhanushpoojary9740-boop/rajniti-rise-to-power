@@ -2782,3 +2782,21 @@ html {
   html { scroll-behavior: auto; }
   .election-quick-nav a { transition: none; }
 }
+
+
+/* Clear, reusable post-election seat performance panel */
+.election-performance-panel { margin: 16px 0; border-color: #3a4a60; }
+.election-performance-heading { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; margin-bottom:12px; }
+.election-performance-heading h3 { margin:5px 0 3px; }
+.election-performance-heading > b { flex:0 0 auto; color:#e9edf5; font-size:14px; }
+.election-performance-heading small { display:block; color:#9eacbf; font-size:11px; }
+.election-performance-bar { height:16px; }
+.election-performance-panel .assembly-seat-legend { display:grid; grid-template-columns:1fr 1fr; gap:10px 16px; }
+.election-performance-panel .assembly-counting-detail { align-items:flex-start; flex-wrap:wrap; gap:6px 12px; margin-top:14px; }
+.election-performance-panel .assembly-counting-detail span { text-align:right; }
+@media (max-width:480px) {
+  .election-performance-heading { gap:8px; }
+  .election-performance-heading > b { font-size:12px; }
+  .election-performance-panel .assembly-counting-detail { flex-direction:column; }
+  .election-performance-panel .assembly-counting-detail span { text-align:left; }
+}

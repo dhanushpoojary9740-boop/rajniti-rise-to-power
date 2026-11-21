@@ -4021,8 +4021,11 @@ function lokSabhaCompletedResultSnapshot() {
     rows.every(row => Number.isFinite(Number(row.seats)) && Number(row.seats) >= 0) &&
     rows.reduce((sum,row)=>sum+Number(row.seats||0),0) === 543;
   if (Array.isArray(engine.results) && engine.results.length === 543) {
-    const currentTally = validTally(engine.partyTally) ? engine.partyTally : deriveLokSabhaTallyFromResults(engine.results);
-    if (validTally(currentTally)) return { cycle:Number(engine.cycle), tally:currentTally, results:engine.results||[], source:'Current Lok Sabha count', completedAt:engine.lastRunAt||'' };
+    // The constituency winners are authoritative. Never let a stale cached party tally
+    // override the result rows used by the election report.
+    const derivedTally = deriveLokSabhaTallyFromResults(engine.results);
+    const currentTally = validTally(derivedTally) ? derivedTally : (validTally(engine.partyTally) ? engine.partyTally : []);
+    if (validTally(currentTally)) return { cycle:Number(engine.cycle), tally:currentTally, results:engine.results||[], source:'Current Lok Sabha count · derived from 543 constituency winners', completedAt:engine.lastRunAt||'' };
   }
   const savedRows = Array.isArray(saved.results) && saved.results.length ? saved.results : (Array.isArray(elections.lastLokSabhaResults) ? elections.lastLokSabhaResults : []);
   const savedTally = validTally(saved.tally) ? saved.tally : deriveLokSabhaTallyFromResults(savedRows);
@@ -4185,15 +4188,38 @@ function countLokSabhaElection() {
   toast(`Lok Sabha counting completed: ${results.length} constituency results recorded.`);
 }
 
+function electionPerformancePanel({title,level,totalSeats,majorityMark,won,lost,leading=0,counted,complete=false,partyName='Your party',cycleLabel=''}) {
+  const total=Math.max(1,Number(totalSeats)||1);
+  const safeWon=Math.max(0,Math.min(total,Number(won)||0));
+  const safeLeading=Math.max(0,Math.min(total-safeWon,Number(leading)||0));
+  const safeLost=Math.max(0,Math.min(total-safeWon-safeLeading,Number(lost)||0));
+  const safeCounted=Math.max(0,Math.min(total,Number(counted)||0));
+  const pending=Math.max(0,total-safeCounted);
+  const pct=value=>`${(Math.max(0,Math.min(total,Number(value)||0))/total*100).toFixed(2)}%`;
+  const outcome=safeWon>=majorityMark?'Single-party majority secured':complete?'No single-party majority · coalition talks needed':`${Math.max(0,majorityMark-safeWon)} more seats needed for a majority`;
+  const status=complete?'Counting complete':safeCounted>0?'Counting in progress':'No live counting session';
+  return `<section class="panel election-performance-panel" aria-label="${escapeHtml(title)}">
+    <div class="election-performance-heading"><div><span class="eyebrow">ELECTION PERFORMANCE · ${escapeHtml(level)}</span><h3>${escapeHtml(title)}</h3>${cycleLabel?`<small>${escapeHtml(cycleLabel)}</small>`:''}</div><b>${safeCounted}/${total} counted</b></div>
+    <div class="assembly-seat-chart-bar election-performance-bar" role="img" aria-label="Won ${safeWon}, lost ${safeLost}, leading ${safeLeading}, counting pending ${pending}">
+      <i class="seat-won" style="width:${pct(safeWon)}"></i><i class="seat-leading" style="width:${pct(safeLeading)}"></i><i class="seat-lost" style="width:${pct(safeLost)}"></i><i class="seat-pending" style="width:${pct(pending)}"></i>
+    </div>
+    <div class="assembly-seat-legend"><span><i class="seat-dot seat-won"></i>Won <b>${safeWon}</b></span><span><i class="seat-dot seat-leading"></i>Leading <b>${safeLeading}</b></span><span><i class="seat-dot seat-lost"></i>Lost <b>${safeLost}</b></span><span><i class="seat-dot seat-pending"></i>Counting pending <b>${pending}</b></span></div>
+    <div class="assembly-counting-detail"><b>${status}</b><span>Majority ${majorityMark} seats · ${escapeHtml(outcome)}</span></div>
+    <p class="panel-description">${escapeHtml(partyName)} performance is calculated from this election’s recorded constituency results. ${complete?'These are final simulated game results.':'Uncounted constituencies are not treated as losses.'}</p>
+  </section>`;
+}
+
 function lokSabhaElectionEnginePanel() {
   const e=ensureLokSabhaElectionEngine();
   const approved=ensurePartySlate().filter(x=>x.typeId==='lok-sabha' && Number(x.scheduledAt)===e.cycle && x.status==='Funded').length;
-  const wins=e.results.length, leader=e.partyTally[0];
+  const displayedTally=e.results.length===543 ? deriveLokSabhaTallyFromResults(e.results) : e.partyTally;
+  const wins=e.results.length, leader=displayedTally[0];
   return `<section class="panel" id="national-campaign-count"><span class="gold-tag">543-CONSTITUENCY ELECTION ENGINE</span><h2>National campaign, polling & counting</h2><p class="creator-note">Election steps: 1) Nominate candidates → 2) Approve tickets → 3) Fund campaigns → 4) Run AI campaigns → 5) Poll and count → 6) Form the Central Government. Complete each step before moving to the next.</p>
     <div class="election-metrics"><div><small>CONSTITUENCIES</small><b>543</b></div><div><small>FUNDED PLAYER CANDIDATES</small><b>${approved}</b></div><div><small>PLAYER CAMPAIGNS</small><b>${e.campaigns.length}</b></div><div><small>RESULTS RECORDED</small><b>${wins}/543</b></div></div>
     <p class="panel-description">This simulation generates constituency-level campaign and vote outcomes from funded player candidates and simulated AI competitors. Numbered constituency labels are used where verified official names are not available in the current dataset.</p>
     <div class="national-lok-sabha-actions"><button class="primary-btn" data-ls-engine-campaign ${e.completed?'disabled':''}>RUN AI NATIONAL CAMPAIGNS</button><button class="primary-btn" data-ls-engine-count ${!e.campaignsRunAt||e.completed?'disabled':''}>POLL & COUNT ALL CONSTITUENCIES</button></div>
-    ${e.partyTally.length?`<h3>National seat tally</h3>${e.partyTally.map(x=>`<div class="national-ls-state-row"><b>${escapeHtml(x.party)}</b><strong>${x.seats}</strong></div>`).join('')}<p><b>Majority mark:</b> 272 · <b>Leading party:</b> ${escapeHtml(leader?.party||'—')} (${leader?.seats||0})</p>`:'<p class="panel-description">No constituency results yet. Complete campaigns and counting to calculate party seats automatically.</p>'}
+    ${displayedTally.length?`<h3>National seat tally</h3>${displayedTally.map(x=>`<div class="national-ls-state-row"><b>${escapeHtml(x.party)}</b><strong>${x.seats}</strong></div>`).join('')}<p><b>Majority mark:</b> 272 · <b>Leading party:</b> ${escapeHtml(leader?.party||'—')} (${leader?.seats||0})</p>`:'<p class="panel-description">No constituency results yet. Complete campaigns and counting to calculate party seats automatically.</p>'}
+    ${e.results.length?electionPerformancePanel({title:'Lok Sabha election result',level:'CENTRAL · 543 SEATS',totalSeats:543,majorityMark:272,won:e.results.filter(row=>String(row.partyName||'').toLowerCase()===String(state.party||'BPP').toLowerCase()).length,lost:e.results.filter(row=>String(row.partyName||'').toLowerCase()!==String(state.party||'BPP').toLowerCase()).length,leading:0,counted:e.results.length,complete:!!e.completed,partyName:state.party||'Bharat Pragati Party',cycleLabel:`Election cycle ${e.cycle}`}) : ''}
     ${e.aiCampaignReport?.length?`<details class="campaign-report-details" open><summary>AI campaign performance report · ${e.aiCampaignReport.length} parties</summary><p class="creator-note">The report summarizes simulated campaign style, modeled performance, vote share and seat outcomes. These are game estimates, not real polling.</p>${e.aiCampaignReport.map(row=>`<article class="campaign-report-row"><b>${escapeHtml(row.party)}</b><small>${escapeHtml(row.style)}</small><div class="campaign-report-metrics"><span>Modeled score <strong>${row.averagePerformance}/100</strong></span><span>Vote share <strong>${Number(row.voteShare).toFixed(1)}%</strong></span><span>Seats <strong>${row.wins}/543</strong></span><span>Votes <strong>${Number(row.votes).toLocaleString('en-IN')}</strong></span></div><small>${row.wins?`Average winning margin: ${Number(row.averageWinningMargin).toLocaleString('en-IN')} votes`:'No seats won in this simulation'}</small></article>`).join('')}</details>`:''}
     ${e.results.length?`<details><summary>Constituency results · ${e.results.length}</summary><div class="candidate-register-list">${e.results.slice(0,543).map(r=>`<div class="finance-history" style="padding:10px;margin:6px 0"><b>${escapeHtml(r.constituency)}</b><div>${escapeHtml(r.winner)} · ${escapeHtml(r.partyName)}</div><small>${Number(r.votes).toLocaleString('en-IN')} votes · Margin ${Number(r.margin).toLocaleString('en-IN')}</small></div>`).join('')}</div></details>`:''}
   </section>`;
@@ -4227,12 +4253,14 @@ function nationalElectionResultsCentre() {
   const rows = records.slice().sort((a,b) => Number(!!b.isPlayer)-Number(!!a.isPlayer) ||
     Number(!!b.isManualMember)-Number(!!a.isManualMember) ||
     String(a.candidateName).localeCompare(String(b.candidateName)));
+  const latestNationalResult = lokSabhaCompletedResultSnapshot();
   return `
     <section class="panel national-results-centre" id="election-results-archive">
       <span class="gold-tag">ELECTION ARCHIVE · SAVED RESULTS</span>
       <h2>National election results centre</h2>
       <p class="panel-description">This archive lists saved candidate-level election records. These records may include more than one contest or repeat candidates; they are not the authoritative 543-seat Lok Sabha tally. The national tally is complete only when the connected Lok Sabha engine declares all 543 constituency results.</p>
       <div class="election-note"><b>Authoritative Lok Sabha count:</b> ${nationalSnapshot ? `Complete · ${nationalSnapshot.tally.reduce((sum,row)=>sum+Number(row.seats||0),0)}/543 seats · ${escapeHtml(nationalSnapshot.source)}` : 'Not complete · complete all 543 constituency results in the National campaign, polling & counting section.'}</div>
+      ${latestNationalResult?electionPerformancePanel({title:'Latest Lok Sabha election performance',level:'CENTRAL · 543 SEATS',totalSeats:543,majorityMark:272,won:Number(latestNationalResult.tally.find(row=>String(row.party).toLowerCase()===String(state.party||'BPP').toLowerCase())?.seats||0),lost:543-Number(latestNationalResult.tally.find(row=>String(row.party).toLowerCase()===String(state.party||'BPP').toLowerCase())?.seats||0),counted:543,complete:true,partyName:state.party||'Bharat Pragati Party',cycleLabel:`Election cycle ${latestNationalResult.cycle}`}) : ''}
       <div class="stats-grid">
         ${statCard('CANDIDATE RESULTS', records.length, 'Saved constituency records', '▤')}
         ${statCard('WON', won, 'Saved winning results', '★')}
@@ -4410,17 +4438,18 @@ function electionPage() {
         const pending = cycle.filter(item => item.status === 'Proposed').length;
         const notEntered = approved;
         const savedTally = state.elections?.lastAssemblySeatTally;
-        const tally = savedTally && Number(savedTally.scheduledAt) === activeAssemblyCycle ? savedTally : null;
+        const tally = savedTally && Number.isFinite(Number(savedTally.scheduledAt)) ? savedTally : null;
         const partySeatsWon = Math.min(224,Math.max(0,tally ? Number(tally.seatsWon || 0) : cycle.filter(item => item.status === 'Elected').length));
-        const partySeatsLost = Math.min(224-partySeatsWon,Math.max(0,tally ? Number(tally.seatsLost || lost) : lost));
+        const partySeatsLost = Math.min(224-partySeatsWon,Math.max(0,tally ? Number(tally.seatsLost || 0) : lost));
         const liveActive = state.elections?.active;
         const liveCounting = !!(liveActive && liveActive.typeId === 'assembly' && liveActive.phase === 'counting' && liveActive.counting);
         const liveLeader = liveCounting ? [...(liveActive.counting.candidates||[])].sort((a,b)=>Number(b.votes||0)-Number(a.votes||0))[0] : null;
         const leading = liveLeader && liveLeader.name === liveActive.candidateName ? 1 : 0;
-        const countedSeats = Math.min(224,partySeatsWon+partySeatsLost+leading);
+        const countedSeats = Math.min(224,Math.max(0,tally ? Number(tally.seatsContested || 0) : partySeatsWon+partySeatsLost+leading));
         const countingPending = Math.max(0,224-countedSeats);
         const pct = value => `${(Math.max(0,Math.min(224,value))/224*100).toFixed(2)}%`;
         const roundLabel = liveCounting ? `Round ${liveActive.counting.round}/${liveActive.counting.totalRounds} · ${Math.round(Number(liveActive.counting.counted||0)/Math.max(1,Number(liveActive.counting.turnout||1))*100)}% of votes counted` : (tally?.countingComplete ? 'Counting completed' : 'No live counting session');
+        const resultCycleLabel = tally ? `Latest saved Karnataka Assembly result · cycle ${Number(tally.scheduledAt)}` : 'Upcoming Karnataka Assembly cycle';
         return `<div class="panel party-election-summary" style="margin:16px 0">
           <span class="eyebrow">PARTY ASSEMBLY ELECTION TRACKER</span>
           <h3>${cycle.length ? 'Upcoming Assembly election candidates' : 'No candidates generated for the upcoming election yet'}</h3>
@@ -4429,7 +4458,7 @@ function electionPage() {
             <div><small>MAJORITY REQUIRED</small><b>113</b></div>
           </div>
           <div class="assembly-seat-chart">
-            <div class="assembly-seat-chart-heading"><b>224-seat Assembly performance</b><span>${countedSeats}/224 counted</span></div>
+            <div class="assembly-seat-chart-heading"><b>${tally ? 'Latest 224-seat Assembly result' : '224-seat Assembly performance'}</b><span>${countedSeats}/224 counted</span></div>
             <div class="assembly-seat-chart-bar" role="img" aria-label="Won ${partySeatsWon}, lost ${partySeatsLost}, leading ${leading}, counting pending ${countingPending}">
               <i class="seat-won" style="width:${pct(partySeatsWon)}"></i>
               <i class="seat-lost" style="width:${pct(partySeatsLost)}"></i>
@@ -4442,7 +4471,7 @@ function electionPage() {
               <span><i class="seat-dot seat-lost"></i>Lost <b>${partySeatsLost}</b></span>
               <span><i class="seat-dot seat-pending"></i>Counting pending <b>${countingPending}</b></span>
             </div>
-            <div class="assembly-counting-detail"><b>${roundLabel}</b><span>Majority ${partySeatsWon>=113?'secured':`${113-partySeatsWon} seats needed`}</span></div>
+            <div class="assembly-counting-detail"><b>${roundLabel}</b><span>${resultCycleLabel} · Majority ${partySeatsWon>=113?'secured':`${113-partySeatsWon} seats needed`}</span></div>
           </div>
           ${!cycle.length ? '<p class="panel-description">This panel now shows only the upcoming election. Past election candidates are kept in the archive below. Your own MLA constituency counts as one of the 224 Assembly seats.</p>' : `
             <div class="election-metrics">
