@@ -94,6 +94,7 @@ const defaults = {
   partyCampaignPlans: [],
   partyAuditReports: [],
   rivalPartyIntelligence: { parties: [], reports: [], lastUpdated: '' },
+  autonomousAI: { lastProcessedMonth: null, parties: [], log: [], totalDecisions: 0 },
 
   constituency: {
     state: 'Karnataka',
@@ -2930,6 +2931,7 @@ function endDay() {
   }
   state.actionsUsed = 0;
   runAiAdministration();
+  processAutonomousAI();
   advanceNationalCommandMonth();
   advanceMediaCycle();
   const report = processMonthlyFinances();
@@ -8059,12 +8061,98 @@ function politicalExpansionAction(action) {
     politicalExpansionRecord('Ethics and transparency','Disclosure entered',`Recorded disclosure: ${disclosure}. A declaration is not a substitute for statutory filing where required.`,{governance:2,trust:2}); return;
   }
 }
+
+function ensureAutonomousAI() {
+  if (!state.autonomousAI || typeof state.autonomousAI !== 'object') {
+    state.autonomousAI = { lastProcessedMonth: null, parties: [], log: [], totalDecisions: 0 };
+  }
+  const ai = state.autonomousAI;
+  if (!Array.isArray(ai.parties)) ai.parties = [];
+  if (!Array.isArray(ai.log)) ai.log = [];
+  if (!Number.isFinite(Number(ai.totalDecisions))) ai.totalDecisions = 0;
+  const partyNames = [
+    'Bharatiya Janata Party', 'Indian National Congress', 'Aam Aadmi Party',
+    'Dravida Munnetra Kazhagam', 'All India Anna Dravida Munnetra Kazhagam',
+    'Trinamool Congress', 'Janata Dal (United)', 'Bharat Pragati Party',
+    'Regional Alliance', 'Independent Front'
+  ];
+  const playerParty = String(state.party || state.playerParty || '').trim().toLowerCase();
+  partyNames.filter(name => name.toLowerCase() !== playerParty).forEach((name, index) => {
+    let actor = ai.parties.find(item => item && String(item.name).toLowerCase() === name.toLowerCase());
+    if (!actor) {
+      const seed = (name.length * 17 + index * 23) % 31;
+      actor = {
+        id: 'ai-party-' + index, name,
+        support: 34 + seed, fundsCr: 120 + seed * 7,
+        influence: 28 + ((seed * 3) % 42), campaignReadiness: 20 + ((seed * 5) % 40),
+        governingPerformance: 42 + ((seed * 2) % 28), coalitionTrust: 40 + ((seed * 7) % 35),
+        policyCapacity: 35 + ((seed * 11) % 40), lastAction: 'Building its political strategy',
+        lastActionMonth: null, totalActions: 0
+      };
+      ai.parties.push(actor);
+    }
+  });
+  ai.parties = ai.parties.filter(item => item && item.name && String(item.name).toLowerCase() !== playerParty);
+  ai.parties = ai.parties.slice(0, 12);
+  return ai;
+}
+
+function processAutonomousAI() {
+  const ai = ensureAutonomousAI();
+  const monthIndex = (Math.max(1, Number(state.year) || 1) - 1) * 12 + (Math.max(1, Number(state.month) || 1) - 1);
+  if (Number(ai.lastProcessedMonth) === monthIndex) return;
+  ai.lastProcessedMonth = monthIndex;
+  const calendars = state.elections?.calendar || {};
+  const electionDistances = Object.values(calendars)
+    .map(item => Number(item?.nextAt))
+    .filter(value => Number.isFinite(value) && value >= monthIndex)
+    .map(value => value - monthIndex);
+  const monthsToElection = electionDistances.length ? Math.min(...electionDistances) : 99;
+  const pendingCrisis = (state.executiveOffice?.crises || []).some(item => item && item.status === 'Pending');
+  const monthLabel = dateText();
+  const actions = [
+    { id: 'campaign', title: 'Campaign readiness', detail: 'Expanded candidate preparation and constituency outreach.', apply: p => { p.campaignReadiness = Math.min(100, p.campaignReadiness + 7); p.fundsCr = Math.max(0, p.fundsCr - 8); } },
+    { id: 'public', title: 'Public outreach', detail: 'Held listening sessions and adjusted the party message to public concerns.', apply: p => { p.support = Math.min(100, p.support + 2); p.fundsCr = Math.max(0, p.fundsCr - 3); } },
+    { id: 'delivery', title: 'Policy delivery review', detail: 'Reviewed delivery targets and redirected effort toward implementation.', apply: p => { p.governingPerformance = Math.min(100, p.governingPerformance + 3); p.policyCapacity = Math.min(100, p.policyCapacity + 1); p.fundsCr = Math.max(0, p.fundsCr - 5); } },
+    { id: 'coalition', title: 'Coalition outreach', detail: 'Opened talks with potential partners and negotiated shared priorities.', apply: p => { p.coalitionTrust = Math.min(100, p.coalitionTrust + 3); p.influence = Math.min(100, p.influence + 2); p.fundsCr = Math.max(0, p.fundsCr - 2); } },
+    { id: 'legislature', title: 'Legislative strategy', detail: 'Prepared policy briefs, committee questions and a legislative agenda.', apply: p => { p.influence = Math.min(100, p.influence + 2); p.policyCapacity = Math.min(100, p.policyCapacity + 2); } },
+    { id: 'finance', title: 'Financial discipline', detail: 'Reviewed party expenditure and strengthened fundraising controls.', apply: p => { p.fundsCr = Math.min(1000, p.fundsCr + 6); p.governingPerformance = Math.min(100, p.governingPerformance + 1); } },
+    { id: 'crisis', title: 'Crisis response', detail: 'Deployed a response team and issued a public progress update.', apply: p => { p.support = Math.min(100, p.support + 1); p.governingPerformance = Math.min(100, p.governingPerformance + 2); p.fundsCr = Math.max(0, p.fundsCr - 4); } }
+  ];
+  ai.parties.forEach((party, index) => {
+    // Deterministic decision selection makes a saved month reproducible and prevents rerolls on reload.
+    let action;
+    if (pendingCrisis && (monthIndex + index) % 4 === 0) action = actions[6];
+    else if (monthsToElection <= 6 && party.campaignReadiness < 82) action = actions[0];
+    else if (party.support < 45) action = actions[1];
+    else if (party.coalitionTrust < 52 && (monthIndex + index) % 3 === 0) action = actions[3];
+    else if (party.governingPerformance < 55) action = actions[2];
+    else action = actions[(monthIndex + index * 3) % 6];
+    action.apply(party);
+    party.lastAction = action.title;
+    party.lastActionMonth = monthIndex;
+    party.totalActions = Number(party.totalActions || 0) + 1;
+    ai.totalDecisions = Number(ai.totalDecisions || 0) + 1;
+    ai.log.unshift({
+      id: `${monthIndex}-${index}-${action.id}`,
+      party: party.name, action: action.title, detail: action.detail,
+      month: monthLabel, monthIndex,
+      effects: `Support ${Math.round(party.support)} · Readiness ${Math.round(party.campaignReadiness)} · Influence ${Math.round(party.influence)}`
+    });
+  });
+  ai.log = ai.log.slice(0, 80);
+  ai.parties.sort((a, b) => (b.support + b.governingPerformance + b.influence + b.campaignReadiness) - (a.support + a.governingPerformance + a.influence + a.campaignReadiness));
+}
+
 function politicalLifePage() {
   const x=ensurePoliticalExpansion();
   const card=(eyebrow,title,desc,buttons)=>`<section class="panel"><span class="eyebrow">${eyebrow}</span><h2>${title}</h2><p class="panel-description">${desc}</p><div class="row-actions">${buttons.map(([label,key])=>`<button class="secondary-btn" data-political-action="${key}">${label}</button>`).join('')}</div></section>`;
   const list=(title,items,empty)=>`<section class="panel"><span class="eyebrow">LIVE REGISTER</span><h2>${title}</h2>${items.length?items.slice(0,5).map(v=>`<div class="history-row"><div><b>${escapeHtml(v.name||v.title||v.issue||v.project||v.milestone||v.office||v.department||v.election||'Political record')}</b><small>${escapeHtml(v.status||'Recorded')} · ${escapeHtml(v.date||'')}</small><small>${escapeHtml(v.subject||v.ground||v.scope||v.agenda||v.question||v.proof||v.position||'')}</small></div></div>`).join(''):`<p class="muted">${empty}</p>`}</section>`;
+  const ai = ensureAutonomousAI();
+  const aiPanel = `<section class="panel"><span class="eyebrow">AUTONOMOUS POLITICAL WORLD</span><h2>Independent AI parties</h2><p class="panel-description">Rival parties make their own monthly strategic decisions. Their support, campaign readiness, influence, coalition confidence and governing performance persist between turns; your party’s actions remain under your control.</p><div class="stats-grid">${statCard('AI parties',ai.parties.length,'Independent political actors','♟')}${statCard('Decisions recorded',ai.totalDecisions,'Across monthly turns','◷')}${statCard('Latest AI cycle',ai.lastProcessedMonth === null ? 'Pending' : dateText(),'Last completed monthly cycle','◎')}</div><div class="dashboard-grid">${ai.parties.slice(0,6).map(p=>`<div class="history-row"><div><b>${escapeHtml(p.name)}</b><small>${escapeHtml(p.lastAction || 'Preparing strategy')} · Support ${Math.round(p.support)}/100 · Campaign readiness ${Math.round(p.campaignReadiness)}/100</small><small>Influence ${Math.round(p.influence)} · Coalition confidence ${Math.round(p.coalitionTrust)} · Party funds ₹${Math.round(p.fundsCr)} crore</small></div></div>`).join('')}</div><h3>Recent autonomous decisions</h3>${ai.log.slice(0,8).map(item=>`<div class="history-row"><div><b>${escapeHtml(item.party)} — ${escapeHtml(item.action)}</b><small>${escapeHtml(item.month)} · ${escapeHtml(item.detail)}</small></div></div>`).join('') || '<p class="muted">AI parties will begin acting at the next monthly turn.</p>'}</section>`;
   return `<div class="page-heading"><div><span class="eyebrow">RAJNITI 6.1 · NATIONAL POLITICAL LIFE EXPANSION</span><h1>Political <em>Institutions & Public Life</em></h1><p>Connected systems for party democracy, elections, Parliament, administration, courts, federalism and public accountability.</p></div></div>
   <div class="stats-grid">${statCard('Governance score',x.governanceScore,'Simulation indicator','⚖')}${statCard('Institutional trust',x.institutionalTrust,'Simulation indicator','🏛')}${statCard('Party factions',x.partyFactions.length,'Groups and discipline files','♟')}${statCard('Open cases',x.courtCases.filter(v=>!String(v.status).includes('Disposed')).length+x.electionCases.filter(v=>String(v.status).includes('pending')).length,'Judicial / election matters','▤')}</div>
+  ${aiPanel}
   <div class="dashboard-grid">
   ${card('PARTY ORGANISATION','Internal democracy & discipline','Create policy factions, record internal leadership elections and issue fair disciplinary notices.',[['CREATE PARTY FACTION','party-faction'],['SCHEDULE INTERNAL ELECTION','party-election'],['ISSUE DISCIPLINARY NOTICE','party-discipline']])}
   ${card('ELECTION COMMISSION & CAMPAIGNS','Election compliance','Record campaign expenses and election petitions. Records do not alter results without due process.',[['RECORD CAMPAIGN EXPENSE','election-expense'],['FILE ELECTION PETITION','election-petition']])}
