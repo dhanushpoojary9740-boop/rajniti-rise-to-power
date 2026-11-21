@@ -2901,3 +2901,20 @@ html {
     border-radius: 8px;
   }
 }
+
+/* Role-based Government & Offices directory */
+.office-directory-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-top:16px}
+.office-directory-card{display:flex;flex-direction:column;align-items:flex-start;gap:9px;min-width:0;text-align:left;padding:16px;border:1px solid var(--border,#344258);border-radius:14px;background:var(--panel-soft,#111d2d);color:inherit;cursor:pointer;transition:border-color .15s,background .15s,transform .15s}
+.office-directory-card:hover{border-color:#b99b5c;transform:translateY(-1px)}
+.office-directory-card.active{border-color:#d5bd83;background:linear-gradient(145deg,rgba(213,189,131,.13),rgba(17,29,45,.96));box-shadow:inset 0 0 0 1px rgba(213,189,131,.18)}
+.office-directory-card.current .office-card-kicker{color:#e0c987}
+.office-card-kicker{font-size:10px;font-weight:800;letter-spacing:.09em;color:var(--muted,#a8b4c6)}
+.office-directory-card>b{font-size:15px;line-height:1.3}
+.office-directory-card>small{font-size:12px;line-height:1.55;color:var(--muted,#a8b4c6)}
+.office-card-link{margin-top:auto;padding-top:4px;font-size:10px;font-weight:800;letter-spacing:.06em;color:#d5bd83}
+.office-responsibility-list{display:grid;gap:9px;margin-top:14px}
+.office-responsibility-row{display:flex;align-items:flex-start;gap:12px;padding:12px;border:1px solid var(--border,#344258);border-radius:10px;background:rgba(0,0,0,.12)}
+.office-responsibility-row>span{display:grid;place-items:center;flex:0 0 25px;height:25px;border-radius:50%;background:rgba(213,189,131,.15);color:#e0c987;font-size:12px;font-weight:800}
+.office-responsibility-row>b{font-size:13px;line-height:1.5}
+.office-selected-panel .creator-note{margin-top:14px}
+@media(max-width:620px){.office-directory-grid{grid-template-columns:1fr}.office-directory-card{padding:14px}.office-directory-card>b{font-size:14px}.office-directory-card>small{font-size:12px}}

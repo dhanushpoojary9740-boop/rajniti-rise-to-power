@@ -6607,17 +6607,52 @@ function updateConstituencyCase(caseId, action) {
   render();
 }
 
+function officeDirectoryProfiles() {
+  return [
+    {key:'pm',title:'Prime Minister’s Office',role:'Prime Minister',level:'Union Executive',summary:'National priorities, Union Cabinet coordination, Parliament accountability and Centre–State relations.',duties:['Set national priorities and chair Cabinet coordination','Review national programmes and ministry performance','Coordinate with Chief Ministers and Parliament']},
+    {key:'cm',title:'Chief Minister’s Office',role:'Chief Minister',level:'State Executive',summary:'State policy, cabinet coordination, district administration and Assembly confidence.',duties:['Set state priorities and coordinate departments','Review district delivery and state programmes','Maintain Assembly accountability and confidence']},
+    {key:'union-minister',title:'Union Minister’s Office',role:'Union Minister',level:'Union Ministry',summary:'Manage an assigned Union portfolio through ministry officials, budgets, projects and parliamentary accountability.',duties:['Review ministry proposals and performance','Approve portfolio priorities within delegated authority','Report to the Prime Minister and Parliament']},
+    {key:'state-minister',title:'State Minister’s Office',role:'State Minister',level:'State Ministry',summary:'Manage an assigned state portfolio and coordinate implementation with departments and districts.',duties:['Review portfolio proposals and spending','Monitor departmental projects and delivery','Report to the Chief Minister and Assembly']},
+    {key:'mp',title:'Member of Parliament Office',role:'Member of Parliament',level:'Parliament & Constituency',summary:'Represent constituents in Parliament, scrutinise Union policy and follow up on constituency issues.',duties:['Prepare questions, debates and committee work','Hold constituency hearings and refer cases','Track constituency development requests']},
+    {key:'mla',title:'Member of Legislative Assembly Office',role:'MLA',level:'Assembly & Constituency',summary:'Represent the constituency in the State Assembly and follow up on local public issues.',duties:['Prepare Assembly questions and oversight briefs','Hold constituency hearings and refer cases','Track state schemes and local development needs']},
+    {key:'local',title:'Local Representative Office',role:'Councillor / Panchayat Representative',level:'Local Government',summary:'Coordinate ward or panchayat services, local works and citizen case follow-up.',duties:['Review local service requests','Track civic works and delivery','Coordinate with local officials']},
+    {key:'high-command',title:'Party High Command',role:'Party Leader',level:'Party Organisation',summary:'Guide state units, candidate selection, alliances, leadership and major party-wide decisions.',duties:['Review state-unit performance and popularity','Approve major candidate, alliance and leadership decisions','Set national organisation priorities']}
+    ,{key:'party',title:'Party Member Office',role:'Political Volunteer',level:'Party Organisation',summary:'Handle assigned party work, constituency outreach, membership activity and local organisation tasks.',duties:['Complete assigned organisation and outreach work','Submit local concerns to elected representatives','Build membership and report local party activity']}
+  ];
+}
+
+function playerOfficeDirectoryKey() {
+  const role=String(state.role||'');
+  if(/Prime Minister/.test(role)) return 'pm';
+  if(/Chief Minister/.test(role)) return 'cm';
+  if(/Union Minister/.test(role)) return 'union-minister';
+  if(/State Minister/.test(role)) return 'state-minister';
+  if(/Member of Parliament|\bMP\b/.test(role)) return 'mp';
+  if(/\bMLA\b|Member of Legislative Assembly/.test(role)) return 'mla';
+  if(/Councillor|Panchayat/.test(role)) return 'local';
+  if(/Party Leader|National President|Founder/.test(role)) return 'high-command';
+  return 'party';
+}
+
 function executiveOfficePage() {
   const office = ensureExecutiveOffice();
   const scope = executiveRoleScope();
   const charter = politicalOfficeDuties();
+  const profiles=officeDirectoryProfiles();
+  const ownOfficeKey=playerOfficeDirectoryKey();
+  const selectedKey=profiles.some(item=>item.key===state.activeOfficeView)?state.activeOfficeView:ownOfficeKey;
+  const selectedProfile=profiles.find(item=>item.key===selectedKey)||profiles[0];
+  const viewingOwnOffice=selectedKey===ownOfficeKey;
+  state.activeOfficeView=selectedKey;
   const casework = ensureConstituencyCasework();
   if (!Array.isArray(office.dutyHistory)) office.dutyHistory = [];
   const currentPeriod = `${Number(state.year||1)}-${Number(state.month||1)}`;
   const pending = office.files.filter(f => f.status === 'Pending');
   const tasks = office.tasks;
   return `
-    <div class="page-heading"><div><div class="eyebrow">EXECUTIVE OFFICE · ${escapeHtml(scope.level.toUpperCase())} LEVEL</div><h1>My <em>office</em></h1><p>Work is assigned according to your current post. Officials and AI teams handle routine administration.</p></div><div class="date-card"><span>CURRENT POST</span><b>${escapeHtml(state.role || 'Political Volunteer')}</b><small>${escapeHtml(scope.authority)}</small></div></div>
+    <div class="page-heading"><div><div class="eyebrow">GOVERNMENT & OFFICES · ROLE-BASED WORKSPACE</div><h1>Government <em>offices</em></h1><p>Each office has its own remit. Routine work is delegated to officials; major decisions go to the office-holder or party high command as appropriate.</p></div><div class="date-card"><span>YOUR CURRENT POST</span><b>${escapeHtml(state.role || 'Political Volunteer')}</b><small>${escapeHtml(scope.authority)}</small></div></div>
+    <section class="panel office-directory-panel"><div class="command-section-head"><div><span class="eyebrow">OFFICE DIRECTORY</span><h2>Select an office</h2><p class="panel-description">Open an office to review its responsibilities. Your current post is marked; other offices are read-only previews until you hold that role.</p></div></div><div class="office-directory-grid">${profiles.map(profile=>`<button type="button" class="office-directory-card ${selectedKey===profile.key?'active':''} ${ownOfficeKey===profile.key?'current':''}" data-office-view="${profile.key}"><span class="office-card-kicker">${ownOfficeKey===profile.key?'YOUR CURRENT OFFICE':profile.level.toUpperCase()}</span><b>${escapeHtml(profile.title)}</b><small>${escapeHtml(profile.summary)}</small><span class="office-card-link">${selectedKey===profile.key?'OPENED':'VIEW OFFICE →'}</span></button>`).join('')}</div></section>
+    <section class="panel office-selected-panel"><div class="command-section-head"><div><span class="eyebrow">${viewingOwnOffice?'ACTIVE AUTHORITY':'READ-ONLY OFFICE PREVIEW'}</span><h2>${escapeHtml(selectedProfile.title)}</h2><p class="panel-description">${escapeHtml(selectedProfile.summary)}</p></div><span class="gold-tag">${escapeHtml(selectedProfile.level.toUpperCase())}</span></div><div class="office-responsibility-list">${selectedProfile.duties.map((duty,index)=>`<div class="office-responsibility-row"><span>${index+1}</span><b>${escapeHtml(duty)}</b></div>`).join('')}</div>${viewingOwnOffice?`<p class="creator-note">Your assigned tasks, signature desk and office actions below belong to your current post: ${escapeHtml(state.role||'Political Volunteer')}.</p>`:`<p class="creator-note">This preview does not grant authority to issue decisions from another office. Appointment or election to that role unlocks its action desk.</p>`}</section>
     <section class="panel"><span class="eyebrow">YOUR RESPONSIBILITY</span><h2>What only you must handle</h2><p class="panel-description">Your authority is limited to: ${escapeHtml(scope.authority)}. You are not expected to manage every district or department personally.</p><div class="government-unlock-grid"><div><b>${tasks.filter(t=>t.status==='Pending'||t.status==='In progress').length}</b><small>Assigned tasks</small></div><div><b>${pending.length}</b><small>Files awaiting signature</small></div><div><b>AI</b><small>Routine administration</small></div></div></section>
     <section class="panel office-charter-panel"><span class="eyebrow">CONSTITUTIONAL & ELECTED-OFFICE RESPONSIBILITIES</span><h2>${escapeHtml(charter.title)}</h2><p class="panel-description">${escapeHtml(charter.intro)}</p>${charter.duties.length ? `<div class="government-unlock-grid">${charter.duties.map(duty=>{const done=office.dutyHistory.some(item=>item.action===duty[0]&&item.period===currentPeriod);return `<article class="government-portfolio"><span class="gold-tag">${done?'COMPLETED THIS MONTH':'OFFICE DUTY'}</span><h3>${escapeHtml(duty[1])}</h3><p>${escapeHtml(duty[2])}</p><button class="secondary-btn full" data-office-duty="${duty[0]}" ${done?'disabled':''}>${done?'RECORDED':'COMPLETE & RECORD'}</button></article>`;}).join('')}</div>`:'<p class="panel-description">Your current role does not have a separate elected-office duty checklist. Complete assigned work and review pending files.</p>'}<p class="creator-note">These actions are fictional gameplay simulations of office responsibilities. They do not enact real government decisions or replace constitutional procedures.</p></section>
     <section class="panel constituency-casework-panel"><div class="command-section-head"><div><span class="eyebrow">CONSTITUENCY SERVICE · CITIZEN CASE REGISTER</span><h2>Public grievances & case follow-up</h2><p class="panel-description">Review a small monthly sample of citizen requests, refer each to the responsible department, and record follow-up. These are simulated gameplay cases; referrals do not guarantee real-world service delivery.</p></div></div><div class="government-unlock-grid"><div><b>${casework.cases.filter(item=>item.status==='Open').length}</b><small>Open cases</small></div><div><b>${casework.cases.filter(item=>item.status==='Referred').length}</b><small>Referred</small></div><div><b>${casework.cases.filter(item=>item.status==='Resolved').length}</b><small>Resolved</small></div></div>${casework.cases.length ? casework.cases.slice().reverse().map(item=>`<article class="government-portfolio constituency-case-card"><span class="gold-tag">${escapeHtml(item.status.toUpperCase())} · ${escapeHtml(item.priority)} PRIORITY</span><h3>${escapeHtml(item.title)}</h3><p>${escapeHtml(item.detail)}</p><div class="task-detail-grid"><div><small>RESPONSIBLE DEPARTMENT</small><b>${escapeHtml(item.department)}</b></div><div><small>RECEIVED</small><b>${escapeHtml(item.receivedDate)}</b></div></div>${item.assignedTo!=='Unassigned'?`<p><b>Assigned to:</b> ${escapeHtml(item.assignedTo)}</p>`:''}${item.status!=='Resolved'?`<div class="gov-budget-actions">${item.status==='Open'?`<button class="secondary-btn" data-constituency-case="refer" data-case-id="${item.id}">REFER TO DEPARTMENT</button>`:''}<button class="primary-btn" data-constituency-case="resolve" data-case-id="${item.id}">RECORD FOLLOW-UP & RESOLVE</button></div>`:`<p><b>Resolved:</b> ${escapeHtml(item.resolvedDate || 'Recorded')}</p>`}</article>`).join(''):'<p class="panel-description">No citizen cases are currently recorded.</p>'}<h3>Recent case activity</h3>${casework.history.length?`<ul class="casework-history-list">${casework.history.slice(0,8).map(entry=>`<li><b>${escapeHtml(entry.action)}:</b> ${escapeHtml(entry.title)} <small>· ${escapeHtml(entry.date)}</small><p>${escapeHtml(entry.note)}</p></li>`).join('')}</ul>`:'<p class="panel-description">Case referrals and resolutions will appear here.</p>'}</section>
@@ -8986,6 +9021,16 @@ document.addEventListener('click', event => {
       toast('Candidate proposal rejected.');
     }
     saveState(); render();
+    return;
+  }
+
+  const officeView = event.target.closest('[data-office-view]');
+  if (officeView) {
+    const validKeys = new Set(officeDirectoryProfiles().map(item => item.key));
+    if (validKeys.has(officeView.dataset.officeView)) {
+      state.activeOfficeView = officeView.dataset.officeView;
+      saveState(); render();
+    }
     return;
   }
 
