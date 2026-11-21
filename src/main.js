@@ -6263,10 +6263,70 @@ function recordPoliticalOfficeDuty(action) {
   saveState(); render(); toast(`${duty[1]} recorded. Reputation, influence and public support improved.`);
 }
 
+
+function ensureConstituencyCasework() {
+  const office = ensureExecutiveOffice();
+  if (!office.casework || typeof office.casework !== 'object') office.casework = {};
+  const book = office.casework;
+  if (!Array.isArray(book.cases)) book.cases = [];
+  if (!Array.isArray(book.history)) book.history = [];
+  if (!Number.isFinite(Number(book.nextId))) book.nextId = 1;
+  const period = `${Number(state.year || 1)}-${Number(state.month || 1)}`;
+  if (book.lastGeneratedPeriod !== period) {
+    const role = String(state.role || '');
+    const area = /Prime Minister/.test(role) ? 'national constituency' : /Chief Minister/.test(role) ? 'state constituency' : 'your constituency';
+    const monthlyCases = [
+      { category:'Water & sanitation', title:'Drinking-water supply complaint', detail:`Residents report irregular drinking-water supply in ${area}.`, department:'Water Supply Department', priority:'High' },
+      { category:'Roads & infrastructure', title:'Road repair and safety request', detail:`Residents request inspection and repair of a damaged local road in ${area}.`, department:'Public Works Department', priority:'Medium' },
+      { category:'Welfare & public services', title:'Delayed public-service benefit', detail:`A group of residents report delays in receiving an eligible public service in ${area}.`, department:'Social Welfare Department', priority:'Medium' }
+    ];
+    monthlyCases.forEach(item => {
+      const id = book.nextId++;
+      book.cases.push({ id, ...item, receivedPeriod:period, receivedDate:dateText(), status:'Open', assignedTo:'Unassigned', updates:[] });
+    });
+    book.lastGeneratedPeriod = period;
+  }
+  book.cases = book.cases.slice(-90);
+  book.history = book.history.slice(0, 90);
+  return book;
+}
+
+function updateConstituencyCase(caseId, action) {
+  const book = ensureConstituencyCasework();
+  const item = book.cases.find(entry => Number(entry.id) === Number(caseId));
+  if (!item) return toast('This citizen case is no longer available.');
+  if (item.status === 'Resolved') return toast('This case is already marked resolved.');
+  const period = `${Number(state.year || 1)}-${Number(state.month || 1)}`;
+  if (action === 'refer') {
+    if (item.status === 'Referred') return toast('This case has already been referred.');
+    item.status = 'Referred';
+    item.assignedTo = item.department;
+    item.updates.unshift({ date:dateText(), period, action:'Referred', note:`Referred to ${item.department} for a written action plan and follow-up.` });
+    book.history.unshift({ caseId:item.id, title:item.title, date:dateText(), action:'Referred', note:`Sent to ${item.department}.` });
+    state.influence = Math.max(0, Number(state.influence || 0) + 1);
+    state.publicSupport = Math.min(100, Number(state.publicSupport || 0) + 1);
+    toast('Case referred. Follow-up is now recorded.');
+  } else if (action === 'resolve') {
+    item.status = 'Resolved';
+    item.assignedTo = item.department;
+    item.resolvedDate = dateText();
+    item.updates.unshift({ date:dateText(), period, action:'Resolved', note:'Recorded a constituency follow-up and marked the simulated case resolved.' });
+    book.history.unshift({ caseId:item.id, title:item.title, date:dateText(), action:'Resolved', note:'Resolved after follow-up.' });
+    state.reputation = Math.max(0, Number(state.reputation || 0) + 2);
+    state.publicSupport = Math.min(100, Number(state.publicSupport || 0) + 2);
+    state.influence = Math.max(0, Number(state.influence || 0) + 1);
+    toast('Case marked resolved. Public trust and reputation improved.');
+  }
+  book.history = book.history.slice(0, 90);
+  saveState();
+  render();
+}
+
 function executiveOfficePage() {
   const office = ensureExecutiveOffice();
   const scope = executiveRoleScope();
   const charter = politicalOfficeDuties();
+  const casework = ensureConstituencyCasework();
   if (!Array.isArray(office.dutyHistory)) office.dutyHistory = [];
   const currentPeriod = `${Number(state.year||1)}-${Number(state.month||1)}`;
   const pending = office.files.filter(f => f.status === 'Pending');
@@ -6275,6 +6335,7 @@ function executiveOfficePage() {
     <div class="page-heading"><div><div class="eyebrow">EXECUTIVE OFFICE · ${escapeHtml(scope.level.toUpperCase())} LEVEL</div><h1>My <em>office</em></h1><p>Work is assigned according to your current post. Officials and AI teams handle routine administration.</p></div><div class="date-card"><span>CURRENT POST</span><b>${escapeHtml(state.role || 'Political Volunteer')}</b><small>${escapeHtml(scope.authority)}</small></div></div>
     <section class="panel"><span class="eyebrow">YOUR RESPONSIBILITY</span><h2>What only you must handle</h2><p class="panel-description">Your authority is limited to: ${escapeHtml(scope.authority)}. You are not expected to manage every district or department personally.</p><div class="government-unlock-grid"><div><b>${tasks.filter(t=>t.status==='Pending'||t.status==='In progress').length}</b><small>Assigned tasks</small></div><div><b>${pending.length}</b><small>Files awaiting signature</small></div><div><b>AI</b><small>Routine administration</small></div></div></section>
     <section class="panel office-charter-panel"><span class="eyebrow">CONSTITUTIONAL & ELECTED-OFFICE RESPONSIBILITIES</span><h2>${escapeHtml(charter.title)}</h2><p class="panel-description">${escapeHtml(charter.intro)}</p>${charter.duties.length ? `<div class="government-unlock-grid">${charter.duties.map(duty=>{const done=office.dutyHistory.some(item=>item.action===duty[0]&&item.period===currentPeriod);return `<article class="government-portfolio"><span class="gold-tag">${done?'COMPLETED THIS MONTH':'OFFICE DUTY'}</span><h3>${escapeHtml(duty[1])}</h3><p>${escapeHtml(duty[2])}</p><button class="secondary-btn full" data-office-duty="${duty[0]}" ${done?'disabled':''}>${done?'RECORDED':'COMPLETE & RECORD'}</button></article>`;}).join('')}</div>`:'<p class="panel-description">Your current role does not have a separate elected-office duty checklist. Complete assigned work and review pending files.</p>'}<p class="creator-note">These actions are fictional gameplay simulations of office responsibilities. They do not enact real government decisions or replace constitutional procedures.</p></section>
+    <section class="panel constituency-casework-panel"><div class="command-section-head"><div><span class="eyebrow">CONSTITUENCY SERVICE · CITIZEN CASE REGISTER</span><h2>Public grievances & case follow-up</h2><p class="panel-description">Review a small monthly sample of citizen requests, refer each to the responsible department, and record follow-up. These are simulated gameplay cases; referrals do not guarantee real-world service delivery.</p></div></div><div class="government-unlock-grid"><div><b>${casework.cases.filter(item=>item.status==='Open').length}</b><small>Open cases</small></div><div><b>${casework.cases.filter(item=>item.status==='Referred').length}</b><small>Referred</small></div><div><b>${casework.cases.filter(item=>item.status==='Resolved').length}</b><small>Resolved</small></div></div>${casework.cases.length ? casework.cases.slice().reverse().map(item=>`<article class="government-portfolio constituency-case-card"><span class="gold-tag">${escapeHtml(item.status.toUpperCase())} · ${escapeHtml(item.priority)} PRIORITY</span><h3>${escapeHtml(item.title)}</h3><p>${escapeHtml(item.detail)}</p><div class="task-detail-grid"><div><small>RESPONSIBLE DEPARTMENT</small><b>${escapeHtml(item.department)}</b></div><div><small>RECEIVED</small><b>${escapeHtml(item.receivedDate)}</b></div></div>${item.assignedTo!=='Unassigned'?`<p><b>Assigned to:</b> ${escapeHtml(item.assignedTo)}</p>`:''}${item.status!=='Resolved'?`<div class="gov-budget-actions">${item.status==='Open'?`<button class="secondary-btn" data-constituency-case="refer" data-case-id="${item.id}">REFER TO DEPARTMENT</button>`:''}<button class="primary-btn" data-constituency-case="resolve" data-case-id="${item.id}">RECORD FOLLOW-UP & RESOLVE</button></div>`:`<p><b>Resolved:</b> ${escapeHtml(item.resolvedDate || 'Recorded')}</p>`}</article>`).join(''):'<p class="panel-description">No citizen cases are currently recorded.</p>'}<h3>Recent case activity</h3>${casework.history.length?`<ul class="casework-history-list">${casework.history.slice(0,8).map(entry=>`<li><b>${escapeHtml(entry.action)}:</b> ${escapeHtml(entry.title)} <small>· ${escapeHtml(entry.date)}</small><p>${escapeHtml(entry.note)}</p></li>`).join('')}</ul>`:'<p class="panel-description">Case referrals and resolutions will appear here.</p>'}</section>
     <section class="panel"><div class="command-section-head"><div><span class="eyebrow">PERSONAL WORK QUEUE</span><h2>My assigned work</h2><p class="panel-description">New assignments arrive monthly. You choose: take responsibility, keep pending for a later month, or reject. Unfinished work is carried forward; only your completion decision closes a mission.</p></div></div>${tasks.length ? tasks.map(t=>`<article class="panel office-task-card"><div class="command-section-head"><div><span class="gold-tag">${escapeHtml(t.level || scope.level)} · ${escapeHtml(t.status)}</span><h3>${escapeHtml(t.title)}</h3></div><b>${Number(t.carryForwardCount || 0) ? `Carried ${Number(t.carryForwardCount)}×` : 'New'}</b></div><p>${escapeHtml(t.detail || 'Assigned responsibility')}</p><div class="task-detail-grid"><div><small>FUNDS REQUIRED</small><b>${money(Number(t.budgetRequired || 0))}</b><small>${escapeHtml(t.fundingSource || 'Office allocation')}</small></div><div><small>TIME REQUIRED</small><b>${Number(t.estimatedDuration || 1)} months</b></div><div><small>TIME LEFT</small><b>${Number(t.monthsRemaining ?? t.estimatedDuration ?? 1)} months</b></div><div><small>ASSIGNED BY</small><b>${escapeHtml(t.assignedBy)}</b></div><div><small>PARTY IMPACT</small><b>+${Number(t.expectedPartyImpact || 1)}</b></div><div><small>REPUTATION IMPACT</small><b>+${Number(t.expectedReputationImpact || 1)}</b></div></div><p><b>Resources required:</b> ${escapeHtml(t.resources || 'Staff coordination and field work')}</p><p><b>How to use this assignment:</b> ${escapeHtml(t.expectedUse || '')}</p><p><b>Expected outcome:</b> ${escapeHtml(t.expectedOutcome || 'A measurable improvement in the relevant game system.')}</p><p><b>Risk:</b> ${escapeHtml(t.risk || 'Delay may reduce public confidence.')}</p><p><b>Progress:</b> ${Number(t.progress || 0)}% · ${Number(t.monthsWorked || 0)} month(s) worked</p><small>Assigned ${escapeHtml(t.createdAt || dateText())} · ${escapeHtml(t.due || 'This month')}</small><div class="gov-budget-actions">${t.status==='Pending'?`<button class="primary-btn" data-office-task="${t.id}">TAKE RESPONSIBILITY</button>`:''}${t.status==='In progress'?`<button class="primary-btn" data-office-complete="${t.id}">COMPLETE & REPORT</button>`:''}<button class="secondary-btn" data-office-keep="${t.id}">KEEP PENDING</button><button class="secondary-btn" data-office-reject="${t.id}">REJECT TASK</button></div></article>`).join('') : '<p class="panel-description">No work is currently assigned.</p>'}</section>
     <section class="panel"><span class="eyebrow">COMPLETED WORK ARCHIVE</span><h2>Completed and closed missions</h2>${office.taskHistory && office.taskHistory.length ? office.taskHistory.slice(-8).reverse().map(item=>`<div class="finance-history"><span><b>${escapeHtml(typeof item === 'string' ? item : item.title)}</b><small>${escapeHtml(typeof item === 'string' ? 'Legacy record' : (item.completedAt ? `Completed · ${item.completedAt}` : item.rejectedAt ? `Rejected · ${item.rejectedAt}` : 'Archived'))}</small></span><small>${escapeHtml(typeof item === 'string' ? '' : (item.impactSummary || ''))}</small></div>`).join('') : '<p class="panel-description">Completed missions will appear here.</p>'}</section>
     <section class="panel"><div class="command-section-head"><div><span class="eyebrow">SIGNATURE DESK</span><h2>Pending for my approval</h2></div><b>${pending.length} pending</b></div>${pending.length ? pending.map(f=>`<article class="panel government-portfolio"><span class="gold-tag">OFFICIAL FILE · ${escapeHtml(f.from)}</span><h3>${escapeHtml(f.title)}</h3><p class="panel-description">${escapeHtml(f.summary)}</p><p><b>AI / officer recommendation:</b> ${escapeHtml(f.recommendation)}</p><div class="gov-budget-actions"><button class="primary-btn" data-office-decision="approve" data-office-file="${f.id}">APPROVE & SIGN</button><button class="secondary-btn" data-office-decision="return" data-office-file="${f.id}">RETURN FOR REVISION</button><button class="secondary-btn" data-office-decision="reject" data-office-file="${f.id}">REJECT</button></div></article>`).join('') : '<p class="panel-description">No important files require your signature right now. Routine work is being handled by the administration.</p>'}</section>
@@ -8230,6 +8291,8 @@ document.addEventListener('click', event => {
   }
   const officeReject = event.target.closest('[data-office-reject]');
   if (officeReject) { rejectOfficeTask(officeReject.dataset.officeReject); return; }
+  const constituencyCase = event.target.closest('[data-constituency-case]');
+  if (constituencyCase) { updateConstituencyCase(constituencyCase.dataset.caseId, constituencyCase.dataset.constituencyCase); return; }
   const officeDuty = event.target.closest('[data-office-duty]');
   if (officeDuty) { recordPoliticalOfficeDuty(officeDuty.dataset.officeDuty); return; }
   const officeStart = event.target.closest('[data-office-task]');
