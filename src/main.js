@@ -129,6 +129,21 @@ const defaults = {
     lastAlertPopupId: null
   },
 
+  economySimulation: {
+    taxRate: 17,
+    annualTaxRevenueCr: 5950000,
+    annualSpendCr: 5600000,
+    publicDebtCr: 18100000,
+    developmentBudgetCr: 85000,
+    developmentIndex: 42,
+    infrastructureIndex: 38,
+    employmentIndex: 44,
+    welfareIndex: 46,
+    projects: [],
+    ledger: [],
+    lastTaxYear: 1,
+    leaderboardScope: 'world'
+  },
   finance: {
     businesses: [],
     fixedDeposits: 0,
@@ -318,6 +333,21 @@ if (!Array.isArray(state.elections.nominationQueue)) state.elections.nominationQ
 if (!Array.isArray(state.elections.completedCounting)) state.elections.completedCounting = [];
 if (!Number.isFinite(Number(state.elections.lifecycleVersion))) state.elections.lifecycleVersion = 1;
 let activeTab = 'Dashboard';
+function ensureEconomySimulation() {
+  if (!state.economySimulation || typeof state.economySimulation !== 'object') {
+    state.economySimulation = { taxRate:17, annualTaxRevenueCr:5950000, annualSpendCr:5600000, publicDebtCr:18100000, developmentBudgetCr:85000, developmentIndex:42, infrastructureIndex:38, employmentIndex:44, welfareIndex:46, projects:[], ledger:[], lastTaxYear:0, leaderboardScope:'world' };
+  }
+  const e = state.economySimulation;
+  for (const [key, fallback] of Object.entries({taxRate:17,annualTaxRevenueCr:5950000,annualSpendCr:5600000,publicDebtCr:18100000,developmentBudgetCr:85000,developmentIndex:42,infrastructureIndex:38,employmentIndex:44,welfareIndex:46,lastTaxYear:0})) {
+    if (!Number.isFinite(Number(e[key]))) e[key] = fallback;
+  }
+  if (!Array.isArray(e.projects)) e.projects = [];
+  if (!Array.isArray(e.ledger)) e.ledger = [];
+  if (!['world','country','state','district'].includes(e.leaderboardScope)) e.leaderboardScope='world';
+  e.taxRate = Math.max(5, Math.min(35, Number(e.taxRate)||17));
+  return e;
+}
+ensureEconomySimulation();
 if (!state.phone || typeof state.phone !== 'object') state.phone = { view: 'home', posts: [], messages: [], notifications: [], notes: '' };
 for (const key of ['posts','messages','notifications']) if (!Array.isArray(state.phone[key])) state.phone[key] = [];
 if (!['home','social','messages','calls','contacts','news','calendar','notes','email','camera','gallery','browser','music','wallet','settings'].includes(state.phone.view)) state.phone.view = 'home';
@@ -777,7 +807,7 @@ function icon(name) {
     Elections: '▤',
     Government: '🏛',
     Relationships: '♧',
-    Finance: '₹',
+    Finance: '₹',\n    Economy: '▥',\n    Leaderboards: '🏆',
     News: '▣',
     Intelligence: '◈',
     'Public Opinion': '♥',
@@ -838,10 +868,10 @@ function shell(content) {
   // Secondary modules remain available through contextual section navigation.
   const nav = [
     'Dashboard', 'Career', 'Party', 'Elections', 'Parliament',
-    'Government', 'Political Life', 'Phone', 'India Map', 'Constituency', 'Intelligence', 'Finance', 'News', 'Profile'
+    'Government', 'Political Life', 'Phone', 'India Map', 'Constituency', 'Intelligence', 'Economy', 'Leaderboards', 'Finance', 'News', 'Profile'
   ];
   const navDetails = {
-    'Dashboard':'Career overview','Career':'Progress & milestones','Party':'Organisation & members','Elections':'Nominate to count','Parliament':'Debates & legislation','Government':'State & Central offices','Political Life':'Institutions & public life','Phone':'Social, messages & apps','India Map':'Explore regions','Constituency':'Local representation','Intelligence':'Political analysis','Finance':'Funds & accounts','News':'Political updates','Profile':'Player & settings'
+    'Dashboard':'Career overview','Career':'Progress & milestones','Party':'Organisation & members','Elections':'Nominate to count','Parliament':'Debates & legislation','Government':'State & Central offices','Political Life':'Institutions & public life','Phone':'Social, messages & apps','India Map':'Explore regions','Constituency':'Local representation','Intelligence':'Political analysis','Finance':'Funds & accounts','Economy':'Taxes & development','Leaderboards':'Regional performance','News':'Political updates','Profile':'Player & settings'
   };
 
   return `
@@ -2859,6 +2889,32 @@ function partyNameSafe() {
 }
 
 
+function processAnnualEconomy() {
+  const e=ensureEconomySimulation();
+  const year=Math.max(1,Number(state.year)||1);
+  // One annual tax settlement enters the public development account; it is not personal wealth.
+  const receipts=Math.round(e.annualTaxRevenueCr);
+  const developmentShare=Math.round(receipts*0.01);
+  e.developmentBudgetCr+=developmentShare;
+  e.ledger.unshift({note:`Annual tax settlement (${e.taxRate}% effective rate)`,amount:receipts,year});
+  e.ledger.unshift({note:'Development allocation from tax receipts',amount:developmentShare,year});
+  let completed=0;
+  e.projects.forEach(project=>{
+    if(project.status==='Active'){
+      project.status='Completed';project.completed=`Year ${year}`;completed++;
+      const gains={roads:{infrastructureIndex:3,developmentIndex:2},water:{welfareIndex:3,developmentIndex:2},health:{welfareIndex:4,developmentIndex:2},schools:{welfareIndex:3,developmentIndex:3},transit:{infrastructureIndex:4,employmentIndex:2,developmentIndex:2},industry:{employmentIndex:4,developmentIndex:3}};
+      const effects=gains[project.id]||{developmentIndex:1};
+      Object.entries(effects).forEach(([key,amount])=>{e[key]=Math.min(100,Math.max(0,Number(e[key]||0)+amount));});
+    }
+  });
+  if(completed){
+    e.ledger.unshift({note:`${completed} development project(s) completed`,amount:0,year});
+    state.publicSupport=Math.max(0,Math.min(100,Number(state.publicSupport||0)+Math.min(3,completed)));
+    state.reputation=Math.max(0,Math.min(100,Number(state.reputation||0)+Math.min(2,completed)));
+  }
+  e.ledger=e.ledger.slice(0,100);
+  e.projects=e.projects.slice(0,50);
+}
 function endDay() {
   if (!state.characterCreated) return toast('Create your politician first.');
   state.day = 1;
@@ -2867,6 +2923,7 @@ function endDay() {
     state.month = 1;
     state.year = Number(state.year || 1) + 1;
     state.age = Number(state.age || 21) + 1;
+    processAnnualEconomy();
   }
   state.actionsUsed = 0;
   runAiAdministration();
@@ -8075,6 +8132,109 @@ function phonePage() {
   return `<div class="page-heading"><div><span class="eyebrow">RAJNITI PHONE</span><h1>Phone</h1><p class="muted">Social life, communications and everyday apps</p></div></div><div class="phone-layout"><aside class="panel phone-side"><div class="phone-device-label">RAJNITI MOBILE</div>${apps.map(([id,name,symbol])=>`<button class="phone-side-app ${view===id?'active':''}" data-phone-view="${id}"><span>${symbol}</span>${name}</button>`).join('')}<button class="phone-side-app ${view==='home'?'active':''}" data-phone-view="home"><span>⌂</span>Home</button></aside><div class="phone-screen"><div class="phone-status"><span>${dateText()}</span><span>● ● ●  ▰</span></div><div class="phone-view-heading"><button class="btn btn-secondary" data-phone-view="home">← Apps</button><b>${views[view] || 'Phone'}</b></div>${body}</div></div>`;
 }
 
+
+/* ECONOMY, TAXATION & DEVELOPMENT SIMULATION */
+function economyCr(value) {
+  const n = Math.round(Number(value)||0);
+  return '₹' + n.toLocaleString('en-IN') + ' cr';
+}
+function economyProjectCatalog() {
+  return [
+    {id:'roads',name:'Roads & bridges',cost:1200,description:'Connect rural areas, reduce travel friction and improve market access.',effect:'Infrastructure +3 · Economy +2'},
+    {id:'water',name:'Water & sanitation',cost:850,description:'Expand safe water access and municipal sanitation.',effect:'Welfare +3 · Public trust +2'},
+    {id:'health',name:'District hospital upgrade',cost:1600,description:'Improve emergency care capacity and district health services.',effect:'Healthcare +4 · Welfare +2'},
+    {id:'schools',name:'Government school renewal',cost:1100,description:'Upgrade classrooms, labs and school facilities.',effect:'Education +4 · Human development +2'},
+    {id:'transit',name:'Public transport corridor',cost:2400,description:'Improve bus connectivity and reduce congestion in growth corridors.',effect:'Infrastructure +4 · Employment +2'},
+    {id:'industry',name:'Industrial & MSME cluster',cost:3200,description:'Build serviced industrial land and small-business infrastructure.',effect:'Employment +4 · Economy +4'}
+  ];
+}
+function economyPage() {
+  const e=ensureEconomySimulation();
+  const currentYear=Math.max(1,Number(state.year)||1);
+  const monthlyTax=Math.round(e.annualTaxRevenueCr/12);
+  const completed=e.projects.filter(p=>p.status==='Completed').length;
+  const catalog=economyProjectCatalog();
+  const rows=e.projects.slice(0,10).map(p=>`<tr><td><b>${escapeHtml(p.name)}</b><small>${escapeHtml(p.location||'National programme')}</small></td><td>${economyCr(p.cost)}</td><td>${escapeHtml(p.status)}</td><td>${escapeHtml(p.started||'Year '+currentYear)}</td></tr>`).join('');
+  return `<div class="page-heading"><div><div class="eyebrow">PUBLIC FINANCE & DEVELOPMENT</div><h1>Economy & <em>development</em></h1><p>Manage simulated tax policy, public finances and infrastructure investment. All public-budget figures use ₹ crore; they are game values, not live government accounts.</p></div></div>
+  <div class="stats-grid">
+    ${statCard('ANNUAL TAX RECEIPTS',economyCr(e.annualTaxRevenueCr),'Estimated at current tax setting','₹')}
+    ${statCard('MONTHLY TAX FLOW',economyCr(monthlyTax),'Annual receipts ÷ 12','↗')}
+    ${statCard('DEVELOPMENT BUDGET',economyCr(e.developmentBudgetCr),'Available for new projects','⌂')}
+    ${statCard('PUBLIC DEBT',economyCr(e.publicDebtCr),'Illustrative outstanding debt','▤')}${statCard('DEVELOPMENT INDEX',`${Math.round(e.developmentIndex)}/100`,'Simulated development','↗')}${statCard('INFRASTRUCTURE',`${Math.round(e.infrastructureIndex)}/100`,'Roads, transit and utilities','⌂')}
+  </div>
+  <section class="panel"><span class="eyebrow">TAX POLICY</span><h2>Set the effective tax rate</h2><p class="panel-description">The simulation estimates receipts from a fixed, illustrative national taxable base. Higher rates raise receipts but can reduce the economy score; lower rates support activity but constrain revenue.</p>
+    <div class="economy-tax-row"><label for="economyTaxRate">Effective tax rate</label><b id="economyTaxReadout">${e.taxRate}%</b></div>
+    <input id="economyTaxRate" type="range" min="5" max="35" step="1" value="${e.taxRate}" class="text-input" style="padding:0">
+    <div class="finance-line"><span>Estimated annual receipts</span><b>${economyCr(Math.round(35000000*e.taxRate/100))}</b></div>
+    <button class="primary-btn" data-economy-action="apply-tax">APPLY TAX POLICY</button>
+    <small class="muted">Applies once per in-game year. Rates and revenue are simplified gameplay models, not statutory tax advice.</small>
+  </section>
+  <section class="panel"><div class="section-heading"><div><span class="eyebrow">CAPITAL INVESTMENT</span><h2>Development projects</h2></div><span class="gold-tag">${completed} COMPLETED</span></div>
+    <div class="economy-project-grid">${catalog.map(p=>`<article class="economy-project"><div class="economy-project-top"><b>${p.name}</b><strong>${economyCr(p.cost)}</strong></div><p>${p.description}</p><small>${p.effect}</small><button class="secondary-btn" data-economy-project="${p.id}">FUND PROJECT</button></article>`).join('')}</div>
+    <p class="panel-description">Funding deducts from the development budget. A project is recorded as active; completion is resolved on the next annual turn and improves the matching simulated indicators.</p>
+  </section>
+  <section class="panel"><span class="eyebrow">PUBLIC FINANCE LEDGER</span><h2>Recent transactions</h2><div class="table-wrap"><table><thead><tr><th>Transaction</th><th>Amount</th><th>Year</th></tr></thead><tbody>${e.ledger.slice(0,12).map(x=>`<tr><td>${escapeHtml(x.note)}</td><td>${economyCr(x.amount)}</td><td>${escapeHtml(x.year)}</td></tr>`).join('')||'<tr><td colspan="3">No transactions recorded yet.</td></tr>'}</tbody></table></div></section>
+  <section class="panel"><span class="eyebrow">PROJECT REGISTER</span><h2>Approved and completed projects</h2><div class="table-wrap"><table><thead><tr><th>Project</th><th>Investment</th><th>Status</th><th>Started</th></tr></thead><tbody>${rows||'<tr><td colspan="4">No projects funded yet.</td></tr>'}</tbody></table></div></section>`;
+}
+function economyAction(action, projectId='') {
+  const e=ensureEconomySimulation();
+  const year=Math.max(1,Number(state.year)||1);
+  if(action==='apply-tax') {
+    if(Number(e.lastTaxYear)===year) { showToast('Tax policy already applied this in-game year.'); return; }
+    const slider=document.getElementById('economyTaxRate');
+    const rate=Math.max(5,Math.min(35,Number(slider?.value)||e.taxRate));
+    const old=e.annualTaxRevenueCr;
+    e.taxRate=rate;
+    e.annualTaxRevenueCr=Math.round(35000000*rate/100);
+    e.lastTaxYear=year;
+    e.ledger.unshift({note:`Tax policy set to ${rate}%`,amount:e.annualTaxRevenueCr-old,year});
+    state.publicSupport=Math.max(0,Math.min(100,Number(state.publicSupport||0)+(rate<=18?1:-1)));
+    state.reputation=Math.max(0,Math.min(100,Number(state.reputation||0)+(rate<=20?1:0)));
+    saveState();render();return;
+  }
+  const project=economyProjectCatalog().find(p=>p.id===projectId);
+  if(!project) return;
+  if(e.projects.some(p=>p.id===projectId&&p.status!=='Completed')) { showToast('This project is already active.'); return; }
+  if(e.developmentBudgetCr<project.cost) { showToast('Insufficient development budget.'); return; }
+  e.developmentBudgetCr-=project.cost;
+  e.projects.unshift({...project,status:'Active',started:`Year ${year}`,location:state.constituency?.district||state.stateName||'National'});
+  e.ledger.unshift({note:`Funded: ${project.name}`,amount:-project.cost,year});
+  e.ledger=e.ledger.slice(0,100);e.projects=e.projects.slice(0,50);
+  saveState();render();
+}
+function leaderboardRows(scope) {
+  const e=ensureEconomySimulation();
+  const player=String(state.playerName||'Player');
+  const current=Math.max(0,Math.min(100,Math.round(Number(e.developmentIndex||42)*.35+Number(e.infrastructureIndex||38)*.2+Number(e.employmentIndex||44)*.15+Number(e.welfareIndex||46)*.15+(Number(state.publicSupport)||0)*.1+(Number(state.reputation)||0)*.05)));
+  const base=[
+    {name:'Player Career',score:current,detail:`${state.party||'Independent'} · ${state.stateName||'India'}`},
+    {name:'People’s Development Front',score:Math.max(20,current+18),detail:'Simulated political organisation'},
+    {name:'National Reform Alliance',score:Math.max(18,current+12),detail:'Simulated political organisation'},
+    {name:'Civic Progress League',score:Math.max(15,current+7),detail:'Simulated political organisation'},
+    {name:'Regional Unity Party',score:Math.max(12,current+3),detail:'Simulated political organisation'}
+  ];
+  const geo={
+    world:['India','United States','China','Indonesia','Brazil','Germany','Japan','Nigeria','Mexico','United Kingdom'],
+    country:['Karnataka','Maharashtra','Tamil Nadu','Gujarat','Uttar Pradesh','Kerala','Telangana','Rajasthan','West Bengal','Madhya Pradesh'],
+    state:['Bengaluru Urban','Mysuru','Udupi','Belagavi','Dharwad','Dakshina Kannada','Shivamogga','Kalaburagi','Tumakuru','Kodagu'],
+    district:[state.constituency?.district||'Player District','Bengaluru Urban','Mysuru','Udupi','Belagavi','Dakshina Kannada','Dharwad','Shivamogga','Tumakuru','Kodagu']
+  };
+  if(scope==='world') return [{name:'India',score:current,detail:'Player country · simulated index'},...geo.world.slice(1).map((name,i)=>({name,score:Math.max(30,90-i*6),detail:'Illustrative world benchmark'}))];
+  if(scope==='country') return geo.country.map((name,i)=>({name,score:name===(state.stateName||'Karnataka')?current:Math.max(25,88-i*5),detail:name===(state.stateName||'Karnataka')?'Player state · simulated index':'Illustrative state benchmark'}));
+  if(scope==='state') return geo.state.map((name,i)=>({name,score:name===(state.constituency?.district||'Udupi')?current:Math.max(20,86-i*6),detail:name===(state.constituency?.district||'Udupi')?'Player district · simulated index':'Illustrative district benchmark'}));
+  return geo.district.map((name,i)=>({name,score:i===0?current:Math.max(15,84-i*6),detail:i===0?'Player district · simulated index':'Illustrative district benchmark'}));
+}
+function leaderboardsPage() {
+  const e=ensureEconomySimulation(), scope=e.leaderboardScope;
+  const labels={world:'World · top countries',country:'India · top states',state:`${state.stateName||'State'} · top districts`,district:`${state.constituency?.district||'District'} · local comparison`};
+  const rows=leaderboardRows(scope).sort((a,b)=>b.score-a.score).map((r,i)=>`<tr><td><b>${i+1}</b></td><td><strong>${escapeHtml(r.name)}</strong><small>${escapeHtml(r.detail)}</small></td><td><div class="mini-progress"><i style="width:${Math.max(0,Math.min(100,r.score))}%"></i></div><b>${Math.round(r.score)}/100</b></td></tr>`).join('');
+  return `<div class="page-heading"><div><div class="eyebrow">SIMULATED PERFORMANCE RANKINGS</div><h1>Regional <em>leaderboards</em></h1><p>Compare development, public services and economic performance across simulated regions. Rankings are generated by this game and are not official or live rankings.</p></div></div>
+  <section class="panel"><div class="section-heading"><div><span class="eyebrow">RANKING SCOPE</span><h2>${labels[scope]}</h2></div></div>
+  <div class="secondary-tabs">${[['world','World'],['country','Country'],['state','State'],['district','District']].map(([id,label])=>`<button class="secondary-btn ${scope===id?'active':''}" data-leaderboard-scope="${id}">${label}</button>`).join('')}</div>
+  <div class="table-wrap"><table><thead><tr><th>Rank</th><th>Region</th><th>Development score</th></tr></thead><tbody>${rows}</tbody></table></div>
+  <p class="panel-description">The player’s region uses current in-game indicators where available. Other entries are deterministic fictional benchmarks for gameplay comparison; no external data or online leaderboard service is used.</p></section>`;
+}
+
 /* MAIN RENDER */
 
 function render() {
@@ -8115,6 +8275,12 @@ function render() {
       break;
     case 'Elections':
       content = electionPage();
+      break;
+    case 'Economy':
+      content = economyPage();
+      break;
+    case 'Leaderboards':
+      content = leaderboardsPage();
       break;
     case 'Finance':
       content = financePage();
@@ -8198,6 +8364,10 @@ document.addEventListener('input', event => {
 });
 
 document.addEventListener('change', event => {
+  if(event.target?.id==='economyTaxRate'){
+    const readout=document.getElementById('economyTaxReadout');
+    if(readout) readout.textContent=`${event.target.value}%`;
+  }
   if (event.target?.id === 'atlasMapMetric') {
     state.mapMetric = metricSafe(event.target.value);
     saveState(); render(); return;
@@ -8229,6 +8399,12 @@ document.addEventListener('change', event => {
 });
 
 document.addEventListener('click', event => {
+  const economyActionButton=event.target.closest('[data-economy-action]');
+  if(economyActionButton){economyAction(economyActionButton.dataset.economyAction);return;}
+  const economyProjectButton=event.target.closest('[data-economy-project]');
+  if(economyProjectButton){economyAction('fund-project',economyProjectButton.dataset.economyProject);return;}
+  const leaderboardButton=event.target.closest('[data-leaderboard-scope]');
+  if(leaderboardButton){ensureEconomySimulation().leaderboardScope=leaderboardButton.dataset.leaderboardScope;saveState();render();return;}
   const electionSectionButton = event.target.closest('[data-election-section]');
   if (electionSectionButton) {
     const requestedSection = electionSectionButton.dataset.electionSection;

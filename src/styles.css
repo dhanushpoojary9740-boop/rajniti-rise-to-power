@@ -2814,3 +2814,21 @@ html {
 .phone-side-app{display:flex;align-items:center;gap:10px;width:100%;text-align:left;border:1px solid transparent;background:transparent;color:inherit;padding:11px 10px;border-radius:10px;cursor:pointer;margin:2px 0}.phone-side-app span{width:24px;text-align:center;color:#d5b36a;font-size:18px}.phone-side-app.active,.phone-side-app:hover{background:rgba(201,164,92,.12);border-color:rgba(201,164,92,.3)}
 .phone-screen{min-width:0;border:1px solid rgba(201,164,92,.22);border-radius:18px;background:linear-gradient(160deg,rgba(19,34,48,.98),rgba(9,17,27,.98));padding:14px;box-shadow:0 18px 50px rgba(0,0,0,.18)}.phone-status{display:flex;justify-content:space-between;font-size:11px;color:#b8c3d2;padding:2px 5px 12px;border-bottom:1px solid rgba(255,255,255,.08)}.phone-view-heading{display:flex;align-items:center;gap:12px;padding:12px 2px 16px}.phone-view-heading b{font-size:17px}.phone-welcome{padding:20px}.phone-app-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-top:18px}.phone-app{display:flex;flex-direction:column;align-items:flex-start;text-align:left;gap:7px;min-width:0;padding:13px;border:1px solid rgba(201,164,92,.18);border-radius:13px;background:rgba(255,255,255,.025);color:inherit;cursor:pointer}.phone-app-icon{display:grid;place-items:center;width:42px;height:42px;border-radius:13px;background:rgba(201,164,92,.15);color:#e5c77e;font-size:23px}.phone-app small{font-size:11px;color:var(--muted,#9ba8b8)}.phone-compose{display:grid;gap:10px;margin-top:12px}.phone-compose textarea,.phone-compose input,#phone-notes{width:100%;box-sizing:border-box;border:1px solid rgba(201,164,92,.25);border-radius:10px;background:rgba(0,0,0,.16);color:inherit;padding:12px;font:inherit}.phone-post{margin-top:12px}.phone-post-head{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap}.phone-post-head small{color:var(--muted,#9ba8b8)}.phone-post-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.phone-post-actions span{margin-right:auto;color:#d9b86b}.phone-list-row{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;padding:13px 0;border-bottom:1px solid rgba(255,255,255,.08)}.phone-list-row small{display:block;color:var(--muted,#9ba8b8);margin-top:4px}.phone-list-row>span{color:var(--muted,#9ba8b8);font-size:12px}
 @media(max-width:760px){.phone-layout{grid-template-columns:1fr}.phone-side{position:static;display:flex;gap:5px;overflow-x:auto;white-space:nowrap}.phone-device-label{display:none}.phone-side-app{width:auto;flex:0 0 auto;padding:9px}.phone-app-grid{grid-template-columns:repeat(3,minmax(0,1fr))}.phone-screen{padding:10px}}
+
+
+/* Economy and development simulation */
+.economy-tax-row{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:18px 0 8px}
+.economy-tax-row b{font-size:1.35rem;color:var(--gold,#d8b56a)}
+.economy-project-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px;margin-top:18px}
+.economy-project{border:1px solid var(--line,#29364b);border-radius:14px;padding:16px;background:rgba(255,255,255,.025);display:flex;flex-direction:column;gap:10px}
+.economy-project-top{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}
+.economy-project-top strong{white-space:nowrap;color:var(--gold,#d8b56a)}
+.economy-project p{margin:0;color:var(--muted,#9ca9bc);line-height:1.55}
+.economy-project small{color:var(--muted,#9ca9bc);margin-top:auto}
+.economy-project button{margin-top:8px}
+.table-wrap{overflow-x:auto}
+.table-wrap table{width:100%;border-collapse:collapse;min-width:460px}
+.table-wrap th,.table-wrap td{text-align:left;padding:12px 10px;border-bottom:1px solid var(--line,#29364b);vertical-align:middle}
+.table-wrap th{font-size:.72rem;letter-spacing:.06em;color:var(--muted,#9ca9bc);text-transform:uppercase}
+.table-wrap td small{display:block;color:var(--muted,#9ca9bc);margin-top:4px}
+@media(max-width:640px){.economy-project-grid{grid-template-columns:1fr}.table-wrap table{min-width:390px}}
