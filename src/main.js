@@ -8247,11 +8247,13 @@ function ensurePoliticalJourney() {
   if (!state.politicalJourney || typeof state.politicalJourney !== 'object') {
     state.politicalJourney = {
       developmentFundCr: Number(ensureEconomySimulation().developmentBudgetCr || 12000), projects: [], cabinetReviews: [], coalitionDeals: [], bills: [], accountabilityCases: [], manifesto: [], departmentReviews: [], history: [], nextId: 1,
-      budget: { revenueCr: 85000, expenditureCr: 82000, reserveCr: 3000, year: 1 }, lastActionMonth: {}
+      budget: { revenueCr: 85000, expenditureCr: 82000, reserveCr: 3000, year: 1 }, lastActionMonth: {},
+      crisisCases: [], federalMeetings: [], coordinationIndex: 50, nextCrisisMonth: null
     };
   }
   const p = state.politicalJourney;
-  for (const key of ['projects','cabinetReviews','coalitionDeals','bills','accountabilityCases','manifesto','departmentReviews','history']) if (!Array.isArray(p[key])) p[key] = [];
+  for (const key of ['projects','cabinetReviews','coalitionDeals','bills','accountabilityCases','manifesto','departmentReviews','history','crisisCases','federalMeetings']) if (!Array.isArray(p[key])) p[key] = [];
+  if (!Number.isFinite(Number(p.coordinationIndex))) p.coordinationIndex = 50;
   if (!p.budget || typeof p.budget !== 'object') p.budget = { revenueCr:85000, expenditureCr:82000, reserveCr:3000, year:Number(state.year)||1 };
   if (!p.lastActionMonth || typeof p.lastActionMonth !== 'object') p.lastActionMonth = {};
   if (!Number.isFinite(Number(p.nextId))) p.nextId = 1;
@@ -8290,6 +8292,8 @@ function politicalJourneyPage() {
   const caseRows = p.accountabilityCases.length ? p.accountabilityCases.map(c=>`<article class="pj-record"><div><span class="gold-tag">${escapeHtml(c.status)}</span><h3>${escapeHtml(c.title)}</h3><p>${escapeHtml(c.detail)}</p></div>${c.status==='Pending'?`<div class="pj-actions"><button class="secondary-btn" data-pj-action="resolve-case" data-pj-id="${c.id}" data-pj-choice="transparent">Publish records</button><button class="secondary-btn" data-pj-action="resolve-case" data-pj-id="${c.id}" data-pj-choice="deny">Contest finding</button></div>`:''}</article>`).join(''):'<p class="panel-description">No active audit or ethics cases. Open a routine audit review to create a simulated accountability file.</p>';
   const promiseRows = p.manifesto.length ? p.manifesto.map(m=>`<article class="pj-record"><div><span class="gold-tag">${escapeHtml(m.status)}</span><h3>${escapeHtml(m.title)}</h3><p>${escapeHtml(m.detail)}</p></div>${m.status==='Pending'?`<button class="secondary-btn" data-pj-action="deliver-promise" data-pj-id="${m.id}">Record delivery</button>`:''}</article>`).join(''):'<p class="panel-description">Track campaign commitments and record delivery before the next election.</p>';
   const cabinet = p.cabinetReviews.length ? p.cabinetReviews.slice(0,4).map(r=>`<div class="history-row"><div><b>${escapeHtml(r.title)}</b><small>${escapeHtml(r.date)} · Performance ${r.score}/100</small><small>${escapeHtml(r.note)}</small></div></div>`).join(''):'<p class="panel-description">No cabinet reviews recorded yet.</p>';
+  const crisisRows = p.crisisCases.length ? p.crisisCases.slice(0,8).map(c=>`<article class="pj-record"><div><span class="gold-tag">${escapeHtml(c.status)}</span><h3>${escapeHtml(c.title)}</h3><p>${escapeHtml(c.detail)}</p><small>${escapeHtml(c.date)} · Response: ${escapeHtml(c.response||'Awaiting decision')}</small></div>${c.status==='Active'?`<div class="pj-actions"><button class="secondary-btn" data-pj-action="respond-crisis" data-pj-id="${c.id}" data-pj-choice="mobilize">Mobilise response</button><button class="secondary-btn" data-pj-action="respond-crisis" data-pj-id="${c.id}" data-pj-choice="coordinate">Coordinate with Centre/State</button><button class="secondary-btn" data-pj-action="respond-crisis" data-pj-id="${c.id}" data-pj-choice="brief">Issue verified public update</button></div>`:''}</article>`).join(''):'<p class="panel-description">No crisis briefing has been opened. Generate a monthly risk briefing to review a simulated public-service or emergency issue.</p>';
+  const federalRows = p.federalMeetings.length ? p.federalMeetings.slice(0,6).map(m=>`<div class="history-row"><div><b>${escapeHtml(m.counterpart)} · ${escapeHtml(m.agenda)}</b><small>${escapeHtml(m.date)} · ${escapeHtml(m.outcome)}</small></div></div>`).join(''):'<p class="panel-description">No Centre–State coordination meetings recorded.</p>';
   const departments = ['Finance','Home','Education','Health','Infrastructure','Agriculture','Welfare','Transport'];
   const departmentRows = departments.map(name=>{const value=Number(p.departmentPerformance?.[name] ?? 50);return `<div class="pj-dept-row"><div><b>${name}</b><small>Delivery score</small></div><strong>${value}/100</strong><button class="secondary-btn" data-pj-action="review-department" data-pj-department="${name}">Review</button></div>`}).join('');
   const legacy = Math.round(Math.min(100,Math.max(0,(Number(state.reputation||0)*.22)+(Number(state.publicSupport||0)*.18)+(Number(state.influence||0)*.15)+(Number(state.media?.approval||0)*.15)+(p.projects.filter(x=>x.status==='Completed').length*3)+(p.bills.filter(x=>x.stage==='Enacted').length*4)+(p.manifesto.filter(x=>x.status==='Delivered').length*3)+(p.cabinetReviews.length*1.5))));
@@ -8304,7 +8308,8 @@ function politicalJourneyPage() {
   <section class="pj-section"><div class="pj-section-head"><div><span class="eyebrow">7 · ACCOUNTABILITY</span><h2>Audit, ethics & public accountability</h2><p>Open a simulated audit or ethics file, then publish records or contest the finding. Responses affect trust and political risk.</p></div><button class="primary-btn" data-pj-action="open-audit">Open audit review</button></div><div class="pj-record-list">${caseRows}</div></section>
   <section class="pj-section"><div class="pj-section-head"><div><span class="eyebrow">8 · ELECTION PROMISES</span><h2>Manifesto tracker</h2><p>Record campaign commitments and mark delivery when the government completes the promised work.</p></div></div><div class="pj-form-row"><label>Promise<select id="pj-promise"><option>Improve public healthcare access</option><option>Upgrade roads and public transport</option><option>Expand quality education</option><option>Improve water and sanitation</option><option>Support jobs and local industry</option><option>Strengthen transparent governance</option></select></label><button class="primary-btn" data-pj-action="add-promise">Add manifesto promise</button></div><div class="pj-record-list">${promiseRows}</div></section>
   <section class="pj-section"><div class="pj-section-head"><div><span class="eyebrow">9 · CIVIL SERVICE</span><h2>Department performance</h2><p>Review a department’s delivery score. Routine administration remains delegated; reviews identify where political leadership should intervene.</p></div></div><div class="pj-department-grid">${departmentRows}</div></section>
-  <section class="pj-section"><div class="pj-section-head"><div><span class="eyebrow">10 · CAREER RECORD</span><h2>Legacy & institutional history</h2><p>Your legacy score reflects service delivery, enacted laws, trust, public approval and fulfilled promises.</p></div></div><div class="pj-legacy-score"><strong>${legacy}</strong><span>/100</span><p>Career legacy estimate · saved to this game</p></div><div class="pj-record-list">${p.history.slice(0,15).map(h=>`<div class="history-row"><div><b>${escapeHtml(h.title)}</b><small>${escapeHtml(h.type)} · ${escapeHtml(h.date)}</small><small>${escapeHtml(h.detail)}</small></div></div>`).join('')||'<p class="panel-description">Your governance actions will be recorded here.</p>'}</div></section>
+  <section class="pj-section"><div class="pj-section-head"><div><span class="eyebrow">10 · CRISIS & FEDERAL COORDINATION</span><h2>Emergency response & Centre–State relations</h2><p>Open one monthly risk briefing, record an accountable response, and document coordination with the relevant level of government.</p></div><button class="primary-btn" data-pj-action="risk-briefing">Generate monthly risk briefing</button></div><div class="pj-meter"><span>Coordination index</span><i><b style="width:${Math.max(0,Math.min(100,Number(p.coordinationIndex)||0))}%"></b></i><strong>${Math.round(Number(p.coordinationIndex)||0)}/100</strong></div><div class="pj-record-list">${crisisRows}</div><div class="pj-form-row"><label>Government counterpart<select id="pj-federal-counterpart"><option>Union Government</option><option>State Government</option><option>District Administration</option><option>Neighbouring State</option></select></label><label>Coordination agenda<select id="pj-federal-agenda"><option>Disaster preparedness and relief</option><option>Public health and essential supplies</option><option>Inter-state transport and infrastructure</option><option>Water sharing and resource management</option><option>Fiscal transfers and project approvals</option><option>Law, order and administrative coordination</option></select></label><button class="primary-btn" data-pj-action="federal-meeting">Record coordination meeting</button></div>${federalRows}</section>
+  <section class="pj-section"><div class="pj-section-head"><div><span class="eyebrow">11 · CAREER RECORD</span><h2>Legacy & institutional history</h2><p>Your legacy score reflects service delivery, enacted laws, trust, public approval and fulfilled promises.</p></div></div><div class="pj-legacy-score"><strong>${legacy}</strong><span>/100</span><p>Career legacy estimate · saved to this game</p></div><div class="pj-record-list">${p.history.slice(0,15).map(h=>`<div class="history-row"><div><b>${escapeHtml(h.title)}</b><small>${escapeHtml(h.type)} · ${escapeHtml(h.date)}</small><small>${escapeHtml(h.detail)}</small></div></div>`).join('')||'<p class="panel-description">Your governance actions will be recorded here.</p>'}</div></section>
   <p class="creator-note">Simulation note: these are fictional gameplay systems and estimates, not real public accounts, official performance ratings, legal advice or actual government processes.</p>`;
 }
 
@@ -8342,6 +8347,46 @@ function politicalJourneyAction(action, button) {
     const promise=byId(p.manifesto);if(!promise||promise.status!=='Pending')return;promise.status='Delivered';promise.delivered=dateText();approvalChange(2);state.reputation=Math.min(100,Number(state.reputation||0)+1);politicalJourneyLog('Manifesto commitment delivered',promise.title,'Campaign');
   } else if(action==='review-department'){
     const department=button.dataset.pjDepartment||'Administration';p.departmentPerformance=p.departmentPerformance||{};const before=Number(p.departmentPerformance[department]??50);const after=Math.min(100,before+5);p.departmentPerformance[department]=after;p.departmentReviews.unshift({department,before,after,date:dateText()});p.departmentReviews=p.departmentReviews.slice(0,50);politicalJourneyLog('Department review',`${department} delivery score ${before} → ${after}.`,'Civil service');
+  } else if(action==='risk-briefing'){
+    const month=typeof currentMonthIndex==='function'?currentMonthIndex():Math.max(0,(Number(state.year||1)-1)*12+Number(state.month||1)-1);
+    if(p.crisisCases.some(c=>Number(c.month)===month)){toast('This month’s risk briefing has already been opened.');return;}
+    const scenarios=[
+      ['Severe weather and local flooding','Heavy rainfall threatens transport links, public facilities and vulnerable communities.'],
+      ['Heatwave and water stress','Rising temperatures increase pressure on drinking-water supply, hospitals and outdoor workers.'],
+      ['Essential-supply disruption','A transport or distribution interruption risks shortages of essential goods in affected districts.'],
+      ['Public-health alert','Health authorities report a developing public-health concern requiring verified information and service coordination.'],
+      ['Infrastructure service outage','A major service interruption affects transport, power or water infrastructure and requires inter-agency response.'],
+      ['Agricultural distress','Unseasonal conditions create urgent needs for farmer support, relief assessment and local coordination.']
+    ];
+    const scenario=scenarios[month%scenarios.length];
+    p.crisisCases.unshift({id:p.nextId++,month,title:scenario[0],detail:scenario[1],status:'Active',date:dateText(),response:''});
+    p.crisisCases=p.crisisCases.slice(0,18);
+    politicalJourneyLog('Monthly risk briefing',`${scenario[0]}: response options opened for review.`,'Crisis management');
+  } else if(action==='respond-crisis'){
+    const item=byId(p.crisisCases);if(!item||item.status!=='Active')return;
+    const choice=button.dataset.pjChoice;
+    if(choice==='mobilize'&&Number(p.developmentFundCr||0)<150){toast('The development fund cannot cover the ₹150 crore response allocation.');return;}
+    if(!politicalJourneyMonthlyGate('crisis-response-'+item.id))return;
+    if(choice==='mobilize'){
+      const cost=150;
+      p.developmentFundCr-=cost;const economy=ensureEconomySimulation();economy.developmentBudgetCr=Math.max(0,Number(economy.developmentBudgetCr||0)-cost);
+      item.response='Emergency resources mobilised · ₹150 crore';item.status='Response recorded';approvalChange(2);state.media=state.media||{};state.media.trust=Math.min(100,Number(state.media.trust||45)+1);
+      politicalJourneyLog('Emergency response',`${item.title}: ₹150 crore mobilised for immediate response.`,'Crisis management');
+    }else if(choice==='coordinate'){
+      p.coordinationIndex=Math.min(100,Number(p.coordinationIndex||50)+4);item.response='Intergovernmental coordination initiated';item.status='Response recorded';approvalChange(1);
+      politicalJourneyLog('Crisis coordination',`${item.title}: coordination initiated with the other level of government.`,'Federal relations');
+    }else if(choice==='brief'){
+      item.response='Verified public information issued; operational response remains active';item.status='Active';state.media=state.media||{};state.media.trust=Math.min(100,Number(state.media.trust||45)+3);approvalChange(1);
+      politicalJourneyLog('Public crisis briefing',`${item.title}: verified public information issued; operational follow-up remains necessary.`,'Public communication');
+    }else return;
+  } else if(action==='federal-meeting'){
+    if(!politicalJourneyMonthlyGate('federal-meeting'))return;
+    const counterpart=document.getElementById('pj-federal-counterpart')?.value||'Government counterpart';
+    const agenda=document.getElementById('pj-federal-agenda')?.value||'Coordination';
+    const outcome='Joint follow-up recorded; responsible offices and next steps documented';
+    p.federalMeetings.unshift({id:p.nextId++,counterpart,agenda,outcome,date:dateText()});p.federalMeetings=p.federalMeetings.slice(0,30);
+    p.coordinationIndex=Math.min(100,Number(p.coordinationIndex||50)+3);state.media=state.media||{};state.media.trust=Math.min(100,Number(state.media.trust||45)+1);
+    politicalJourneyLog('Centre–State coordination meeting',`${counterpart}: ${agenda}. ${outcome}.`,'Federal relations');
   } else return;
   saveState();render();toast('Governance action saved.');
 }
