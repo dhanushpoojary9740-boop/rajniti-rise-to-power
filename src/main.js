@@ -220,6 +220,16 @@ function loadState() {
     const backup = JSON.parse(localStorage.getItem(ELECTION_CALENDAR_STORE_KEY) || 'null');
     if (backup && backup.calendar && Number(backup.savedAt || 0) >= Number(saved.electionsCalendarPersistedAt || 0)) {
       saved.elections = { ...(saved.elections || {}), calendar: backup.calendar };
+      // The countdown is relative to the in-game month. Restoring only nextAt while
+      // loading an older year/month makes every election appear to jump back to its
+      // original countdown. Restore the clock from the same atomic snapshot.
+      const clock = backup.clock;
+      if (clock && Number.isInteger(Number(clock.month)) && Number(clock.month) >= 1 && Number(clock.month) <= 12 &&
+          Number.isInteger(Number(clock.year)) && Number(clock.year) >= 1) {
+        saved.day = Math.max(1, Math.min(31, Number(clock.day) || 1));
+        saved.month = Number(clock.month);
+        saved.year = Number(clock.year);
+      }
       saved.electionsCalendarPersistedAt = Number(backup.savedAt) || 0;
     }
   } catch {}
@@ -782,8 +792,13 @@ function persistStateSafely() {
     state.electionsCalendarPersistedAt = stamp;
     const calendar = state.elections && state.elections.calendar;
     if (calendar && typeof calendar === 'object') {
+      const clock = {
+        day: Math.max(1, Math.min(31, Number(state.day) || 1)),
+        month: Math.max(1, Math.min(12, Number(state.month) || 1)),
+        year: Math.max(1, Number(state.year) || 1)
+      };
       try {
-        localStorage.setItem(ELECTION_CALENDAR_STORE_KEY, JSON.stringify({ savedAt: stamp, calendar }));
+        localStorage.setItem(ELECTION_CALENDAR_STORE_KEY, JSON.stringify({ savedAt: stamp, calendar, clock }));
       } catch (_) { /* Main save may still succeed; keep the live session intact. */ }
     }
     localStorage.setItem(STORE_KEY, JSON.stringify(state));
