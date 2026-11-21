@@ -59,6 +59,7 @@ window.addEventListener('unhandledrejection', event => {
 });
 
 const STORE_KEY = 'rajniti-save-v1';
+const ELECTION_CALENDAR_STORE_KEY = `${STORE_KEY}-calendar-v1`;
 
 const defaults = {
   characterCreated: false,
@@ -211,12 +212,18 @@ const defaults = {
 };
 
 function loadState() {
+  let saved = {};
+  try { saved = JSON.parse(localStorage.getItem(STORE_KEY) || '{}') || {}; } catch {}
+  // Election schedules are also stored in a compact independent record. This
+  // protects calendar dates when the much larger game save reaches WebView quota.
   try {
-    const saved = JSON.parse(localStorage.getItem(STORE_KEY) || '{}');
-    return { ...defaults, ...saved };
-  } catch {
-    return { ...defaults };
-  }
+    const backup = JSON.parse(localStorage.getItem(ELECTION_CALENDAR_STORE_KEY) || 'null');
+    if (backup && backup.calendar && Number(backup.savedAt || 0) >= Number(saved.electionsCalendarPersistedAt || 0)) {
+      saved.elections = { ...(saved.elections || {}), calendar: backup.calendar };
+      saved.electionsCalendarPersistedAt = Number(backup.savedAt) || 0;
+    }
+  } catch {}
+  return { ...defaults, ...saved };
 }
 
 let state = loadState();
@@ -237,7 +244,7 @@ if (!state.assemblyElection8MonthScheduleV221) {
   const previousScheduledAt = Number(assemblySchedule.nextAt);
   assemblySchedule.intervalMonths = 60;
   assemblySchedule.label = 'State Assembly elections';
-  assemblySchedule.nextAt = currentGameMonth + 7;
+  if (!Number.isFinite(Number(assemblySchedule.nextAt))) assemblySchedule.nextAt = currentGameMonth + 7;
   const activeAssemblyElection = state.elections.active;
   if (activeAssemblyElection &&
       activeAssemblyElection.typeId === 'assembly' &&
@@ -257,7 +264,10 @@ if (!state.lokSabhaElection7MonthRetryV630) {
   const nowMonth = Math.max(0, (Number(state.year || 1) - 1) * 12 + (Number(state.month || 1) - 1));
   const oldCycle = Number(state.elections.calendar['lok-sabha']?.nextAt);
   const nextCycle = nowMonth + 7;
-  state.elections.calendar['lok-sabha'] = { ...(state.elections.calendar['lok-sabha'] || {}), intervalMonths: 60, nextAt: nextCycle, label: 'Lok Sabha elections' };
+  const savedLokSchedule = state.elections.calendar['lok-sabha'] || {};
+  state.elections.calendar['lok-sabha'] = { ...savedLokSchedule, intervalMonths: 60,
+    nextAt: Number.isFinite(Number(savedLokSchedule.nextAt)) ? Number(savedLokSchedule.nextAt) : nextCycle,
+    label: savedLokSchedule.label || 'Lok Sabha elections' };
   // Do not mutate the active engine here. ensureLokSabhaElectionEngine() archives
   // any completed 543-seat result before moving to the new scheduled cycle.
   if (Array.isArray(state.elections.partySlate)) state.elections.partySlate.forEach(item => {
@@ -275,7 +285,10 @@ if (!state.lokSabhaElection7MonthRetryV632) {
   const nowMonth = Math.max(0, (Number(state.year || 1) - 1) * 12 + (Number(state.month || 1) - 1));
   const previousCycle = Number(state.elections.calendar['lok-sabha']?.nextAt);
   const retryCycle = nowMonth + 7;
-  state.elections.calendar['lok-sabha'] = { ...(state.elections.calendar['lok-sabha'] || {}), intervalMonths: 60, nextAt: retryCycle, label: 'Lok Sabha elections' };
+  const savedLokSchedule = state.elections.calendar['lok-sabha'] || {};
+  state.elections.calendar['lok-sabha'] = { ...savedLokSchedule, intervalMonths: 60,
+    nextAt: Number.isFinite(Number(savedLokSchedule.nextAt)) ? Number(savedLokSchedule.nextAt) : retryCycle,
+    label: savedLokSchedule.label || 'Lok Sabha elections' };
   if (Array.isArray(state.elections.partySlate)) state.elections.partySlate.forEach(item => {
     if (item && item.typeId === 'lok-sabha' && Number(item.scheduledAt) === previousCycle && ['Proposed','Party Approved','Funded'].includes(item.status)) item.scheduledAt = retryCycle;
   });
@@ -472,7 +485,7 @@ function ensureAssemblyElectionCountdown() {
   const elections = ensureElectionCalendar();
   const schedule = elections.calendar.assembly;
   if (schedule && !elections.assembly224ScheduleV240Applied) {
-    schedule.nextAt = currentMonthIndex() + 7;
+    if (!Number.isFinite(Number(schedule.nextAt))) schedule.nextAt = currentMonthIndex() + 7;
     schedule.intervalMonths = 60;
     schedule.label = 'State Assembly Election';
     delete schedule.proposalKey;
@@ -488,7 +501,7 @@ function migrateAssemblyCountdownV260() {
   if (schedule) {
     const active = elections.active;
     if (!active || active.typeId !== 'assembly' || !['voting','counting'].includes(active.phase)) {
-      schedule.nextAt = currentMonthIndex() + 7;
+      if (!Number.isFinite(Number(schedule.nextAt))) schedule.nextAt = currentMonthIndex() + 7;
       schedule.intervalMonths = 60;
       schedule.label = 'State Assembly Election';
       delete schedule.proposalKey;
@@ -527,7 +540,7 @@ function migrateAssemblySeatCapAndSchedule250() {
   const schedule = elections.calendar.assembly;
   if (schedule) {
     const previous = Number(schedule.nextAt);
-    schedule.nextAt = now + 7;
+    if (!Number.isFinite(Number(schedule.nextAt))) schedule.nextAt = now + 7;
     schedule.intervalMonths = 60;
     schedule.label = 'State Assembly Election';
     delete schedule.proposalKey;
@@ -750,7 +763,19 @@ const parties = [
 ];
 
 function persistStateSafely() {
-  const write = () => localStorage.setItem(STORE_KEY, JSON.stringify(state));
+  const write = () => {
+    // Write the small election-calendar snapshot first so it survives even if
+    // the full save cannot fit in Android WebView localStorage.
+    const stamp = Date.now();
+    state.electionsCalendarPersistedAt = stamp;
+    const calendar = state.elections && state.elections.calendar;
+    if (calendar && typeof calendar === 'object') {
+      try {
+        localStorage.setItem(ELECTION_CALENDAR_STORE_KEY, JSON.stringify({ savedAt: stamp, calendar }));
+      } catch (_) { /* Main save may still succeed; keep the live session intact. */ }
+    }
+    localStorage.setItem(STORE_KEY, JSON.stringify(state));
+  };
   try { write(); return true; } catch (error) {
     if (!(error && (error.name === 'QuotaExceededError' || error.name === 'NS_ERROR_DOM_QUOTA_REACHED'))) throw error;
   }
@@ -2372,7 +2397,6 @@ function migrateLokSabhaElectionToSevenMonths() {
   const elections = ensureElectionCalendar();
   if (!elections.calendar['lok-sabha']) return;
   const newCycle = currentMonthIndex() + 7;
-  const previousCycle = Number(elections.calendar['lok-sabha'].nextAt || 0);
   const activeLokSabha = elections.active &&
     elections.active.typeId === 'lok-sabha' &&
     !['completed', 'declared', 'cancelled'].includes(elections.active.phase);
@@ -2381,18 +2405,10 @@ function migrateLokSabhaElectionToSevenMonths() {
   // active. The former migration changed engine.cycle and cleared campaigns,
   // results and counting data whenever an updated app first launched.
   if (!activeLokSabha) {
-    elections.calendar['lok-sabha'].nextAt = newCycle;
+    if (!Number.isFinite(Number(elections.calendar['lok-sabha'].nextAt))) elections.calendar['lok-sabha'].nextAt = newCycle;
     elections.calendar['lok-sabha'].intervalMonths = 60;
     elections.calendar['lok-sabha'].label = 'Lok Sabha Election';
-    const slate = ensurePartySlate();
-    slate.forEach(item => {
-      if (item && item.typeId === 'lok-sabha' &&
-          ['Proposed', 'Party Approved', 'Funded'].includes(item.status) &&
-          Number(item.scheduledAt || 0) >= previousCycle - 1) {
-        item.scheduledAt = newCycle;
-        item.retryCycleUpdated = true;
-      }
-    });
+
   }
 
   // Let ensureLokSabhaElectionEngine() perform a safe cycle rollover when
@@ -2536,8 +2552,12 @@ function processElectionCalendar() {
     if (!Number.isFinite(Number(schedule.nextAt))) schedule.nextAt = type.offset;
     const activeForCycle = elections.active && elections.active.typeId === type.id && Number(elections.active.scheduledAt) === Number(schedule.nextAt);
     if (now > Number(schedule.nextAt) && !activeForCycle) {
-      schedule.lastSkippedAt = Number(schedule.nextAt);
-      schedule.nextAt = Number(schedule.nextAt) + Number(schedule.intervalMonths || type.interval);
+      const priorCycle = Number(schedule.nextAt);
+      const interval = Number(schedule.intervalMonths) > 0 ? Number(schedule.intervalMonths) : type.interval;
+      const missedCycles = Math.floor((now - priorCycle) / interval) + 1;
+      schedule.lastSkippedAt = priorCycle;
+      schedule.nextAt = priorCycle + missedCycles * interval;
+      schedule.intervalMonths = interval;
       delete schedule.proposalKey;
     }
     const monthsUntil = Number(schedule.nextAt) - now;
