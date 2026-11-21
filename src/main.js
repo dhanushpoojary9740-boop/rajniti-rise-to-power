@@ -317,6 +317,9 @@ if (!Array.isArray(state.elections.nominationQueue)) state.elections.nominationQ
 if (!Array.isArray(state.elections.completedCounting)) state.elections.completedCounting = [];
 if (!Number.isFinite(Number(state.elections.lifecycleVersion))) state.elections.lifecycleVersion = 1;
 let activeTab = 'Dashboard';
+if (!state.phone || typeof state.phone !== 'object') state.phone = { view: 'home', posts: [], messages: [], notifications: [], notes: '' };
+for (const key of ['posts','messages','notifications']) if (!Array.isArray(state.phone[key])) state.phone[key] = [];
+if (!['home','social','messages','calls','contacts','news','calendar','notes','email','camera','gallery','browser','music','wallet','settings'].includes(state.phone.view)) state.phone.view = 'home';
 let partySection = 'Overview';
 let electionSection = 'assembly';
 if (!Array.isArray(state.reviewedNews)) state.reviewedNews = [];
@@ -833,10 +836,10 @@ function shell(content) {
   // Secondary modules remain available through contextual section navigation.
   const nav = [
     'Dashboard', 'Career', 'Party', 'Elections', 'Parliament',
-    'Government', 'Political Life', 'India Map', 'Constituency', 'Intelligence', 'Finance', 'News', 'Profile'
+    'Government', 'Political Life', 'Phone', 'India Map', 'Constituency', 'Intelligence', 'Finance', 'News', 'Profile'
   ];
   const navDetails = {
-    'Dashboard':'Career overview','Career':'Progress & milestones','Party':'Organisation & members','Elections':'Nominate to count','Parliament':'Debates & legislation','Government':'State & Central offices','Political Life':'Institutions & public life','India Map':'Explore regions','Constituency':'Local representation','Intelligence':'Political analysis','Finance':'Funds & accounts','News':'Political updates','Profile':'Player & settings'
+    'Dashboard':'Career overview','Career':'Progress & milestones','Party':'Organisation & members','Elections':'Nominate to count','Parliament':'Debates & legislation','Government':'State & Central offices','Political Life':'Institutions & public life','Phone':'Social, messages & apps','India Map':'Explore regions','Constituency':'Local representation','Intelligence':'Political analysis','Finance':'Funds & accounts','News':'Political updates','Profile':'Player & settings'
   };
 
   return `
@@ -894,7 +897,7 @@ function shell(content) {
       </main>
 
       <nav class="mobile-nav">
-        ${['Dashboard', 'Party', 'Elections', 'India Map', 'Parliament', 'Government', 'Political Life', 'Profile']
+        ${['Dashboard', 'Party', 'Elections', 'Phone', 'India Map', 'Parliament', 'Government', 'Political Life', 'Profile']
           .map(name => `
             <button class="${activeTab === name ? 'active' : ''}"
               data-tab="${name}">
@@ -8038,6 +8041,41 @@ function sectionNavigation(tab) {
   return `<nav class="section-nav" aria-label="Related political systems">${groups[groupKey].map(item => `<button class="section-nav-item ${item.tab === tab ? 'active' : ''}" data-tab="${item.tab}"><span>${item.label}</span><small>${descriptions[item.tab] || 'Political systems and records'}</small></button>`).join('')}</nav>`;
 }
 
+/* PHONE HUB */
+function phonePage() {
+  const p = state.phone;
+  const views = {home:'Home',social:'Social feed',messages:'Messages',calls:'Calls',contacts:'Contacts',news:'News',calendar:'Calendar',notes:'Notes',email:'Email',camera:'Camera',gallery:'Gallery',browser:'Browser',music:'Music',wallet:'Wallet',settings:'Settings'};
+  const apps = [
+    ['social','Social','◎','Photo & status feed'],['messages','Messages','▤','Private conversations'],['calls','Calls','☎','Call history'],['contacts','Contacts','♙','Political contacts'],['news','News','▣','Briefings & headlines'],['calendar','Calendar','▦','Political schedule'],['notes','Notes','✎','Private notes'],['email','Email','✉','Official correspondence'],['camera','Camera','▧','Photo journal'],['gallery','Gallery','▤','Saved moments'],['browser','Browser','◎','In-game information hub'],['music','Music','♫','Audio player'],['wallet','Wallet','₹','Personal finance summary'],['settings','Settings','⚙','Phone preferences']
+  ];
+  const view = p.view || 'home';
+  const feed = (p.posts || []).map((post,index)=>({...post,_idx:index})).reverse();
+  const sampleFeed = [
+    {author:'Aarav Sharma · Party colleague',text:'Good discussion today on improving public services. Citizens deserve timely, transparent delivery.',likes:24},
+    {author:'Local Civic Forum',text:'Residents are asking for a clear update on the ward road repair schedule. We will share verified information when available.',likes:18},
+    {author:'National News Desk',text:'Parliamentary committees are reviewing policy proposals this week. Follow official proceedings for confirmed updates.',likes:31}
+  ];
+  const rows = feed.length ? feed : sampleFeed;
+  const posts = rows.map((post,i)=>`<article class="panel phone-post"><div class="phone-post-head"><b>${escapeHtml(post.author || state.playerName)}</b><small>${escapeHtml(post.date || dateText())}</small></div><p>${escapeHtml(post.text || '')}</p><div class="phone-post-actions"><span>♥ ${Number(post.likes)||0}</span><button class="btn btn-secondary" data-phone-action="like" data-phone-index="${post._idx ?? i}">Like</button><button class="btn btn-secondary" data-phone-action="share" data-phone-index="${post._idx ?? i}">Share</button></div></article>`).join('');
+  let body = '';
+  if (view === 'home') body = `<section class="panel phone-welcome"><span class="eyebrow">PERSONAL DEVICE</span><h2>${escapeHtml(state.playerName || 'Your')}’s phone</h2><p class="muted">Your private digital life, public communication and political schedule in one place.</p><div class="phone-app-grid">${apps.map(([id,name,symbol,desc])=>`<button class="phone-app" data-phone-view="${id}"><span class="phone-app-icon">${symbol}</span><b>${name}</b><small>${desc}</small></button>`).join('')}</div></section><section class="panel"><h3>Recent notifications</h3>${(p.notifications||[]).slice(-4).reverse().map(n=>`<div class="history-row"><div><b>${escapeHtml(n.title)}</b><small>${escapeHtml(n.date)}</small><small>${escapeHtml(n.body)}</small></div></div>`).join('') || '<p class="muted">No new notifications. App updates and political messages will appear here.</p>'}</section>`;
+  if (view === 'social') body = `<section class="panel"><span class="eyebrow">SOCIAL</span><h2>Social feed</h2><p class="muted">Share public updates carefully. Posts are fictional gameplay content, not connected to real social networks.</p><form id="phone-post-form" class="phone-compose"><textarea name="postText" rows="3" maxlength="500" placeholder="Write a public update…" required></textarea><button class="btn btn-primary" type="submit">Publish post</button></form></section>${posts}`;
+  if (view === 'messages') body = `<section class="panel"><span class="eyebrow">MESSAGES</span><h2>Messages</h2><p class="muted">Private in-game conversations with colleagues and constituents.</p>${(p.messages||[]).map(m=>`<div class="history-row"><div><b>${escapeHtml(m.from)}</b><small>${escapeHtml(m.date)}</small><small>${escapeHtml(m.text)}</small></div></div>`).join('') || '<p class="muted">Your inbox is clear.</p>'}<form id="phone-message-form" class="phone-compose"><input name="messageTo" placeholder="Contact name" required maxlength="80"><textarea name="messageText" rows="2" placeholder="Write a message…" required maxlength="500"></textarea><button class="btn btn-primary" type="submit">Send message</button></form></section>`;
+  if (view === 'calls') body = `<section class="panel"><span class="eyebrow">CALLS</span><h2>Call log</h2><p class="muted">Simulated calls; no real calls are placed.</p><div class="phone-list-row"><b>Constituency office</b><span>Incoming · Today</span><button class="btn btn-secondary" data-phone-action="call" data-contact="Constituency office">Call back</button></div><div class="phone-list-row"><b>Party coordination desk</b><span>Missed · Yesterday</span><button class="btn btn-secondary" data-phone-action="call" data-contact="Party coordination desk">Call back</button></div>${(p.calls||[]).slice(-6).reverse().map(c=>`<div class="phone-list-row"><b>${escapeHtml(c.name)}</b><span>${escapeHtml(c.date)} · ${escapeHtml(c.type)}</span></div>`).join('')}</section>`;
+  if (view === 'contacts') body = `<section class="panel"><span class="eyebrow">CONTACTS</span><h2>Political contacts</h2>${[['Constituency office','Public service desk'],['Party coordination desk','Party organisation'],['Legislative assistant','Parliamentary support'],['Media office','Press & communications'],['District administration','Government liaison']].map(([name,role])=>`<div class="phone-list-row"><div><b>${name}</b><small>${role}</small></div><button class="btn btn-secondary" data-phone-action="message-contact" data-contact="${name}">Message</button><button class="btn btn-secondary" data-phone-action="call" data-contact="${name}">Call</button></div>`).join('')}</section>`;
+  if (view === 'news') body = `<section class="panel"><span class="eyebrow">NEWS</span><h2>Briefings</h2><p class="muted">A fictional in-game briefing stream. Confirm policy and political facts through official records in real life.</p>${['Parliamentary business: review the agenda and committee updates before making public statements.','Constituency watch: local service requests and public grievances remain key issues for elected representatives.','Political desk: party meetings, legislative votes and election milestones may affect your career.'].map((t,i)=>`<div class="history-row"><div><b>${['National desk','Constituency desk','Political desk'][i]}</b><small>${dateText()}</small><small>${t}</small></div></div>`).join('')}</section>`;
+  if (view === 'calendar') body = `<section class="panel"><span class="eyebrow">CALENDAR</span><h2>${dateText()}</h2><p class="muted">Your monthly political schedule.</p>${[['Week 1','Review constituency cases'],['Week 2','Party and cabinet coordination'],['Week 3','Public outreach and policy review'],['Week 4','Monthly performance review']].map(([day,task])=>`<div class="phone-list-row"><b>${day}</b><span>${task}</span></div>`).join('')}<small class="muted">Calendar items are planning prompts; elections and official deadlines follow the game’s institutional systems.</small></section>`;
+  if (view === 'notes') body = `<section class="panel"><span class="eyebrow">NOTES</span><h2>Private notes</h2><textarea id="phone-notes" rows="8" maxlength="5000" placeholder="Draft talking points, reminders or policy ideas…">${escapeHtml(p.notes||'')}</textarea><button class="btn btn-primary" data-phone-action="save-notes">Save notes</button></section>`;
+  if (view === 'email') body = `<section class="panel"><span class="eyebrow">EMAIL</span><h2>Official correspondence</h2><p class="muted">A simulated inbox for in-game office correspondence.</p>${[['Office of the Speaker','Agenda and committee schedule are available in Parliament.'],['Constituency service desk','Monthly grievance review is ready for your attention.'],['Party office','Please review the upcoming organisational meeting.']].map(([from,text])=>`<div class="history-row"><div><b>${from}</b><small>${dateText()}</small><small>${text}</small></div></div>`).join('')}</section>`;
+  if (view === 'camera') body = `<section class="panel"><span class="eyebrow">CAMERA</span><h2>Photo journal</h2><p class="muted">Use this in-game journal to record campaign moments and public events. It does not access your device camera.</p><button class="btn btn-primary" data-phone-action="camera-entry">Add a journal entry</button></section>`;
+  if (view === 'gallery') body = `<section class="panel"><span class="eyebrow">GALLERY</span><h2>Saved moments</h2><p class="muted">Your in-game photo journal entries appear here.</p>${(p.gallery||[]).slice().reverse().map(item=>`<div class="history-row"><div><b>${escapeHtml(item.title)}</b><small>${escapeHtml(item.date)}</small><small>${escapeHtml(item.caption)}</small></div></div>`).join('') || '<p class="muted">No saved moments yet.</p>'}</section>`;
+  if (view === 'browser') body = `<section class="panel"><span class="eyebrow">BROWSER</span><h2>Information hub</h2><p class="muted">Offline reference shortcuts for game systems.</p>${[['Parliament','Open Parliament to review bills, questions and proceedings.'],['Government','Review cabinet work, schemes and office files.'],['Constituency','Review public cases and local development records.'],['Elections','Check the election calendar and campaign activity.']].map(([name,desc])=>`<div class="phone-list-row"><b>${name}</b><span>${desc}</span><button class="btn btn-secondary" data-tab="${name}">Open</button></div>`).join('')}</section>`;
+  if (view === 'music') body = `<section class="panel"><span class="eyebrow">MUSIC</span><h2>Audio player</h2><p class="muted">A placeholder music library for future offline soundtrack integration. No audio is played in this build.</p></section>`;
+  if (view === 'wallet') body = `<section class="panel"><span class="eyebrow">WALLET</span><h2>Personal finance</h2><div class="phone-list-row"><b>Personal balance</b><span>${money(Number(state.money)||0)}</span></div><p class="muted">This is a read-only shortcut to your in-game personal finances. Party funds remain separate.</p><button class="btn btn-secondary" data-tab="Finance">Open Finance</button></section>`;
+  if (view === 'settings') body = `<section class="panel"><span class="eyebrow">SETTINGS</span><h2>Phone settings</h2><div class="phone-list-row"><b>Device status</b><span>Offline game simulation</span></div><div class="phone-list-row"><b>Privacy</b><span>Phone content stays in your local game save</span></div><div class="phone-list-row"><b>Notifications</b><span>In-game only</span></div><p class="muted">This phone does not connect to Instagram, Facebook, phone services or the internet.</p></section>`;
+  return `<div class="page-heading"><div><span class="eyebrow">RAJNITI PHONE</span><h1>Phone</h1><p class="muted">Social life, communications and everyday apps</p></div></div><div class="phone-layout"><aside class="panel phone-side"><div class="phone-device-label">RAJNITI MOBILE</div>${apps.map(([id,name,symbol])=>`<button class="phone-side-app ${view===id?'active':''}" data-phone-view="${id}"><span>${symbol}</span>${name}</button>`).join('')}<button class="phone-side-app ${view==='home'?'active':''}" data-phone-view="home"><span>⌂</span>Home</button></aside><div class="phone-screen"><div class="phone-status"><span>${dateText()}</span><span>● ● ●  ▰</span></div><div class="phone-view-heading"><button class="btn btn-secondary" data-phone-view="home">← Apps</button><b>${views[view] || 'Phone'}</b></div>${body}</div></div>`;
+}
+
 /* MAIN RENDER */
 
 function render() {
@@ -8111,6 +8149,9 @@ function render() {
       break;
     case 'Political Life':
       content = politicalLifePage();
+      break;
+    case 'Phone':
+      content = phonePage();
       break;
     case 'Alliances':
       content = alliancesPage();
@@ -8485,6 +8526,40 @@ if (!Array.isArray(state.media.history)) state.media.history = [];
   const politicalAction = event.target.closest('[data-political-action]');
   if (politicalAction) { politicalExpansionAction(politicalAction.dataset.politicalAction); return; }
 
+  const phoneView = event.target.closest('[data-phone-view]');
+  if (phoneView) { state.phone.view = phoneView.dataset.phoneView; saveState(); render(); return; }
+  const phoneAction = event.target.closest('[data-phone-action]');
+  if (phoneAction) {
+    const action = phoneAction.dataset.phoneAction;
+    const p = state.phone;
+    if (action === 'like' || action === 'share') {
+      const idx = Number(phoneAction.dataset.phoneIndex);
+      const list = p.posts.length ? p.posts : [];
+      if (action === 'like' && list[idx]) list[idx].likes = (Number(list[idx].likes)||0)+1;
+      if (action === 'share') { if (!Array.isArray(p.notifications)) p.notifications=[]; p.notifications.push({title:'Post shared',body:'You shared a post to your in-game social feed.',date:dateText()}); }
+      saveState(); render(); toast(action === 'like' ? 'You liked this post.' : 'Post shared to your in-game feed.'); return;
+    }
+    if (action === 'camera-entry') {
+      const caption = window.prompt('Describe this in-game moment:');
+      if (caption && caption.trim()) { if (!Array.isArray(p.gallery)) p.gallery=[]; p.gallery.push({title:'Saved moment',caption:caption.trim(),date:dateText()}); p.gallery=p.gallery.slice(-40); p.view='gallery'; saveState(); render(); toast('Moment saved to your in-game gallery.'); }
+      return;
+    }
+    if (action === 'call') {
+      if (!Array.isArray(p.calls)) p.calls=[];
+      p.calls.push({name:phoneAction.dataset.contact||'Contact',type:'Outgoing',date:dateText()});
+      saveState(); render(); toast('Simulated call logged. No real call was placed.'); return;
+    }
+    if (action === 'message-contact') {
+      p.pendingContact = phoneAction.dataset.contact || '';
+      p.view='messages'; saveState(); render();
+      const input=document.querySelector('#phone-message-form [name="messageTo"]'); if(input) input.value=p.pendingContact;
+      return;
+    }
+    if (action === 'save-notes') {
+      p.notes = document.getElementById('phone-notes')?.value || '';
+      saveState(); toast('Private notes saved.'); return;
+    }
+  }
   const tab = event.target.closest('[data-tab]');
 
   if (tab) {
@@ -8762,6 +8837,28 @@ document.addEventListener('input', event => {
 });
 
 document.addEventListener('submit', event => {
+  if (event.target.id === 'phone-post-form') {
+    event.preventDefault();
+    const text = String(new FormData(event.target).get('postText') || '').trim();
+    if (!text) return;
+    if (!Array.isArray(state.phone.posts)) state.phone.posts=[];
+    state.phone.posts.push({author:state.playerName || 'Player',text,likes:0,date:dateText()});
+    state.phone.posts=state.phone.posts.slice(-60);
+    state.phone.view='social'; saveState(); render(); toast('Your in-game post was published.'); return;
+  }
+  if (event.target.id === 'phone-message-form') {
+    event.preventDefault();
+    const data=new FormData(event.target);
+    const to=String(data.get('messageTo')||'').trim(); const text=String(data.get('messageText')||'').trim();
+    if (!to || !text) return;
+    if (!Array.isArray(state.phone.messages)) state.phone.messages=[];
+    state.phone.messages.push({from:`To: ${to}`,text,date:dateText()});
+    state.phone.messages=state.phone.messages.slice(-80);
+    if (!Array.isArray(state.phone.notifications)) state.phone.notifications=[];
+    state.phone.notifications.push({title:`Message sent to ${to}`,body:text,date:dateText()});
+    state.phone.notifications=state.phone.notifications.slice(-50);
+    state.phone.view='messages'; saveState(); render(); toast('In-game message sent.'); return;
+  }
   if (event.target.id === 'appoint-leader-form') { event.preventDefault(); appointPartyLeader(event.target); }
   if (event.target.id === 'add-member-form') { event.preventDefault(); addPartyMember(event.target); }
   if (event.target.id === 'party-unit-form') { event.preventDefault(); createPartyUnit(event.target); }
