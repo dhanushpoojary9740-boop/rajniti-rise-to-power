@@ -4112,7 +4112,9 @@ function runLokSabhaCampaigns() {
   const engine=ensureLokSabhaElectionEngine();
   if (engine.completed) return toast('This Lok Sabha election has already been counted.');
   const slate=ensurePartySlate().filter(x=>x.typeId==='lok-sabha' && Number(x.scheduledAt)===engine.cycle && x.status==='Funded');
-  if (!slate.length) return toast('Fund and approve at least one Lok Sabha candidate before campaigning.');
+  // National campaign simulation must cover the full House even when the player has not
+  // funded a candidate in every constituency. Missing party tickets are represented by
+  // simulated party candidates during counting; they are not treated as uncounted seats.
   const seats=assignPartyElectionSeats('lok-sabha',[],engine.cycle);
   // Store only the player's campaign records. AI rivals are generated deterministically during counting,
   // avoiding thousands of redundant saved objects that can exhaust Android WebView localStorage.
@@ -4142,10 +4144,16 @@ function countLokSabhaElection() {
   seats.forEach(seat=>{
     const contestants=[];
     const own=engine.campaigns.find(x=>x.player && x.seatCode===seat.seatCode);
+    const playerParty=String(state.party||'Bharat Pragati Party');
     if(own) contestants.push({...own});
+    else {
+      const seed=lokSabhaSeed(`${engine.cycle}|${seat.seatCode}|player-party`);
+      contestants.push({seatCode:seat.seatCode,stateName:seat.stateName,constituency:seat.constituency,candidateName:`${playerParty} Candidate`,partyName:playerParty,player:false,performance:42+(seed%27)});
+    }
+    const rivalPool=rivalNames.filter(name=>String(name).toLowerCase()!==playerParty.toLowerCase());
     for(let rivalIndex=0;rivalIndex<3;rivalIndex++){
       const seed=lokSabhaSeed(`${engine.cycle}|${seat.seatCode}|rival-${rivalIndex}`);
-      const rivalParty=rivalNames[seed%rivalNames.length];
+      const rivalParty=rivalPool[seed%rivalPool.length];
       contestants.push({seatCode:seat.seatCode,stateName:seat.stateName,constituency:seat.constituency,candidateName:`${rivalParty} Candidate ${rivalIndex+1}`,partyName:rivalParty,player:false,performance:35+(seed%51)});
     }
     const scored=contestants.map(c=>{
@@ -4871,7 +4879,7 @@ function showElectionResult(result) {
           </div>
         </section>` : ''}
       <div class="party-stat-row"><span>Candidate expenditure / simulated ceiling</span><b>${money(result.candidateSpending || 0)} / ${money(result.candidateSpendingLimit || 0)}</b></div>
-      ${result.totalSeats ? `<div class="party-stat-row"><span>Party seats won in counted contests</span><b>${result.seatsWon} / ${result.totalSeats} · Majority ${result.majorityMark}</b></div><div class="party-stat-row"><span>Contested / pending seats</span><b>${Number(result.seatsContested||0)} / ${Number(result.seatsPending||0)}</b></div><p class="panel-description">${result.seatsPending ? `Only ${result.seatsContested} constituencies have saved party candidate results; ${result.seatsPending} seats remain uncounted in the party report.` : (result.hungHouse ? 'No single-party majority in this simulated result. Coalition negotiations would be needed to form a government.' : 'The party reaches the majority threshold in this simulated result.')}</p>` : ''}
+      ${result.totalSeats ? `<div class="party-stat-row"><span>Party candidate wins in this report</span><b>${result.seatsWon} / ${result.totalSeats} seats</b></div><div class="party-stat-row"><span>Party candidate results recorded / no party result</span><b>${Number(result.seatsContested||0)} / ${Number(result.seatsPending||0)}</b></div><p class="panel-description">This is your party's candidate-slate report, not the full House tally. Seats without a recorded party candidate result are not counted as losses or as nationally uncounted seats. Use Central Government → Run National Campaign & Count All 543 Seats for the full simulated Lok Sabha result.</p>` : ''}
       <button class="primary-btn full" data-action="close-election-result">CONTINUE →</button>
     </section>`;
   document.body.appendChild(overlay);
@@ -4951,6 +4959,14 @@ function ensureCentralGovernmentState() {
 function centralGovernmentAction(action) {
   const engine = ensureLokSabhaElectionEngine();
   const c = ensureCentralGovernmentState();
+  if (action === 'run-national-count') {
+    if (engine.completed && engine.results.length === 543) return toast('The current Lok Sabha cycle already has a complete 543-seat count.');
+    if (!engine.campaignsRunAt) runLokSabhaCampaigns();
+    const refreshed = ensureLokSabhaElectionEngine();
+    if (!refreshed.campaignsRunAt) return toast('National campaign could not start. Please try again.');
+    countLokSabhaElection();
+    return;
+  }
   const resultSnapshot = lokSabhaCompletedResultSnapshot();
   if (!resultSnapshot) return toast('Complete and declare all 543 Lok Sabha constituency results before Central Government formation.');
   const tally = resultSnapshot.tally;
@@ -5015,6 +5031,8 @@ function centralGovernmentPanel() {
   const tally = resultSnapshot?.tally || [];
   const majorityParty = tally.find(row => Number(row.seats) >= 272);
   const counted = !!resultSnapshot;
+  const nationalCountedSeats = counted ? 543 : Math.min(543,Math.max(0,Number(engine.results?.length||0)));
+  const nationalPendingSeats = Math.max(0,543-nationalCountedSeats);
   const currentCycle = Number(resultSnapshot?.cycle ?? engine.cycle);
   const electedMPs = counted ? electedMemberRegister('lok-sabha') : [];
   const pmOptions = electedMPs.map(member=>`<option value="${escapeHtml(member.name)}">${escapeHtml(member.name)} · ${escapeHtml(member.party)}</option>`).join('');
@@ -5026,8 +5044,8 @@ function centralGovernmentPanel() {
   const canNegotiate = counted && !appointedThisCycle && !formedThisCycle;
   const stage = !counted ? 'Awaiting Lok Sabha counting' : formedThisCycle ? 'Government formed · floor test passed' : appointedThisCycle ? 'Prime Minister-designate · floor test pending' : 'Government formation available';
   return `<section class="panel central-government-panel"><span class="gold-tag">CENTRAL GOVERNMENT · LOK SABHA</span><h2>Central Government</h2><p class="panel-description">This is the Union Government only. It uses the completed Lok Sabha result (543 seats), a 272-seat majority, and a separate Prime Minister, coalition and Union cabinet record. It never changes the Karnataka State Government.</p>
-    <div class="election-metrics"><div><small>LOK SABHA SEATS</small><b>543</b></div><div><small>MAJORITY MARK</small><b>272</b></div><div><small>COUNTING</small><b>${counted?'Complete':'Not complete'}</b></div><div><small>FORMATION</small><b>${escapeHtml(stage)}</b></div></div>
-    ${!counted?'<p class="creator-note">Complete candidate nomination, approval, funding, campaigning and counting in Elections → Lok Sabha. This section unlocks only after all 543 seats are counted.</p>':appointedThisCycle?`<p><b>Prime Minister-designate:</b> ${escapeHtml(c.primeMinister)} · <b>Lead party:</b> ${escapeHtml(c.party)} · <b>Declared support:</b> ${c.supportSeats}/543</p><p class="creator-note">The government is not considered formed until the Lok Sabha floor test is passed.</p><button class="primary-btn" data-central-gov-action="floor-test">CONDUCT LOK SABHA FLOOR TEST</button>`:formedThisCycle?`<p><b>Prime Minister:</b> ${escapeHtml(c.primeMinister)} · <b>Lead party:</b> ${escapeHtml(c.party)} · <b>Support:</b> ${c.supportSeats}/543 · <b>Floor test:</b> ${escapeHtml(c.floorTest)}</p>`:`<p class="creator-note">${majorityParty?`${escapeHtml(majorityParty.party)} won ${majorityParty.seats} seats and can nominate a Prime Minister-designate.`:`Hung Lok Sabha: no party reached 272 seats. The leading party is ${escapeHtml(tally[0]?.party||'—')} with ${Number(tally[0]?.seats||0)} seats; it needs ${Math.max(0,272-Number(tally[0]?.seats||0))} more seats. Select a lead party and supporting parties to begin coalition talks.`} After nomination, conduct a floor test to complete government formation.</p>
+    <div class="election-metrics"><div><small>LOK SABHA SEATS</small><b>543</b></div><div><small>MAJORITY MARK</small><b>272</b></div><div><small>COUNTING</small><b>${counted?'Complete':`${nationalCountedSeats}/543 counted · ${nationalPendingSeats} pending`}</b></div><div><small>FORMATION</small><b>${escapeHtml(stage)}</b></div></div>
+    ${!counted?'<p class="creator-note">Your party-candidate report is not the full Lok Sabha count. Run the national simulation here to count all 543 constituencies and unlock coalition talks. Missing party tickets are simulated; they are not left pending.</p><button class="primary-btn" data-central-gov-action="run-national-count">RUN NATIONAL CAMPAIGN & COUNT ALL 543 SEATS</button>':appointedThisCycle?`<p><b>Prime Minister-designate:</b> ${escapeHtml(c.primeMinister)} · <b>Lead party:</b> ${escapeHtml(c.party)} · <b>Declared support:</b> ${c.supportSeats}/543</p><p class="creator-note">The government is not considered formed until the Lok Sabha floor test is passed.</p><button class="primary-btn" data-central-gov-action="floor-test">CONDUCT LOK SABHA FLOOR TEST</button>`:formedThisCycle?`<p><b>Prime Minister:</b> ${escapeHtml(c.primeMinister)} · <b>Lead party:</b> ${escapeHtml(c.party)} · <b>Support:</b> ${c.supportSeats}/543 · <b>Floor test:</b> ${escapeHtml(c.floorTest)}</p>`:`<p class="creator-note">${majorityParty?`${escapeHtml(majorityParty.party)} won ${majorityParty.seats} seats and can nominate a Prime Minister-designate.`:`Hung Lok Sabha: no party reached 272 seats. The leading party is ${escapeHtml(tally[0]?.party||'—')} with ${Number(tally[0]?.seats||0)} seats; it needs ${Math.max(0,272-Number(tally[0]?.seats||0))} more seats. Select a lead party and supporting parties to begin coalition talks.`} After nomination, conduct a floor test to complete government formation.</p>
     <div class="creator-field"><label for="central-pm-select">Prime Minister-designate · choose an elected MP</label><select id="central-pm-select" data-central-pm-select><option value="">Select elected MP</option>${pmOptions}</select></div>
     <div class="national-lok-sabha-actions"><button class="primary-btn" data-central-gov-action="form-majority" ${!majorityParty?'disabled':''}>NOMINATE PRIME MINISTER</button><button class="secondary-btn" data-central-gov-action="coalition" ${!canNegotiate?'disabled':''}>START COALITION TALKS</button></div>
     <details class="coalition-picker"><summary>Choose parties for coalition talks</summary><div class="creator-field"><label for="central-lead-select">Lead party</label><select id="central-lead-select" data-central-lead-select>${leadOptions}</select></div><div class="creator-field"><label>Supporting parties · select all that agree to support</label><div class="coalition-party-list">${partnerOptions}</div></div><p class="creator-note">Only counted party seat totals are used. Select actual parties; their seats are added automatically. Prime Minister must be an elected MP of the lead party.</p></details>`}
