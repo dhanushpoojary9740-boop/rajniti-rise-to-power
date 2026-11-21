@@ -254,6 +254,31 @@ if (!state.lokSabhaElection7MonthRetryV630) {
   persistStateSafely();
 }
 
+// RAJNITI 6.3.2: set a fresh Lok Sabha test election seven in-game months ahead.
+// Keep candidate records and their approval/funding states, but clear only transient campaign/count data.
+if (!state.lokSabhaElection7MonthRetryV632) {
+  if (!state.elections || typeof state.elections !== 'object') state.elections = JSON.parse(JSON.stringify(defaults.elections));
+  if (!state.elections.calendar || typeof state.elections.calendar !== 'object') state.elections.calendar = JSON.parse(JSON.stringify(defaults.elections.calendar));
+  const nowMonth = Math.max(0, (Number(state.year || 1) - 1) * 12 + (Number(state.month || 1) - 1));
+  const previousCycle = Number(state.elections.calendar['lok-sabha']?.nextAt);
+  const retryCycle = nowMonth + 7;
+  state.elections.calendar['lok-sabha'] = { ...(state.elections.calendar['lok-sabha'] || {}), intervalMonths: 60, nextAt: retryCycle, label: 'Lok Sabha elections' };
+  if (Array.isArray(state.elections.partySlate)) state.elections.partySlate.forEach(item => {
+    if (item && item.typeId === 'lok-sabha' && Number(item.scheduledAt) === previousCycle && ['Proposed','Party Approved','Funded'].includes(item.status)) item.scheduledAt = retryCycle;
+  });
+  if (state.elections.lokSabhaEngine && typeof state.elections.lokSabhaEngine === 'object') {
+    state.elections.lokSabhaEngine.cycle = retryCycle;
+    state.elections.lokSabhaEngine.campaigns = [];
+    state.elections.lokSabhaEngine.results = [];
+    state.elections.lokSabhaEngine.partyTally = [];
+    state.elections.lokSabhaEngine.completed = false;
+    state.elections.lokSabhaEngine.campaignsRunAt = '';
+  }
+  delete state.elections.lastLokSabhaSeatTally;
+  state.lokSabhaElection7MonthRetryV632 = true;
+  persistStateSafely();
+}
+
 // One-time ₹300 crore special grant to the existing party treasury.
 // This flag is persisted in the same save, so reloads and future updates cannot credit it again.
 if (!state.partyTreasuryGrant300CrClaimed) {
@@ -810,6 +835,9 @@ function shell(content) {
     'Dashboard', 'Career', 'Party', 'Elections', 'Parliament',
     'Government', 'Political Life', 'India Map', 'Constituency', 'Intelligence', 'Finance', 'News', 'Profile'
   ];
+  const navDetails = {
+    'Dashboard':'Career overview','Career':'Progress & milestones','Party':'Organisation & members','Elections':'Nominate to count','Parliament':'Debates & legislation','Government':'State & Central offices','Political Life':'Institutions & public life','India Map':'Explore regions','Constituency':'Local representation','Intelligence':'Political analysis','Finance':'Funds & accounts','News':'Political updates','Profile':'Player & settings'
+  };
 
   return `
     <div class="app-shell">
@@ -828,7 +856,7 @@ function shell(content) {
           ${nav.map(name => `
             <button class="nav-item ${activeTab === name ? 'active' : ''}"
               data-tab="${name}">
-              <span>${icon(name)}</span>${name}
+              <span>${icon(name)}</span><span class="nav-item-label">${name}<small>${navDetails[name]}</small></span>
             </button>
           `).join('')}
         </nav>
@@ -871,7 +899,7 @@ function shell(content) {
             <button class="${activeTab === name ? 'active' : ''}"
               data-tab="${name}">
               <span>${icon(name)}</span>
-              <small>${name}</small>
+              <span class="nav-item-label">${name}<small>${navDetails[name]}</small></span>
             </button>
           `).join('')}
       </nav>
@@ -3917,7 +3945,7 @@ function nationalLokSabhaCandidatePanel() {
 function ensureLokSabhaElectionEngine() {
   if (!state.elections || typeof state.elections !== 'object') state.elections = {};
   if (!state.elections.lokSabhaEngine || typeof state.elections.lokSabhaEngine !== 'object') {
-    state.elections.lokSabhaEngine = { cycle:null, campaigns:[], results:[], partyTally:[], completed:false, lastRunAt:'' };
+    state.elections.lokSabhaEngine = { cycle:null, campaigns:[], results:[], partyTally:[], completed:false, lastRunAt:'', campaignsRunAt:'' };
   }
   const engine = state.elections.lokSabhaEngine;
   if (!Array.isArray(engine.campaigns)) engine.campaigns = [];
@@ -3926,7 +3954,7 @@ function ensureLokSabhaElectionEngine() {
   const schedule = ensureElectionCalendar().calendar['lok-sabha'];
   const cycle = Number(schedule?.nextAt || currentMonthIndex());
   if (Number(engine.cycle) !== cycle) {
-    engine.cycle = cycle; engine.campaigns = []; engine.results = []; engine.partyTally = []; engine.completed = false;
+    engine.cycle = cycle; engine.campaigns = []; engine.results = []; engine.partyTally = []; engine.completed = false; engine.campaignsRunAt = '';
   }
   return engine;
 }
@@ -3998,42 +4026,40 @@ function runLokSabhaCampaigns() {
   if (engine.completed) return toast('This Lok Sabha election has already been counted.');
   const slate=ensurePartySlate().filter(x=>x.typeId==='lok-sabha' && Number(x.scheduledAt)===engine.cycle && x.status==='Funded');
   if (!slate.length) return toast('Fund and approve at least one Lok Sabha candidate before campaigning.');
-  const rivalNames=['National Democratic Alliance','Indian National Congress','Regional Alliance','Independent Front'];
-  engine.campaigns=[];
   const seats=assignPartyElectionSeats('lok-sabha',[],engine.cycle);
+  // Store only the player's campaign records. AI rivals are generated deterministically during counting,
+  // avoiding thousands of redundant saved objects that can exhaust Android WebView localStorage.
+  engine.campaigns=[];
   seats.forEach(seat=>{
     const own=slate.find(x=>x.stateName===seat.stateName && Number(x.constituencyNumber)===Number(seat.constituencyNumber));
-    if (own) {
-      const manual=own.playerControlledCampaign===true || own.memberId===state.playerMemberId;
-      const base=manual ? Number(own.manualCampaignScore||0) : 0;
-      const performance=manual ? Math.max(0,Math.min(100,base)) : Math.max(15,Math.min(95,Math.round(35+(Number(own.approvedBudget)||0)/500000+(Number(own.experience)||0)*.2+(Number(own.popularity)||0)*.15)));
-      engine.campaigns.push({seatCode:seat.seatCode,stateName:seat.stateName,constituency:seat.constituency,candidateName:own.candidateName,partyName:own.partyName,player:true,manual,performance,activities:manual?'Player-directed campaign':'AI rallies, public meetings and constituency outreach'});
-      own.campaignScore=performance; own.campaignCycle=engine.cycle;
-    }
-    for(let rivalIndex=0;rivalIndex<3;rivalIndex++){
-      const seed=lokSabhaSeed(`${engine.cycle}|${seat.seatCode}|rival-${rivalIndex}`);
-      const rivalParty=rivalNames[seed%rivalNames.length];
-      engine.campaigns.push({seatCode:seat.seatCode,stateName:seat.stateName,constituency:seat.constituency,candidateName:`${rivalParty} Candidate ${rivalIndex+1}`,partyName:rivalParty,player:false,manual:false,performance:35+(seed%51),activities:'AI rallies, door-to-door outreach and manifesto campaigning'});
-    }
+    if (!own) return;
+    const manual=own.playerControlledCampaign===true || own.memberId===state.playerMemberId;
+    const base=manual ? Number(own.manualCampaignScore||0) : 0;
+    const performance=manual ? Math.max(0,Math.min(100,base)) : Math.max(15,Math.min(95,Math.round(35+(Number(own.approvedBudget)||0)/500000+(Number(own.experience)||0)*.2+(Number(own.popularity)||0)*.15)));
+    engine.campaigns.push({seatCode:seat.seatCode,stateName:seat.stateName,constituency:seat.constituency,candidateName:own.candidateName,partyName:own.partyName,player:true,manual,performance});
+    own.campaignScore=performance; own.campaignCycle=engine.cycle;
   });
   engine.campaignsRunAt=dateText();
   saveState(); render();
-  toast(`AI campaigns completed across ${engine.campaigns.length} campaign entries.`);
+  toast(`AI campaigns completed across ${seats.length} constituencies. Rival campaigns are simulated during counting.`);
 }
 function countLokSabhaElection() {
   const engine=ensureLokSabhaElectionEngine();
   if (engine.completed) return toast('This election has already been counted.');
-  if (!engine.campaigns.length) return toast('Run national campaigns before polling and counting.');
+  if (!engine.campaignsRunAt) return toast('Run national campaigns before polling and counting.');
   const slate=ensurePartySlate().filter(x=>x.typeId==='lok-sabha' && Number(x.scheduledAt)===engine.cycle && x.status==='Funded');
   const results=[];
-  const parties={};
-  engine.campaigns.filter(x=>!x.player).forEach(x=>{ parties[x.partyName]=true; });
-  engine.campaigns.filter(x=>x.player).forEach(x=>{ parties[x.partyName]=true; });
-  const partyNames=Object.keys(parties);
+  const rivalNames=['National Democratic Alliance','Indian National Congress','Regional Alliance','Independent Front'];
   const seats=assignPartyElectionSeats('lok-sabha',[],engine.cycle);
   seats.forEach(seat=>{
-    const contestants=engine.campaigns.filter(x=>x.seatCode===seat.seatCode);
-    if (!contestants.length) return;
+    const contestants=[];
+    const own=engine.campaigns.find(x=>x.player && x.seatCode===seat.seatCode);
+    if(own) contestants.push({...own});
+    for(let rivalIndex=0;rivalIndex<3;rivalIndex++){
+      const seed=lokSabhaSeed(`${engine.cycle}|${seat.seatCode}|rival-${rivalIndex}`);
+      const rivalParty=rivalNames[seed%rivalNames.length];
+      contestants.push({seatCode:seat.seatCode,stateName:seat.stateName,constituency:seat.constituency,candidateName:`${rivalParty} Candidate ${rivalIndex+1}`,partyName:rivalParty,player:false,performance:35+(seed%51)});
+    }
     const scored=contestants.map(c=>{
       const seed=lokSabhaSeed(`${engine.cycle}|${seat.seatCode}|${c.partyName}|${c.candidateName}`);
       const turnoutBase=45000+(seed%55000);
@@ -4042,28 +4068,28 @@ function countLokSabhaElection() {
     }).sort((a,b)=>b.votes-a.votes);
     const total=scored.reduce((sum,x)=>sum+x.votes,0);
     const winner=scored[0];
-    scored.forEach(c=>{ if(!parties[c.partyName])parties[c.partyName]=true; });
-    results.push({seatCode:seat.seatCode,stateName:seat.stateName,constituency:seat.constituency,winner:winner.candidateName,partyName:winner.partyName,votes:winner.votes,totalVotes:total,margin:winner.votes-(scored[1]?.votes||0),candidates:scored.map(x=>({candidateName:x.candidateName,partyName:x.partyName,votes:x.votes}))});
-    const own=slate.find(x=>x.stateName===seat.stateName && Number(x.constituencyNumber)===Number(seat.constituencyNumber));
-    if(own){own.status=winner.player?'Elected':'Not Elected';own.electionResult=winner.player?'Won':'Lost';own.votes=scored.find(x=>x.player)?.votes||0;own.resultDate=dateText();}
+    results.push({seatCode:seat.seatCode,stateName:seat.stateName,constituency:seat.constituency,winner:winner.candidateName,partyName:winner.partyName,votes:winner.votes,totalVotes:total,margin:winner.votes-(scored[1]?.votes||0)});
+    const ownSlate=slate.find(x=>x.stateName===seat.stateName && Number(x.constituencyNumber)===Number(seat.constituencyNumber));
+    if(ownSlate){ownSlate.status=winner.player?'Elected':'Not Elected';ownSlate.electionResult=winner.player?'Won':'Lost';ownSlate.votes=scored.find(x=>x.player)?.votes||0;ownSlate.resultDate=dateText();}
   });
   const tally={};
   results.forEach(r=>{tally[r.partyName]=(tally[r.partyName]||0)+1;});
   engine.results=results;
   engine.partyTally=Object.entries(tally).map(([party,seats])=>({party,seats})).sort((a,b)=>b.seats-a.seats);
   engine.completed=true;engine.lastRunAt=dateText();
-  state.elections.lastLokSabhaSeatTally={scheduledAt:engine.cycle,totalSeats:543,majorityMark:272,seatsWon:engine.partyTally,countingComplete:true,constituencyResults:results};
+  state.elections.lastLokSabhaSeatTally={scheduledAt:engine.cycle,totalSeats:543,majorityMark:272,seatsWon:engine.partyTally,countingComplete:true};
   saveState();render();
   toast(`Lok Sabha counting completed: ${results.length} constituency results recorded.`);
 }
+
 function lokSabhaElectionEnginePanel() {
   const e=ensureLokSabhaElectionEngine();
   const approved=ensurePartySlate().filter(x=>x.typeId==='lok-sabha' && Number(x.scheduledAt)===e.cycle && x.status==='Funded').length;
   const wins=e.results.length, leader=e.partyTally[0];
-  return `<section class="panel"><span class="gold-tag">543-CONSTITUENCY ELECTION ENGINE</span><h2>National campaign, polling & counting</h2>
-    <div class="election-metrics"><div><small>CONSTITUENCIES</small><b>543</b></div><div><small>FUNDED PLAYER CANDIDATES</small><b>${approved}</b></div><div><small>CAMPAIGN ENTRIES</small><b>${e.campaigns.length}</b></div><div><small>RESULTS RECORDED</small><b>${wins}/543</b></div></div>
+  return `<section class="panel"><span class="gold-tag">543-CONSTITUENCY ELECTION ENGINE</span><h2>National campaign, polling & counting</h2><p class="creator-note">Election steps: 1) Nominate candidates → 2) Approve tickets → 3) Fund campaigns → 4) Run AI campaigns → 5) Poll and count → 6) Form the Central Government. Complete each step before moving to the next.</p>
+    <div class="election-metrics"><div><small>CONSTITUENCIES</small><b>543</b></div><div><small>FUNDED PLAYER CANDIDATES</small><b>${approved}</b></div><div><small>PLAYER CAMPAIGNS</small><b>${e.campaigns.length}</b></div><div><small>RESULTS RECORDED</small><b>${wins}/543</b></div></div>
     <p class="panel-description">This simulation generates constituency-level campaign and vote outcomes from funded player candidates and simulated AI competitors. Numbered constituency labels are used where verified official names are not available in the current dataset.</p>
-    <div class="national-lok-sabha-actions"><button class="primary-btn" data-ls-engine-campaign ${e.completed?'disabled':''}>RUN AI NATIONAL CAMPAIGNS</button><button class="primary-btn" data-ls-engine-count ${!e.campaigns.length||e.completed?'disabled':''}>POLL & COUNT ALL CONSTITUENCIES</button></div>
+    <div class="national-lok-sabha-actions"><button class="primary-btn" data-ls-engine-campaign ${e.completed?'disabled':''}>RUN AI NATIONAL CAMPAIGNS</button><button class="primary-btn" data-ls-engine-count ${!e.campaignsRunAt||e.completed?'disabled':''}>POLL & COUNT ALL CONSTITUENCIES</button></div>
     ${e.partyTally.length?`<h3>National seat tally</h3>${e.partyTally.map(x=>`<div class="national-ls-state-row"><b>${escapeHtml(x.party)}</b><strong>${x.seats}</strong></div>`).join('')}<p><b>Majority mark:</b> 272 · <b>Leading party:</b> ${escapeHtml(leader?.party||'—')} (${leader?.seats||0})</p>`:'<p class="panel-description">No constituency results yet. Complete campaigns and counting to calculate party seats automatically.</p>'}
     ${e.results.length?`<details><summary>Constituency results · ${e.results.length}</summary><div class="candidate-register-list">${e.results.slice(0,543).map(r=>`<div class="finance-history" style="padding:10px;margin:6px 0"><b>${escapeHtml(r.constituency)}</b><div>${escapeHtml(r.winner)} · ${escapeHtml(r.partyName)}</div><small>${Number(r.votes).toLocaleString('en-IN')} votes · Margin ${Number(r.margin).toLocaleString('en-IN')}</small></div>`).join('')}</div></details>`:''}
   </section>`;
@@ -4703,6 +4729,8 @@ function ensureGovernmentState() {
   }
   if (!Array.isArray(g.alternativeAdministration.partners)) g.alternativeAdministration.partners = [];
   if (!Array.isArray(g.alternativeAdministration.ministers)) g.alternativeAdministration.ministers = [];
+  // Opposition administration in this panel is State Assembly-only; Central Government has its own record.
+  if (g.alternativeAdministration.level === 'lok-sabha') g.alternativeAdministration.level = 'assembly';
   if (!Number.isFinite(Number(g.alternativeAdministration.ownPartySeats))) g.alternativeAdministration.ownPartySeats = 0;
   if (!g.alternativeAdministration.negotiationStatus) g.alternativeAdministration.negotiationStatus = 'Not started';
   g.alternativeAdministration.partners.forEach(partner=>{if(!partner.status)partner.status='accepted';});
@@ -4720,6 +4748,71 @@ function ensureGovernmentState() {
   if (!Number.isFinite(Number(g.treasury))) g.treasury = 50000000;
   if (!Number.isFinite(Number(g.performance))) g.performance = 50;
   return g;
+}
+
+function ensureCentralGovernmentState() {
+  if (!state.centralGovernment || typeof state.centralGovernment !== 'object') {
+    state.centralGovernment = { status:'awaiting-results', primeMinister:'', party:'', supportSeats:0, coalition:[], cabinet:[], formedAt:'', floorTest:'Not held', history:[] };
+  }
+  const c = state.centralGovernment;
+  if (!Array.isArray(c.coalition)) c.coalition = [];
+  if (!Array.isArray(c.cabinet)) c.cabinet = [];
+  if (!Array.isArray(c.history)) c.history = [];
+  return c;
+}
+function centralGovernmentAction(action) {
+  const engine = ensureLokSabhaElectionEngine();
+  const c = ensureCentralGovernmentState();
+  if (!engine.completed || !state.elections?.lastLokSabhaSeatTally?.countingComplete) return toast('Complete Lok Sabha counting before forming the Central Government.');
+  const tally = engine.partyTally || [];
+  const majority = 272;
+  if (action === 'form-majority') {
+    const winner = tally.find(row => Number(row.seats) >= majority);
+    if (!winner) return toast('No party has 272 seats. Start coalition talks to build majority support.');
+    const leader = prompt(`Enter the Prime Minister from ${winner.party}:`, state.playerName || '');
+    if (!leader || !leader.trim()) return;
+    c.status = 'formed'; c.electionCycle = engine.cycle; c.primeMinister = leader.trim(); c.party = winner.party; c.supportSeats = Number(winner.seats); c.coalition = []; c.formedAt = dateText(); c.floorTest = 'Passed';
+    c.history.unshift({date:dateText(),event:`Central Government formed by ${winner.party} with ${winner.seats} Lok Sabha seats.`});
+    saveState(); render(); toast('Central Government formed from the Lok Sabha majority.');
+  } else if (action === 'cabinet') {
+    if (c.status !== 'formed' || Number(c.electionCycle) !== Number(engine.cycle)) return toast('Form the Central Government for this Lok Sabha cycle first.');
+    const eligible = electedMemberRegister('lok-sabha').filter(member => member.party === c.party || c.coalition.some(partner => partner.name.toLowerCase() === member.party.toLowerCase()));
+    if (!eligible.length) return toast('No elected MPs from the recorded governing parties are available to form a Union Council of Ministers.');
+    const portfolios = ['Home Affairs','Finance','Defence','External Affairs','Road Transport & Highways','Agriculture','Health','Education','Railways','Commerce & Industry','Power','Law & Justice','Rural Development','Environment','Social Justice'];
+    c.cabinet = portfolios.map((portfolio,index)=>{ const member=eligible[index % eligible.length]; return {name:member.name,party:member.party,portfolio,constituency:member.constituency}; });
+    c.history.unshift({date:dateText(),event:`Union Council of Ministers constituted with ${c.cabinet.length} portfolio assignments.`});
+    saveState(); render(); toast(`Union cabinet recorded with ${c.cabinet.length} portfolios.`);
+  } else if (action === 'coalition') {
+    const party = prompt('Enter the lead party from the recorded Lok Sabha tally:');
+    if (!party || !party.trim()) return;
+    const own = tally.find(row => row.party.toLowerCase() === party.trim().toLowerCase());
+    if (!own) return toast('Choose a lead party shown in the Lok Sabha seat tally.');
+    const raw = prompt(`Enter total committed coalition support seats including ${own.party} (272 required):`, String(own.seats));
+    if (raw === null) return;
+    const seats = Math.floor(Number(raw));
+    if (!Number.isFinite(seats) || seats < majority || seats > 543 || seats < Number(own.seats)) return toast('Coalition support must be at least 272, no more than 543, and cannot be below the lead party tally.');
+    const leader = prompt(`Enter the Prime Minister candidate for the ${party.trim()}-led coalition:`);
+    if (!leader || !leader.trim()) return;
+    const partners = prompt('Enter supporting party names separated by commas:','');
+    c.status = 'formed'; c.electionCycle = engine.cycle; c.primeMinister = leader.trim(); c.party = own.party; c.supportSeats = seats; c.coalition = (partners || '').split(',').map(x=>x.trim()).filter(Boolean).map(name=>({name,status:'supporting'})); c.formedAt = dateText(); c.floorTest = 'Passed';
+    c.history.unshift({date:dateText(),event:`Central coalition led by ${own.party} formed with ${seats} declared Lok Sabha support seats.`});
+    saveState(); render(); toast('Central coalition government recorded with majority support.');
+  }
+}
+function centralGovernmentPanel() {
+  const c = ensureCentralGovernmentState();
+  const engine = ensureLokSabhaElectionEngine();
+  const tally = engine.partyTally || [];
+  const majorityParty = tally.find(row => Number(row.seats) >= 272);
+  const counted = !!engine.completed && !!state.elections?.lastLokSabhaSeatTally?.countingComplete;
+  const formedThisCycle = c.status === 'formed' && Number(c.electionCycle) === Number(engine.cycle);
+  return `<section class="panel central-government-panel"><span class="gold-tag">CENTRAL GOVERNMENT · LOK SABHA</span><h2>${formedThisCycle?'Central Government':'Form the Central Government'}</h2><p class="panel-description">This section uses only the completed 543-seat Lok Sabha result. It has its own Prime Minister, coalition support and cabinet record; it does not change the Karnataka State Government.</p>
+    <div class="election-metrics"><div><small>LOK SABHA SEATS</small><b>543</b></div><div><small>MAJORITY MARK</small><b>272</b></div><div><small>COUNTING</small><b>${counted?'Complete':'Not complete'}</b></div><div><small>DECLARED SUPPORT</small><b>${formedThisCycle?`${c.supportSeats}/543`:'—'}</b></div></div>
+    ${!counted?'<p class="creator-note">Step 1: complete nominations, approval, funding and campaigning in Elections → Lok Sabha, then count all constituencies. Government formation unlocks after counting.</p>':formedThisCycle?`<p><b>Prime Minister:</b> ${escapeHtml(c.primeMinister)} · <b>Lead party:</b> ${escapeHtml(c.party)} · <b>Support:</b> ${c.supportSeats}/543</p><p class="creator-note">Central Government formation is recorded separately from State Government formation.</p>`:`<p class="creator-note">Step 2: ${majorityParty?`${escapeHtml(majorityParty.party)} has ${majorityParty.seats} seats and can form a single-party government.`:'No party reached 272 seats. Negotiate support with other parties, then record a coalition government.'} Step 3: record the Prime Minister and majority support.</p>
+    <div class="national-lok-sabha-actions"><button class="primary-btn" data-central-gov-action="form-majority" ${!majorityParty?'disabled':''}>FORM CENTRAL GOVERNMENT</button><button class="secondary-btn" data-central-gov-action="coalition" ${!counted||!!majorityParty?'disabled':''}>START COALITION & FORM GOVERNMENT</button></div>`}
+    ${formedThisCycle?`<div class="national-lok-sabha-actions"><button class="secondary-btn" data-central-gov-action="cabinet">FORM UNION CABINET FROM ELECTED MPS</button></div>${c.cabinet.length?`<h3>Union Council of Ministers</h3>${c.cabinet.map(member=>`<div class="history-row"><b>${escapeHtml(member.portfolio)}</b><small>${escapeHtml(member.name)} · ${escapeHtml(member.party)}</small></div>`).join('')}`:''}`:''}
+    ${tally.length?`<h3>Seat tally used for Central Government</h3>${tally.map(row=>`<div class="national-ls-state-row"><b>${escapeHtml(row.party)}</b><strong>${Number(row.seats)}</strong></div>`).join('')}`:''}
+    ${c.history.length?`<h3>Central Government record</h3>${c.history.slice(0,5).map(row=>`<div class="history-row"><b>${escapeHtml(row.event)}</b><small>${escapeHtml(row.date||'')}</small></div>`).join('')}`:''}</section>`;
 }
 
 function eligibleElectedMinisters() {
@@ -5151,9 +5244,9 @@ function alternativeGovernmentAction(action) {
   } else if(action==='auto-cabinet'){
     buildAlternativeCabinetFromElectedMembers();
   } else if(action==='auto-seats'){
-    const level=prompt('Election chamber: enter assembly or lok-sabha','assembly');
+    const level=prompt('This panel is for the State Assembly. Enter ASSEMBLY to load State Assembly results.','assembly');
     if(!level)return;
-    a.level=level.toLowerCase()==='lok-sabha'?'lok-sabha':'assembly';
+    a.level='assembly';
     const parties=electedPartySeatRegister(a.level);
     if(!parties.length)return toast('No party-wise elected-member records are available for this chamber yet.');
     a.partySeatRegister=parties.map(({party,seats})=>({party,seats}));
@@ -5261,6 +5354,7 @@ function governmentPage() {
       </div>
     </section>`;
   return `
+    ${centralGovernmentPanel()}
     ${alternativePanel}
     ${successionPanel}
     <section class="panel"><span class="eyebrow">PARLIAMENTARY OVERSIGHT</span><h2>Decisions affecting Government</h2>
@@ -5270,8 +5364,8 @@ function governmentPage() {
       ${(g.enactedLaws || []).slice(0,6).map(law=>`<div class="history-row"><b>${escapeHtml(law.title)}</b><span>${escapeHtml(law.status)}</span></div>`).join('') || '<p class="muted">Bills receiving assent in Parliament will appear here.</p>'}
     </section>
     <div class="page-heading"><div><div class="eyebrow">PUBLIC ADMINISTRATION</div><h1>Government <em>command</em></h1><p>Manage ministries, public finances, infrastructure projects, government orders and service delivery.</p></div><div class="date-card"><span>GOVERNMENT STATUS</span><b>${formed ? 'GOVERNMENT FORMED' : majorityReached ? 'MAJORITY SECURED' : wins ? 'MAJORITY NOT REACHED' : 'NOT FORMED'}</b><small>${wins}/113 seats needed for majority</small></div></div>
-    <section class="panel government-hero"><span class="gold-tag">STATE ADMINISTRATION</span><h2>${formed ? 'Your state government' : majorityReached ? 'Assembly majority secured' : wins ? 'The path to a majority' : 'The path to government'}</h2>
-      <p class="panel-description">${formed ? `Chief Minister: ${escapeHtml(g.chiefMinister || state.playerName)}. Build your cabinet and deliver programmes.` : 'One MLA victory gives you one Assembly seat, not a government. A single party needs 113 of 224 seats to form a majority government. Party candidates must be approved, funded and included in the election cycle before their simulated constituency results count.'}</p>
+    <section class="panel government-hero"><span class="gold-tag">STATE GOVERNMENT · KARNATAKA ASSEMBLY</span><h2>${formed ? 'Your state government' : majorityReached ? 'Assembly majority secured' : wins ? 'The path to a majority' : 'The path to government'}</h2>
+      <p class="panel-description">This section governs the Karnataka State Assembly only. The separate Central Government section uses Lok Sabha results. ${formed ? `Chief Minister: ${escapeHtml(g.chiefMinister || state.playerName)}. Build your cabinet and deliver programmes.` : 'One MLA victory gives you one Assembly seat, not a government. A single party needs 113 of 224 seats to form a majority government. Party candidates must be approved, funded and included in the election cycle before their simulated constituency results count.'}</p>
       <div class="government-unlock-grid"><div><b>${wins} / 224</b><small>Party Assembly seats won · majority 113</small></div><div><b>${money(g.treasury)}</b><small>Government treasury</small></div><div><b>${Number(g.performance)}%</b><small>Administration performance</small></div><div><b>${appointedMinisterCount}/${governmentPortfolios.length}</b><small>Ministers appointed</small></div></div>
       ${!meeting.selectedLeaderName && !formed && formationStage==='not-started' && meeting.status!=='In session' ? `<button class="primary-btn" data-action="call-party-meeting" ${!majorityReached?'disabled':''}>CALL BPP LEGISLATIVE PARTY MEETING</button>` : ''}
       ${meeting.selectedLeaderName && !formed && formationStage==='not-started' ? `<button class="primary-btn" data-action="gov-form" ${!majorityReached || meeting.status!=='Leader elected' ? 'disabled' : ''}>REQUEST GOVERNOR TO FORM GOVERNMENT</button>` : ''}
@@ -7425,6 +7519,8 @@ document.addEventListener('click', event => {
 
   const manualLsCampaign=event.target.closest('[data-ls-manual-campaign]');
   if(manualLsCampaign){manageManualLokSabhaCampaign(manualLsCampaign.dataset.lsManualCampaign);return;}
+  const centralGovButton=event.target.closest('[data-central-gov-action]');
+  if(centralGovButton){centralGovernmentAction(centralGovButton.dataset.centralGovAction);return;}
   const lsCampaignButton=event.target.closest('[data-ls-engine-campaign]');
   if(lsCampaignButton){runLokSabhaCampaigns();return;}
   const lsCountButton=event.target.closest('[data-ls-engine-count]');
