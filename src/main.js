@@ -5245,7 +5245,7 @@ function centralGovernmentAction(action) {
     c.supportSeats=supportSeats; c.coalition=partners.map(row=>({name:row.party,seats:Number(row.seats),status:'supporting'}));
     c.formedAt=dateText(); c.floorTest='Not held';
     c.history.unshift({date:dateText(),event:`Coalition talks recorded with ${own.party} as lead party, ${leaderMember.party} MP ${leader} as Prime Minister-designate, ${partners.length} supporting parties and ${supportSeats} declared Lok Sabha seats. Floor test pending.`});
-    saveState(); render(); toast(`Coalition support recorded: ${supportSeats}/543. Conduct the Lok Sabha floor test to complete formation.`);
+    saveState(); render(); toast(`Coalition recorded: ${supportSeats}/543 seats. ${leaderMember.party} MP ${leader} is Prime Minister-designate. Conduct the Lok Sabha floor test to complete formation.`);
   } else if (action === 'floor-test') {
     if (!eligibleForCycle) return toast('Record a majority leader or coalition support before conducting the Lok Sabha floor test.');
     const leadSeats = Number(tally.find(row=>row.party.toLowerCase()===String(c.party||'').toLowerCase())?.seats||0);
@@ -5263,6 +5263,21 @@ function centralGovernmentAction(action) {
     saveState(); render(); toast('Lok Sabha floor test passed. Central Government formed.');
   }
 }
+function updateCentralCoalitionPreview() {
+  const preview = document.querySelector('[data-central-coalition-preview]');
+  const lead = document.querySelector('[data-central-lead-select]');
+  if (!preview || !lead) return;
+  const leadOption = lead.options[lead.selectedIndex];
+  const leadParty = String(lead.value || '');
+  const leadSeats = Number((leadOption?.textContent || '').match(/(\\d+)\\s*seats?/i)?.[1] || 0);
+  const selected = [...document.querySelectorAll('[data-central-partner-select]:checked')]
+    .filter(input => String(input.value).toLowerCase() !== leadParty.toLowerCase());
+  const supportSeats = leadSeats + selected.reduce((sum,input)=>sum+Number(input.dataset.seats||0),0);
+  const needed = Math.max(0,272-supportSeats);
+  preview.innerHTML = `<b>Coalition majority preview</b><span>${escapeHtml(leadParty || 'Lead party')}: ${leadSeats} seats</span><span>Supporting parties: ${selected.length}</span><strong>${supportSeats} / 272 seats</strong><span>${supportSeats >= 272 ? 'Majority reached · ready to record coalition talks' : `${needed} more seat(s) needed to reach a majority`}</span>`;
+  preview.dataset.supportSeats = String(supportSeats);
+}
+
 function centralGovernmentPanel() {
   const c = ensureCentralGovernmentState();
   const engine = ensureLokSabhaElectionEngine();
@@ -5282,7 +5297,7 @@ function centralGovernmentPanel() {
   const portfolios = ['Home Affairs','Finance','Defence','External Affairs','Road Transport & Highways','Agriculture','Health','Education','Railways','Commerce & Industry','Power','Law & Justice','Rural Development','Environment','Social Justice'];
   const portfolioOptions = portfolios.map(portfolio=>`<option value="${escapeHtml(portfolio)}">${escapeHtml(portfolio)}</option>`).join('');
   const leadOptions = tally.map(row=>`<option value="${escapeHtml(row.party)}">${escapeHtml(row.party)} · ${Number(row.seats)} seats</option>`).join('');
-  const partnerOptions = tally.map(row=>`<label class="coalition-party-option"><input type="checkbox" data-central-partner-select value="${escapeHtml(row.party)}"><span>${escapeHtml(row.party)} · ${Number(row.seats)} seats</span></label>`).join('');
+  const partnerOptions = tally.map(row=>`<label class="coalition-party-option"><input type="checkbox" data-central-partner-select data-seats="${Number(row.seats)}" value="${escapeHtml(row.party)}"><span>${escapeHtml(row.party)} · ${Number(row.seats)} seats</span></label>`).join('');
   const sameCycle = counted && Number(c.electionCycle) === currentCycle;
   const appointedThisCycle = sameCycle && c.status === 'appointed';
   const formedThisCycle = sameCycle && c.status === 'formed';
@@ -5291,10 +5306,10 @@ function centralGovernmentPanel() {
   return `<section class="panel central-government-panel"><span class="gold-tag">CENTRAL GOVERNMENT · LOK SABHA</span><h2>Central Government</h2><p class="panel-description">This is the Union Government only. It uses the completed Lok Sabha result (543 seats), a 272-seat majority, and a separate Prime Minister, coalition and Union cabinet record. It never changes the Karnataka State Government.</p>
     ${!counted && rawSnapshot ? `<p class="creator-note">${escapeHtml(ledgerCheck.reason)} The government will not use an unverified tally.</p>` : ''}
     <div class="election-metrics"><div><small>LOK SABHA SEATS</small><b>543</b></div><div><small>MAJORITY MARK</small><b>272</b></div><div><small>COUNTING</small><b>${counted?'Complete':`${nationalCountedSeats}/543 counted · ${nationalPendingSeats} pending`}</b></div><div><small>FORMATION</small><b>${escapeHtml(stage)}</b></div></div>
-    ${!counted?'<p class="creator-note">Your party-candidate report is not the full Lok Sabha count. Run the national simulation here to count all 543 constituencies and unlock coalition talks. Missing party tickets are simulated; they are not left pending.</p><button class="primary-btn" data-central-gov-action="run-national-count">RUN NATIONAL CAMPAIGN & COUNT ALL 543 SEATS</button>':appointedThisCycle?`<p><b>Prime Minister-designate:</b> ${escapeHtml(c.primeMinister)} · <b>Lead party:</b> ${escapeHtml(c.party)} · <b>Declared support:</b> ${c.supportSeats}/543</p><p class="creator-note">The government is not considered formed until the Lok Sabha floor test is passed.</p><button class="primary-btn" data-central-gov-action="floor-test">CONDUCT LOK SABHA FLOOR TEST</button>`:formedThisCycle?`<p><b>Prime Minister:</b> ${escapeHtml(c.primeMinister)} · <b>Lead party:</b> ${escapeHtml(c.party)} · <b>Support:</b> ${c.supportSeats}/543 · <b>Floor test:</b> ${escapeHtml(c.floorTest)}</p>`:`<p class="creator-note">${majorityParty?`${escapeHtml(majorityParty.party)} won ${majorityParty.seats} seats and can nominate a Prime Minister-designate from its elected MPs.`:`Hung Lok Sabha: no party reached 272 seats. The leading party is ${escapeHtml(tally[0]?.party||'—')} with ${Number(tally[0]?.seats||0)} seats; it needs ${Math.max(0,272-Number(tally[0]?.seats||0))} more seats. Select a lead party and supporting parties to begin coalition talks.`} After nomination, conduct a floor test to complete government formation.</p>
+    ${!counted?'<p class="creator-note">Your party-candidate report is not the full Lok Sabha count. Run the national simulation here to count all 543 constituencies and unlock coalition talks. Missing party tickets are simulated; they are not left pending.</p><button class="primary-btn" data-central-gov-action="run-national-count">RUN NATIONAL CAMPAIGN & COUNT ALL 543 SEATS</button>':appointedThisCycle?`<p><b>Prime Minister-designate:</b> ${escapeHtml(c.primeMinister)} · <b>Lead party:</b> ${escapeHtml(c.party)} · <b>Declared support:</b> ${c.supportSeats}/543 · <b>Majority:</b> ${Math.max(0,Number(c.supportSeats||0)-272)} above threshold</p><p class="creator-note">The government is not considered formed until the Lok Sabha floor test is passed.</p><button class="primary-btn" data-central-gov-action="floor-test">CONDUCT LOK SABHA FLOOR TEST</button>`:formedThisCycle?`<p><b>Prime Minister:</b> ${escapeHtml(c.primeMinister)} · <b>Lead party:</b> ${escapeHtml(c.party)} · <b>Support:</b> ${c.supportSeats}/543 · <b>Majority:</b> ${Math.max(0,Number(c.supportSeats||0)-272)} above threshold · <b>Floor test:</b> ${escapeHtml(c.floorTest)}</p>`:`<p class="creator-note">${majorityParty?`${escapeHtml(majorityParty.party)} won ${majorityParty.seats} seats and can nominate a Prime Minister-designate from its elected MPs.`:`Hung Lok Sabha: no party reached 272 seats. The leading party is ${escapeHtml(tally[0]?.party||'—')} with ${Number(tally[0]?.seats||0)} seats; it needs ${Math.max(0,272-Number(tally[0]?.seats||0))} more seats. Select a lead party and supporting parties to begin coalition talks.`} After nomination, conduct a floor test to complete government formation.</p>
     <div class="creator-field"><label for="central-pm-select">Prime Minister-designate · search elected MP from lead/supporting parties</label><input id="central-pm-select" data-central-pm-select list="central-pm-member-options" placeholder="Type a member name" autocomplete="off"><datalist id="central-pm-member-options">${pmOptions}</datalist></div>
     <div class="national-lok-sabha-actions"><button class="primary-btn" data-central-gov-action="form-majority" ${!majorityParty?'disabled':''}>NOMINATE PRIME MINISTER</button><button class="secondary-btn" data-central-gov-action="coalition" ${!canNegotiate?'disabled':''}>START COALITION TALKS</button></div>
-    <details class="coalition-picker"><summary>Choose parties for coalition talks</summary><div class="creator-field"><label for="central-lead-select">Lead party</label><select id="central-lead-select" data-central-lead-select>${leadOptions}</select></div><div class="creator-field"><label>Supporting parties · select all that agree to support</label><div class="coalition-party-list">${partnerOptions}</div></div><p class="creator-note">Only counted party seat totals are used. Select actual parties; their seats are added automatically. The Prime Minister-designate may be an elected MP from the lead party or any selected supporting party.</p></details>`}
+    <details class="coalition-picker"><summary>Choose parties for coalition talks</summary><div class="creator-field"><label for="central-lead-select">Lead party</label><select id="central-lead-select" data-central-lead-select>${leadOptions}</select></div><div class="creator-field"><label>Supporting parties · select all that agree to support</label><div class="coalition-party-list">${partnerOptions}</div></div><div class="coalition-seat-preview" data-central-coalition-preview aria-live="polite"><b>Coalition majority preview</b><span>Lead party: ${Number(tally[0]?.seats||0)} seats</span><strong>${Number(tally[0]?.seats||0)} / 272 seats</strong><span>${Math.max(0,272-Number(tally[0]?.seats||0))} more seats needed to reach a majority</span></div><p class="creator-note">Only counted party seat totals are used. Select actual parties; their seats are added automatically. The Prime Minister-designate may be an elected MP from the lead party or any selected supporting party.</p></details>`}
     ${appointedThisCycle || formedThisCycle ? `<h3>Coalition support</h3><div class="history-row"><b>${escapeHtml(c.party||'Lead party')}</b><small>${Number(tally.find(row=>row.party===c.party)?.seats||0)} seats · lead party</small></div>${(c.coalition||[]).map(partner=>`<div class="history-row"><b>${escapeHtml(partner.name)}</b><small>${Number(partner.seats||0)} seats · ${escapeHtml(partner.status||'supporting')}</small></div>`).join('')}${formedThisCycle ? `<h3>Union Council of Ministers</h3><div class="creator-field"><label for="central-minister-name">Search elected MP from governing parties</label><input id="central-minister-name" data-central-minister-name list="central-minister-member-options" placeholder="Type member name" autocomplete="off"><datalist id="central-minister-member-options">${ministerOptions}</datalist></div><div class="creator-field"><label for="central-minister-portfolio">Choose portfolio</label><select id="central-minister-portfolio" data-central-minister-portfolio><option value="">Select portfolio</option>${portfolioOptions}</select></div><button class="primary-btn" data-central-gov-action="appoint-minister">APPOINT SELECTED MINISTER</button>${c.cabinet.length ? c.cabinet.map(member=>`<div class="history-row"><b>${escapeHtml(member.portfolio)}</b><small>${escapeHtml(member.name)} · ${escapeHtml(member.party)}${member.constituency?` · ${escapeHtml(member.constituency)}`:''}</small></div>`).join('') : '<p class="creator-note">No ministers appointed yet. Select an elected MP and portfolio above.</p>'}` : ''}` : ''}
     ${tally.length?`<h3>Lok Sabha party seat tally</h3>${tally.map(row=>`<div class="national-ls-state-row"><b>${escapeHtml(row.party)}</b><strong>${Number(row.seats)}</strong></div>`).join('')}`:''}
     ${c.history.length?`<h3>Central Government record</h3>${c.history.slice(0,5).map(row=>`<div class="history-row"><b>${escapeHtml(row.event)}</b><small>${escapeHtml(row.date||'')}</small></div>`).join('')}`:''}</section>`;
@@ -8008,6 +8023,12 @@ document.addEventListener('change', event => {
     const g = ensureGovernmentState();
     g.pendingPortfolio = event.target.value;
     saveState(); render();
+  }
+});
+
+document.addEventListener('change', event => {
+  if (event.target?.matches('[data-central-lead-select], [data-central-partner-select]')) {
+    updateCentralCoalitionPreview();
   }
 });
 
