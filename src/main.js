@@ -2662,6 +2662,75 @@ function buildPartyWideElectionResults(active, playerResult) {
   return [playerRow, ...manualRows, ...otherRows];
 }
 
+function syncPlayerLokSabhaCountToNationalLedger(active, result) {
+  if (!active || active.typeId !== 'lok-sabha' || !result) return;
+  const engine = ensureLokSabhaElectionEngine();
+  const cycle = Number(active.scheduledAt || currentMonthIndex());
+  if (Number(engine.cycle) !== cycle) return;
+  const seats = assignPartyElectionSeats('lok-sabha', [], cycle);
+  const seat = seats.find(row =>
+    String(row.stateName || '').trim().toLowerCase() === String(active.stateName || '').trim().toLowerCase() &&
+    Number(row.constituencyNumber) === Number(active.constituencyNumber)
+  );
+  if (!seat || !seat.seatCode) return;
+  const contestants = Array.isArray(result.contestants) ? [...result.contestants].sort((a,b)=>Number(b.votes||0)-Number(a.votes||0)) : [];
+  const winner = contestants[0];
+  if (!winner || !winner.party) return;
+  const runnerUp = contestants[1] || {};
+  const partyVotes = {};
+  contestants.forEach(item => { partyVotes[item.party]=(partyVotes[item.party]||0)+Number(item.votes||0); });
+  const row = {
+    seatCode:seat.seatCode,
+    stateName:seat.stateName,
+    constituency:seat.constituency,
+    winner:winner.name,
+    partyName:winner.party,
+    votes:Number(winner.votes||0),
+    partyVotes,
+    runnerUp:runnerUp.name||'',
+    runnerUpParty:runnerUp.party||'',
+    runnerUpVotes:Number(runnerUp.votes||0),
+    totalVotes:Number(result.turnout||0),
+    turnout:Number(result.turnout||0),
+    margin:Math.max(0,Number(winner.votes||0)-Number(runnerUp.votes||0)),
+    playerCounted:true,
+    countingRounds:Number(result.countingRounds||0),
+    countedAt:result.date||dateText()
+  };
+  const rows = Array.isArray(engine.results) ? engine.results.filter(item => item && item.seatCode) : [];
+  const existing = rows.findIndex(item => String(item.seatCode) === String(seat.seatCode));
+  if (existing >= 0) rows[existing] = row;
+  else rows.push(row);
+  const order = new Map(seats.map((item,index)=>[String(item.seatCode),index]));
+  rows.sort((a,b)=>(order.get(String(a.seatCode))??9999)-(order.get(String(b.seatCode))??9999));
+  engine.results = rows;
+  const tally = {};
+  rows.forEach(item => { tally[item.partyName]=(tally[item.partyName]||0)+1; });
+  engine.partyTally = Object.entries(tally).map(([party,seats])=>({party,seats})).sort((a,b)=>b.seats-a.seats || a.party.localeCompare(b.party));
+  engine.completed = rows.length === 543 && new Set(rows.map(item=>String(item.seatCode))).size === 543;
+  if (engine.completed) {
+    engine.lastRunAt = dateText();
+    const reportByParty = new Map((engine.aiCampaignReport || []).map(item=>[String(item.party),{...item}]));
+    const reportTotals = {};
+    rows.forEach(item=>{
+      const party=String(item.partyName||'Independent');
+      if(!reportTotals[party]) reportTotals[party]={wins:0,votes:0,margin:0};
+      reportTotals[party].wins++;
+      reportTotals[party].votes+=Number((item.partyVotes && item.partyVotes[party]) || item.votes || 0);
+      reportTotals[party].margin+=Number(item.margin||0);
+    });
+    const totalVotes=rows.reduce((sum,item)=>sum+Number(item.totalVotes||item.turnout||0),0);
+    engine.aiCampaignReport=Object.entries(reportTotals).map(([party,totals])=>{
+      const prior=reportByParty.get(party)||{};
+      return {party,style:prior.style||'Constituency campaign & voter outreach',contests:543,wins:totals.wins,averagePerformance:Number(prior.averagePerformance||50),votes:totals.votes,voteShare:Math.round(totals.votes/Math.max(1,totalVotes)*1000)/10,averageWinningMargin:Math.round(totals.margin/Math.max(1,totals.wins))};
+    }).sort((a,b)=>b.wins-a.wins);
+    state.elections.lastLokSabhaSeatTally = {scheduledAt:cycle,totalSeats:543,majorityMark:272,seatsWon:engine.partyTally,countingComplete:true,date:engine.lastRunAt};
+    state.elections.lastLokSabhaResults = rows.map(item=>({...item}));
+    state.elections.lastLokSabhaCompletedCycle = cycle;
+    state.elections.lastLokSabhaNationalSnapshot = {cycle,tally:engine.partyTally.map(item=>({...item})),results:rows.map(item=>({...item})),source:'Completed 543-seat shared constituency ledger',completedAt:engine.lastRunAt,completed:true};
+  }
+}
+
 function completeElectionCounting(active) {
   const count = active.counting;
   const contestants = count.candidates.map(item => ({
@@ -2727,6 +2796,8 @@ function completeElectionCounting(active) {
         date:dateText(),countingComplete:true
       };
     } else if (active.typeId === 'lok-sabha') {
+      // Player counting writes its constituency result into the shared national ledger.
+      syncPlayerLokSabhaCountToNationalLedger(active, result);
       // A single player constituency result is not a completed national Lok Sabha tally.
       // Keep it as a candidate-level record so it cannot unlock Union government formation.
       state.elections.lastLokSabhaCandidateResult = {
@@ -4154,6 +4225,18 @@ function countLokSabhaElection() {
   const rivalNames=['National Democratic Alliance','Indian National Congress','Regional Alliance','Independent Front'];
   const seats=assignPartyElectionSeats('lok-sabha',[],engine.cycle);
   seats.forEach(seat=>{
+    const sharedResult = (engine.results || []).find(row => String(row.seatCode) === String(seat.seatCode));
+    if (sharedResult) {
+      const preserved = {...sharedResult};
+      results.push(preserved);
+      const key = String(preserved.partyName || 'Independent');
+      if (!campaignStats[key]) campaignStats[key]={party:key,contests:0,wins:0,votes:0,performance:0};
+      campaignStats[key].contests++;
+      campaignStats[key].wins++;
+      campaignStats[key].votes += Number((preserved.partyVotes && preserved.partyVotes[key]) || preserved.votes || 0);
+      campaignStats[key].performance += 50;
+      return;
+    }
     const contestants=[];
     const own=engine.campaigns.find(x=>x.player && x.seatCode===seat.seatCode);
     const playerParty=String(state.party||'Bharat Pragati Party');
@@ -4245,8 +4328,8 @@ function lokSabhaElectionEnginePanel() {
   const displayedTally=e.results.length===543 ? deriveLokSabhaTallyFromResults(e.results) : e.partyTally;
   const wins=e.results.length, leader=displayedTally[0];
   return `<section class="panel" id="national-campaign-count"><span class="gold-tag">543-CONSTITUENCY ELECTION ENGINE</span><h2>National campaign, polling & counting</h2><p class="creator-note">Election steps: 1) Nominate candidates → 2) Approve tickets → 3) Fund campaigns → 4) Run AI campaigns → 5) Poll and count → 6) Form the Central Government. Complete each step before moving to the next.</p>
-    <div class="election-metrics"><div><small>CONSTITUENCIES</small><b>543</b></div><div><small>FUNDED PLAYER CANDIDATES</small><b>${approved}</b></div><div><small>PLAYER CAMPAIGNS</small><b>${e.campaigns.length}</b></div><div><small>RESULTS RECORDED</small><b>${wins}/543</b></div></div>
-    <p class="panel-description">This simulation generates constituency-level campaign and vote outcomes from funded player candidates and simulated AI competitors. Numbered constituency labels are used where verified official names are not available in the current dataset.</p>
+    <div class="election-metrics"><div><small>CONSTITUENCIES</small><b>543</b></div><div><small>FUNDED PLAYER CANDIDATES</small><b>${approved}</b></div><div><small>PLAYER CAMPAIGNS</small><b>${e.campaigns.length}</b></div><div><small>RESULTS RECORDED</small><b>${wins}/543</b></div><div><small>PLAYER COUNTED SEATS</small><b>${e.results.filter(row=>row.playerCounted).length}</b></div></div>
+    <p class="panel-description">One shared constituency ledger powers this national result and the player’s constituency count. A completed player count is retained when the national count runs; the remaining seats are simulated once and saved to the same ledger. Numbered constituency labels are used where verified official names are not available in the current dataset.</p>
     <div class="national-lok-sabha-actions"><button class="primary-btn" data-ls-engine-campaign ${e.completed?'disabled':''}>RUN AI NATIONAL CAMPAIGNS</button><button class="primary-btn" data-ls-engine-count ${!e.campaignsRunAt||e.completed?'disabled':''}>POLL & COUNT ALL CONSTITUENCIES</button></div>
     ${displayedTally.length?`<h3>National seat tally</h3>${displayedTally.map(x=>`<div class="national-ls-state-row"><b>${escapeHtml(x.party)}</b><strong>${x.seats}</strong></div>`).join('')}<p><b>Majority mark:</b> 272 · <b>Leading party:</b> ${escapeHtml(leader?.party||'—')} (${leader?.seats||0})</p>`:'<p class="panel-description">No constituency results yet. Complete campaigns and counting to calculate party seats automatically.</p>'}
     ${e.results.length?electionPerformancePanel({title:'Lok Sabha election result',level:'CENTRAL · 543 SEATS',totalSeats:543,majorityMark:272,won:e.results.filter(row=>String(row.partyName||'').toLowerCase()===String(state.party||'BPP').toLowerCase()).length,lost:e.results.filter(row=>String(row.partyName||'').toLowerCase()!==String(state.party||'BPP').toLowerCase()).length,leading:0,counted:e.results.length,complete:!!e.completed,partyName:state.party||'Bharat Pragati Party',cycleLabel:`Election cycle ${e.cycle}`}) : ''}
