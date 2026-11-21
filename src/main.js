@@ -806,6 +806,7 @@ function icon(name) {
     Constituency: '⌖',
     Elections: '▤',
     Government: '🏛',
+    'Governance & Legacy': '★',
     Relationships: '♧',
     Finance: '₹',
     Economy: '▥',
@@ -870,10 +871,10 @@ function shell(content) {
   // Secondary modules remain available through contextual section navigation.
   const nav = [
     'Dashboard', 'Career', 'Party', 'Elections', 'Parliament',
-    'Government', 'Political Life', 'Phone', 'India Map', 'Constituency', 'Intelligence', 'Economy', 'Leaderboards', 'Finance', 'News', 'Profile'
+    'Government', 'Governance & Legacy', 'Political Life', 'Phone', 'India Map', 'Constituency', 'Intelligence', 'Economy', 'Leaderboards', 'Finance', 'News', 'Profile'
   ];
   const navDetails = {
-    'Dashboard':'Career overview','Career':'Progress & milestones','Party':'Organisation & members','Elections':'Nominate to count','Parliament':'Debates & legislation','Government':'State & Central offices','Political Life':'Institutions & public life','Phone':'Social, messages & apps','India Map':'Explore regions','Constituency':'Local representation','Intelligence':'Political analysis','Finance':'Funds & accounts','Economy':'Taxes & development','Leaderboards':'Regional performance','News':'Political updates','Profile':'Player & settings'
+    'Dashboard':'Career overview','Career':'Progress & milestones','Party':'Organisation & members','Elections':'Nominate to count','Parliament':'Debates & legislation','Government':'State & Central offices','Governance & Legacy':'Public delivery & career record','Political Life':'Institutions & public life','Phone':'Social, messages & apps','India Map':'Explore regions','Constituency':'Local representation','Intelligence':'Political analysis','Finance':'Funds & accounts','Economy':'Taxes & development','Leaderboards':'Regional performance','News':'Political updates','Profile':'Player & settings'
   };
 
   return `
@@ -931,7 +932,7 @@ function shell(content) {
       </main>
 
       <nav class="mobile-nav">
-        ${['Dashboard', 'Party', 'Elections', 'Phone', 'India Map', 'Parliament', 'Government', 'Political Life', 'Profile']
+        ${['Dashboard', 'Party', 'Elections', 'Phone', 'India Map', 'Parliament', 'Government', 'Governance & Legacy', 'Political Life', 'Profile']
           .map(name => `
             <button class="${activeTab === name ? 'active' : ''}"
               data-tab="${name}">
@@ -8241,6 +8242,111 @@ function leaderboardsPage() {
   <p class="panel-description">The player’s region uses current in-game indicators where available. Other entries are deterministic fictional benchmarks for gameplay comparison; no external data or online leaderboard service is used.</p></section>`;
 }
 
+/* POLITICAL CAREER & GOVERNANCE SUITE */
+function ensurePoliticalJourney() {
+  if (!state.politicalJourney || typeof state.politicalJourney !== 'object') {
+    state.politicalJourney = {
+      developmentFundCr: Number(ensureEconomySimulation().developmentBudgetCr || 12000), projects: [], cabinetReviews: [], coalitionDeals: [], bills: [], accountabilityCases: [], manifesto: [], departmentReviews: [], history: [], nextId: 1,
+      budget: { revenueCr: 85000, expenditureCr: 82000, reserveCr: 3000, year: 1 }, lastActionMonth: {}
+    };
+  }
+  const p = state.politicalJourney;
+  for (const key of ['projects','cabinetReviews','coalitionDeals','bills','accountabilityCases','manifesto','departmentReviews','history']) if (!Array.isArray(p[key])) p[key] = [];
+  if (!p.budget || typeof p.budget !== 'object') p.budget = { revenueCr:85000, expenditureCr:82000, reserveCr:3000, year:Number(state.year)||1 };
+  if (!p.lastActionMonth || typeof p.lastActionMonth !== 'object') p.lastActionMonth = {};
+  if (!Number.isFinite(Number(p.nextId))) p.nextId = 1;
+  if (!Number.isFinite(Number(p.developmentFundCr))) p.developmentFundCr = 12000;
+  return p;
+}
+
+function politicalJourneyLog(title, detail, type='Governance') {
+  const p = ensurePoliticalJourney();
+  p.history.unshift({title,detail,type,date:dateText()});
+  p.history = p.history.slice(0,80);
+}
+
+function politicalJourneyMonthlyGate(key) {
+  const p = ensurePoliticalJourney();
+  const month = typeof currentMonthIndex === 'function' ? currentMonthIndex() : Math.max(0,(Number(state.year||1)-1)*12+Number(state.month||1)-1);
+  if (Number(p.lastActionMonth[key]) === month) { toast('You have already completed this action this in-game month.'); return false; }
+  p.lastActionMonth[key] = month;
+  return true;
+}
+
+function politicalJourneyPage() {
+  const p = ensurePoliticalJourney();
+  const approval = Math.max(0,Math.min(100,Math.round(Number(state.media?.approval ?? state.publicSupport ?? 42))));
+  const trust = Math.max(0,Math.min(100,Math.round(Number(state.media?.trust ?? state.reputation ?? 45))));
+  const projects = [
+    {id:'roads',name:'Roads & bridges',cost:450,effect:'Infrastructure +3 · access +2'},
+    {id:'water',name:'Water & sanitation',cost:320,effect:'Welfare +3 · public health +2'},
+    {id:'health',name:'Hospital & primary care',cost:500,effect:'Welfare +4 · public trust +2'},
+    {id:'schools',name:'School renewal',cost:380,effect:'Education +4 · human development +2'},
+    {id:'transit',name:'Public transport',cost:600,effect:'Infrastructure +4 · employment +2'},
+    {id:'industry',name:'Industrial & job corridor',cost:750,effect:'Employment +4 · development +3'}
+  ];
+  const projectRows = p.projects.length ? p.projects.map(x=>`<article class="pj-record"><div><span class="gold-tag">${escapeHtml(x.status)}</span><h3>${escapeHtml(x.name)}</h3><p>${escapeHtml(x.location)} · ₹${Number(x.costCr).toLocaleString('en-IN')} crore</p><div class="mini-progress"><i style="width:${Math.max(0,Math.min(100,Number(x.progress)||0))}%"></i></div><small>${Number(x.progress)||0}% complete · ${escapeHtml(x.effect)}</small></div>${x.status!=='Completed'?`<button class="secondary-btn" data-pj-action="advance-project" data-pj-id="${x.id}">Record monthly review</button>`:'<b>Completed</b>'}</article>`).join(''):'<p class="panel-description">No funded projects yet. Fund a project, then record progress at monthly reviews.</p>';
+  const billRows = p.bills.length ? p.bills.map(b=>`<article class="pj-record"><div><span class="gold-tag">${escapeHtml(b.stage)}</span><h3>${escapeHtml(b.title)}</h3><p>${escapeHtml(b.scope)} · ${escapeHtml(b.created)}</p><small>${escapeHtml(b.note||'Draft legislation')}</small></div>${!['Enacted','Rejected'].includes(b.stage)?`<button class="secondary-btn" data-pj-action="advance-bill" data-pj-id="${b.id}">${b.stage==='Approved'?'Implement law':'Advance stage'}</button>`:''}</article>`).join(''):'<p class="panel-description">No bills in this career record. Introduce a policy bill to begin committee review, debate and voting.</p>';
+  const caseRows = p.accountabilityCases.length ? p.accountabilityCases.map(c=>`<article class="pj-record"><div><span class="gold-tag">${escapeHtml(c.status)}</span><h3>${escapeHtml(c.title)}</h3><p>${escapeHtml(c.detail)}</p></div>${c.status==='Pending'?`<div class="pj-actions"><button class="secondary-btn" data-pj-action="resolve-case" data-pj-id="${c.id}" data-pj-choice="transparent">Publish records</button><button class="secondary-btn" data-pj-action="resolve-case" data-pj-id="${c.id}" data-pj-choice="deny">Contest finding</button></div>`:''}</article>`).join(''):'<p class="panel-description">No active audit or ethics cases. Open a routine audit review to create a simulated accountability file.</p>';
+  const promiseRows = p.manifesto.length ? p.manifesto.map(m=>`<article class="pj-record"><div><span class="gold-tag">${escapeHtml(m.status)}</span><h3>${escapeHtml(m.title)}</h3><p>${escapeHtml(m.detail)}</p></div>${m.status==='Pending'?`<button class="secondary-btn" data-pj-action="deliver-promise" data-pj-id="${m.id}">Record delivery</button>`:''}</article>`).join(''):'<p class="panel-description">Track campaign commitments and record delivery before the next election.</p>';
+  const cabinet = p.cabinetReviews.length ? p.cabinetReviews.slice(0,4).map(r=>`<div class="history-row"><div><b>${escapeHtml(r.title)}</b><small>${escapeHtml(r.date)} · Performance ${r.score}/100</small><small>${escapeHtml(r.note)}</small></div></div>`).join(''):'<p class="panel-description">No cabinet reviews recorded yet.</p>';
+  const departments = ['Finance','Home','Education','Health','Infrastructure','Agriculture','Welfare','Transport'];
+  const departmentRows = departments.map(name=>{const value=Number(p.departmentPerformance?.[name] ?? 50);return `<div class="pj-dept-row"><div><b>${name}</b><small>Delivery score</small></div><strong>${value}/100</strong><button class="secondary-btn" data-pj-action="review-department" data-pj-department="${name}">Review</button></div>`}).join('');
+  const legacy = Math.round(Math.min(100,Math.max(0,(Number(state.reputation||0)*.22)+(Number(state.publicSupport||0)*.18)+(Number(state.influence||0)*.15)+(Number(state.media?.approval||0)*.15)+(p.projects.filter(x=>x.status==='Completed').length*3)+(p.bills.filter(x=>x.stage==='Enacted').length*4)+(p.manifesto.filter(x=>x.status==='Delivered').length*3)+(p.cabinetReviews.length*1.5))));
+  return `<div class="page-heading"><div><div class="eyebrow">POLITICAL CAREER · GOVERNANCE & LEGACY</div><h1>Governance <em>command</em></h1><p>Connect public investment, cabinet leadership, legislation, fiscal choices and political accountability across your career.</p></div></div>
+  <div class="stat-grid"><div class="stat-card"><div class="stat-top"><span>Development fund</span><span class="stat-icon">₹</span></div><strong>₹${Number(p.developmentFundCr).toLocaleString('en-IN')} Cr</strong><small>Available for new projects</small></div><div class="stat-card"><div class="stat-top"><span>Public approval</span><span class="stat-icon">♥</span></div><strong>${approval}/100</strong><small>Current simulated approval</small></div><div class="stat-card"><div class="stat-top"><span>Public trust</span><span class="stat-icon">◇</span></div><strong>${trust}/100</strong><small>Credibility and transparency</small></div><div class="stat-card"><div class="stat-top"><span>Career legacy</span><span class="stat-icon">★</span></div><strong>${legacy}/100</strong><small>Projects, laws, trust and service</small></div></div>
+  <section class="pj-section"><div class="pj-section-head"><div><span class="eyebrow">1 · CONSTITUENCY & INFRASTRUCTURE</span><h2>Development fund</h2><p>Choose a public project, allocate funds and track its delivery through monthly reviews.</p></div></div><div class="pj-form-row"><label>Project<select id="pj-project">${projects.map(x=>`<option value="${x.id}">${x.name} · ₹${x.cost} Cr</option>`).join('')}</select></label><label>Location<input id="pj-location" maxlength="70" value="${escapeHtml(state.constituency?.district||state.stateName||'India')}" /></label><button class="primary-btn" data-pj-action="fund-project">Fund project</button></div><div class="pj-record-list">${projectRows}</div></section>
+  <section class="pj-section"><div class="pj-section-head"><div><span class="eyebrow">2 · EXECUTIVE LEADERSHIP</span><h2>Cabinet performance & reshuffle</h2><p>Review delivery, record a performance report and make leadership decisions through existing Government and National Command systems.</p></div><button class="primary-btn" data-pj-action="cabinet-review">Run monthly cabinet review</button></div>${cabinet}<p class="panel-description">A review can improve public confidence when delivery is strong, or expose performance problems that require a reshuffle through the Government tab.</p></section>
+  <section class="pj-section"><div class="pj-section-head"><div><span class="eyebrow">3 · PUBLIC OPINION</span><h2>Approval & listening</h2><p>Hold a public listening session. Issues and service delivery influence the simulated approval rating.</p></div><button class="primary-btn" data-pj-action="public-listening">Hold public listening session</button></div><div class="pj-meter"><span>Approval</span><i><b style="width:${approval}%"></b></i><strong>${approval}/100</strong></div><div class="pj-meter"><span>Trust</span><i><b style="width:${trust}%"></b></i><strong>${trust}/100</strong></div></section>
+  <section class="pj-section"><div class="pj-section-head"><div><span class="eyebrow">4 · COALITION MANAGEMENT</span><h2>Coalition negotiations</h2><p>Record a policy agreement with a simulated partner. Support agreements influence stability, while unmet commitments can reduce trust.</p></div></div><div class="pj-form-row"><label>Partner<select id="pj-coalition-partner"><option>People’s Regional Forum</option><option>Regional Development Front</option><option>Civic Progress League</option><option>Farmers & Workers Alliance</option></select></label><label>Agreement<select id="pj-coalition-policy"><option>Infrastructure and jobs programme</option><option>Fiscal responsibility pact</option><option>Education and health package</option><option>Federal relations and state autonomy</option></select></label><button class="primary-btn" data-pj-action="coalition-deal">Record agreement</button></div>${p.coalitionDeals.map(d=>`<div class="history-row"><div><b>${escapeHtml(d.partner)}</b><small>${escapeHtml(d.policy)} · ${escapeHtml(d.status)} · ${escapeHtml(d.date)}</small></div></div>`).join('')||'<p class="panel-description">No new coalition agreements recorded.</p>'}</section>
+  <section class="pj-section"><div class="pj-section-head"><div><span class="eyebrow">5 · LEGISLATION</span><h2>Bill lifecycle</h2><p>Move a proposed bill through committee, debate, vote and implementation. Existing Parliament proceedings remain available in the Parliament tab.</p></div></div><div class="pj-form-row"><label>Bill title<input id="pj-bill-title" maxlength="90" placeholder="e.g. Public Transport Access Bill" /></label><label>Policy scope<select id="pj-bill-scope"><option>Infrastructure</option><option>Education</option><option>Health</option><option>Public finance</option><option>Governance reform</option><option>Environment</option></select></label><button class="primary-btn" data-pj-action="introduce-bill">Introduce bill</button></div><div class="pj-record-list">${billRows}</div></section>
+  <section class="pj-section"><div class="pj-section-head"><div><span class="eyebrow">6 · ANNUAL FISCAL PLAN</span><h2>Budget session</h2><p>Set annual revenue and expenditure in ₹ crore. A deficit increases simulated public debt; a surplus adds to reserve.</p></div></div><div class="pj-form-row"><label>Revenue (₹ crore)<input id="pj-budget-revenue" type="number" min="0" step="100" value="${Number(p.budget.revenueCr||0)}" /></label><label>Expenditure (₹ crore)<input id="pj-budget-expenditure" type="number" min="0" step="100" value="${Number(p.budget.expenditureCr||0)}" /></label><button class="primary-btn" data-pj-action="submit-budget">Present annual budget</button></div><p class="panel-description">Last budget: ₹${Number(p.budget.revenueCr||0).toLocaleString('en-IN')} Cr revenue · ₹${Number(p.budget.expenditureCr||0).toLocaleString('en-IN')} Cr expenditure · ₹${Number(p.budget.reserveCr||0).toLocaleString('en-IN')} Cr reserve.</p></section>
+  <section class="pj-section"><div class="pj-section-head"><div><span class="eyebrow">7 · ACCOUNTABILITY</span><h2>Audit, ethics & public accountability</h2><p>Open a simulated audit or ethics file, then publish records or contest the finding. Responses affect trust and political risk.</p></div><button class="primary-btn" data-pj-action="open-audit">Open audit review</button></div><div class="pj-record-list">${caseRows}</div></section>
+  <section class="pj-section"><div class="pj-section-head"><div><span class="eyebrow">8 · ELECTION PROMISES</span><h2>Manifesto tracker</h2><p>Record campaign commitments and mark delivery when the government completes the promised work.</p></div></div><div class="pj-form-row"><label>Promise<select id="pj-promise"><option>Improve public healthcare access</option><option>Upgrade roads and public transport</option><option>Expand quality education</option><option>Improve water and sanitation</option><option>Support jobs and local industry</option><option>Strengthen transparent governance</option></select></label><button class="primary-btn" data-pj-action="add-promise">Add manifesto promise</button></div><div class="pj-record-list">${promiseRows}</div></section>
+  <section class="pj-section"><div class="pj-section-head"><div><span class="eyebrow">9 · CIVIL SERVICE</span><h2>Department performance</h2><p>Review a department’s delivery score. Routine administration remains delegated; reviews identify where political leadership should intervene.</p></div></div><div class="pj-department-grid">${departmentRows}</div></section>
+  <section class="pj-section"><div class="pj-section-head"><div><span class="eyebrow">10 · CAREER RECORD</span><h2>Legacy & institutional history</h2><p>Your legacy score reflects service delivery, enacted laws, trust, public approval and fulfilled promises.</p></div></div><div class="pj-legacy-score"><strong>${legacy}</strong><span>/100</span><p>Career legacy estimate · saved to this game</p></div><div class="pj-record-list">${p.history.slice(0,15).map(h=>`<div class="history-row"><div><b>${escapeHtml(h.title)}</b><small>${escapeHtml(h.type)} · ${escapeHtml(h.date)}</small><small>${escapeHtml(h.detail)}</small></div></div>`).join('')||'<p class="panel-description">Your governance actions will be recorded here.</p>'}</div></section>
+  <p class="creator-note">Simulation note: these are fictional gameplay systems and estimates, not real public accounts, official performance ratings, legal advice or actual government processes.</p>`;
+}
+
+function politicalJourneyAction(action, button) {
+  const p=ensurePoliticalJourney();
+  const id=button?.dataset.pjId;
+  const byId=(list)=>list.find(item=>String(item.id)===String(id));
+  const approvalChange=(delta)=>{state.media=state.media||{};state.media.approval=Math.max(0,Math.min(100,Number(state.media.approval??state.publicSupport??42)+delta));state.publicSupport=Math.max(0,Math.min(100,Number(state.publicSupport||0)+Math.round(delta/2)));};
+  if(action==='fund-project'){
+    const catalog={roads:['Roads & bridges',450,'Infrastructure +3 · access +2'],water:['Water & sanitation',320,'Welfare +3 · public health +2'],health:['Hospital & primary care',500,'Welfare +4 · public trust +2'],schools:['School renewal',380,'Education +4 · human development +2'],transit:['Public transport',600,'Infrastructure +4 · employment +2'],industry:['Industrial & job corridor',750,'Employment +4 · development +3']};
+    const selected=catalog[document.getElementById('pj-project')?.value]; if(!selected)return;
+    const [name,costCr,effect]=selected; if(p.developmentFundCr<costCr){toast('Development fund is insufficient.');return;}
+    p.developmentFundCr-=costCr; const economy=ensureEconomySimulation(); economy.developmentBudgetCr=Math.max(0,Number(economy.developmentBudgetCr||0)-costCr); const project={id:p.nextId++,name,costCr,effect,location:String(document.getElementById('pj-location')?.value||state.stateName||'India').trim().slice(0,70)||'India',progress:0,status:'Active'};p.projects.unshift(project);politicalJourneyLog('Project funded',`${name} · ₹${costCr} crore allocated to ${project.location}`,'Development');
+  } else if(action==='advance-project'){
+    const project=byId(p.projects);if(!project||project.status==='Completed')return;if(!politicalJourneyMonthlyGate('project-review-'+project.id))return;project.progress=Math.min(100,Number(project.progress||0)+50);if(project.progress>=100){project.status='Completed';approvalChange(2);state.reputation=Math.min(100,Number(state.reputation||0)+1);const e=ensureEconomySimulation();e.developmentIndex=Math.min(100,Number(e.developmentIndex||42)+2);e.infrastructureIndex=Math.min(100,Number(e.infrastructureIndex||38)+2);politicalJourneyLog('Project completed',`${project.name} completed in ${project.location}.`,'Development');}else{project.status='In progress';politicalJourneyLog('Project review',`${project.name} reached ${project.progress}% completion.`,'Development');}
+  } else if(action==='cabinet-review'){
+    if(!politicalJourneyMonthlyGate('cabinet-review'))return;const score=Math.max(20,Math.min(95,Math.round(Number(state.government?.performance||50)+((Number(state.media?.approval||42)-50)*.2)+(p.projects.filter(x=>x.status==='Completed').length))));const note=score>=65?'Delivery is broadly on track; maintain oversight and publish progress.':score>=45?'Mixed delivery; assign corrective actions to underperforming portfolios.':'Delivery concerns require follow-up, ministerial accountability and possible reshuffle.';p.cabinetReviews.unshift({title:'Monthly cabinet performance review',score,note,date:dateText()});p.cabinetReviews=p.cabinetReviews.slice(0,30);approvalChange(score>=60?1:-1);politicalJourneyLog('Cabinet review completed',note,'Executive');
+  } else if(action==='public-listening'){
+    if(!politicalJourneyMonthlyGate('public-listening'))return;const unresolved=(state.casework?.cases||[]).filter(c=>c.status!=='Resolved').length;const delta=unresolved>4?-1:2;approvalChange(delta);state.media=state.media||{};state.media.trust=Math.max(0,Math.min(100,Number(state.media.trust||45)+(unresolved>4?-1:2)));politicalJourneyLog('Public listening session',`${unresolved} unresolved grievance(s) were reviewed; approval changed by ${delta}.`,'Public opinion');
+  } else if(action==='coalition-deal'){
+    const partner=document.getElementById('pj-coalition-partner')?.value||'Regional partner';const policy=document.getElementById('pj-coalition-policy')?.value||'Policy coordination';if(p.coalitionDeals.some(d=>d.partner===partner&&d.status==='Active')){toast('An active agreement with this partner already exists.');return;}p.coalitionDeals.unshift({id:p.nextId++,partner,policy,status:'Active',date:dateText()});if(state.nationalCommand&&Array.isArray(state.nationalCommand.coalition)&&!state.nationalCommand.coalition.some(x=>x.name===partner))state.nationalCommand.coalition.push({name:partner,seats:12,policy,commitment:policy});approvalChange(1);politicalJourneyLog('Coalition agreement',`${partner}: ${policy}`,'Coalition');
+  } else if(action==='introduce-bill'){
+    const title=String(document.getElementById('pj-bill-title')?.value||'').trim();const scope=document.getElementById('pj-bill-scope')?.value||'Governance reform';if(!title){toast('Enter a bill title first.');return;}p.bills.unshift({id:p.nextId++,title:title.slice(0,90),scope,stage:'Draft',created:dateText(),note:'Awaiting committee referral'});politicalJourneyLog('Bill introduced',`${title} entered the draft register.`,'Legislation');
+  } else if(action==='advance-bill'){
+    const bill=byId(p.bills);if(!bill)return;const stages=['Draft','Committee','Debate','Approved','Enacted'];const at=stages.indexOf(bill.stage);if(bill.stage==='Approved'){bill.stage='Enacted';bill.note='Implementation initiated';approvalChange(2);state.reputation=Math.min(100,Number(state.reputation||0)+1);politicalJourneyLog('Bill enacted',`${bill.title} entered implementation.`,'Legislation');}else if(at>=0&&at<3){bill.stage=stages[at+1];bill.note=bill.stage==='Committee'?'Referred for committee scrutiny':bill.stage==='Debate'?'Committee report tabled; ready for debate':'Passed simulated vote; awaiting implementation';politicalJourneyLog('Bill advanced',`${bill.title}: ${bill.stage}.`,'Legislation');}else if(bill.stage==='Debate'){const support=Number(state.media?.approval||42)+Number(state.influence||0);bill.stage=support>=45?'Approved':'Rejected';bill.note=bill.stage==='Approved'?'Passed simulated chamber vote':'Did not secure sufficient simulated support';politicalJourneyLog('Bill vote',`${bill.title}: ${bill.stage}.`,'Legislation');}
+  } else if(action==='submit-budget'){
+    const budgetYear=Number(state.year||1);if(Number(p.budget.lastPresentedYear)===budgetYear){toast('The annual budget has already been presented this in-game year.');return;}const revenue=Math.max(0,Number(document.getElementById('pj-budget-revenue')?.value)||0);const expenditure=Math.max(0,Number(document.getElementById('pj-budget-expenditure')?.value)||0);if(revenue<=0||expenditure<=0){toast('Enter positive revenue and expenditure values.');return;}const previousReserve=Number(p.budget.reserveCr||0);const balance=revenue-expenditure;p.budget={...p.budget,revenueCr:revenue,expenditureCr:expenditure,reserveCr:Math.max(0,previousReserve+balance),year:budgetYear,lastPresentedYear:budgetYear};p.budget.deficitCr=Math.max(0,-balance);p.budget.surplusCr=Math.max(0,balance);const e=ensureEconomySimulation();if(balance<0){e.publicDebtCr=Math.max(0,Number(e.publicDebtCr||0)+Math.abs(balance));approvalChange(-1);politicalJourneyLog('Budget presented',`Deficit of ₹${Math.abs(balance).toLocaleString('en-IN')} crore added to simulated public debt.`,'Public finance');}else{e.publicDebtCr=Math.max(0,Number(e.publicDebtCr||0)-Math.min(Number(e.publicDebtCr||0),balance*.25));approvalChange(1);politicalJourneyLog('Budget presented',`Surplus of ₹${balance.toLocaleString('en-IN')} crore added to reserve; up to 25% used for debt repayment.`,'Public finance');}if(state.nationalCommand?.budget){state.nationalCommand.budget.revenue=Math.round(revenue*10000000);state.nationalCommand.budget.expenditure=Math.round(expenditure*10000000);state.nationalCommand.budget.reserve=Math.round(p.budget.reserveCr*10000000);}
+  } else if(action==='open-audit'){
+    if(p.accountabilityCases.some(c=>c.status==='Pending')){toast('Resolve the pending accountability file before opening another.');return;}const cases=[['Procurement audit','Review tender documentation, cost variations and delivery records.'],['Ethics disclosure review','Review declared interests and recusal records for a simulated public decision.'],['Public works inspection','Inspect milestone evidence and contractor performance for a funded project.']];const item=cases[(p.accountabilityCases.length)%cases.length];p.accountabilityCases.unshift({id:p.nextId++,title:item[0],detail:item[1],status:'Pending',opened:dateText()});politicalJourneyLog('Accountability file opened',item[0],'Accountability');
+  } else if(action==='resolve-case'){
+    const item=byId(p.accountabilityCases);if(!item||item.status!=='Pending')return;const transparent=button.dataset.pjChoice==='transparent';item.status=transparent?'Records published':'Finding contested';item.resolved=dateText();if(transparent){state.media=state.media||{};state.media.trust=Math.min(100,Number(state.media.trust||45)+3);state.reputation=Math.min(100,Number(state.reputation||0)+1);approvalChange(1);}else{state.media=state.media||{};state.media.trust=Math.max(0,Number(state.media.trust||45)-2);approvalChange(-1);}politicalJourneyLog('Accountability response',`${item.title}: ${item.status}.`,'Accountability');
+  } else if(action==='add-promise'){
+    const title=document.getElementById('pj-promise')?.value||'Public service improvement';if(p.manifesto.some(m=>m.title===title&&m.status==='Pending')){toast('This promise is already being tracked.');return;}p.manifesto.unshift({id:p.nextId++,title,detail:'Campaign commitment recorded for follow-up.',status:'Pending',created:dateText()});politicalJourneyLog('Manifesto promise recorded',title,'Campaign');
+  } else if(action==='deliver-promise'){
+    const promise=byId(p.manifesto);if(!promise||promise.status!=='Pending')return;promise.status='Delivered';promise.delivered=dateText();approvalChange(2);state.reputation=Math.min(100,Number(state.reputation||0)+1);politicalJourneyLog('Manifesto commitment delivered',promise.title,'Campaign');
+  } else if(action==='review-department'){
+    const department=button.dataset.pjDepartment||'Administration';p.departmentPerformance=p.departmentPerformance||{};const before=Number(p.departmentPerformance[department]??50);const after=Math.min(100,before+5);p.departmentPerformance[department]=after;p.departmentReviews.unshift({department,before,after,date:dateText()});p.departmentReviews=p.departmentReviews.slice(0,50);politicalJourneyLog('Department review',`${department} delivery score ${before} → ${after}.`,'Civil service');
+  } else return;
+  saveState();render();toast('Governance action saved.');
+}
+
+
 /* MAIN RENDER */
 
 function render() {
@@ -8308,6 +8414,9 @@ function render() {
       break;
     case 'Government':
       content = governmentPage();
+      break;
+    case 'Governance & Legacy':
+      content = politicalJourneyPage();
       break;
     case 'Central Government':
       content = centralGovernmentPage();
@@ -8892,6 +9001,9 @@ if (!Array.isArray(state.media.history)) state.media.history = [];
 
   const projectProgressButton = event.target.closest('[data-gov-project-progress]');
   if (projectProgressButton) { advanceGovernmentProject(projectProgressButton.dataset.govProjectProgress); return; }
+
+  const politicalJourneyButton = event.target.closest('[data-pj-action]');
+  if (politicalJourneyButton) { politicalJourneyAction(politicalJourneyButton.dataset.pjAction, politicalJourneyButton); return; }
 
   const action = event.target.closest('[data-action]')?.dataset.action;
 
