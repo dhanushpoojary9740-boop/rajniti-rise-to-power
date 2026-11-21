@@ -4090,7 +4090,7 @@ function ensureLokSabhaElectionEngine() {
       }
     }
     engine.cycle = cycle; engine.campaigns = []; engine.results = []; engine.partyTally = []; engine.completed = false; engine.campaignsRunAt = '';
-    engine.aiCampaignReport = []; engine.counting = null; delete engine.pendingResults; delete engine.pendingCampaignReport; delete engine.playerSeatCode;
+    engine.aiCampaignReport = []; engine.aiCampaignImpact = null; engine.counting = null; delete engine.pendingResults; delete engine.pendingCampaignReport; delete engine.playerSeatCode;
     saveState();
   }
   return engine;
@@ -4237,6 +4237,43 @@ function runLokSabhaCampaigns() {
       });
     }
   }
+  // Snapshot recorded campaign inputs immediately after the AI run. Final outcomes
+  // are reported only after the shared national count completes.
+  const playerSeatCode = String(engine.playerSeatCode || '');
+  const aiConstituencies = seats.filter(seat => !playerSeatCode || String(seat.seatCode) !== playerSeatCode);
+  const normalizeTicketLocation = value => String(value || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+  const fundedAiTickets = slate.filter(ticket => {
+    if (!playerSeatCode) return true;
+    const ticketSeat = seats.find(seat =>
+      normalizeTicketLocation(seat.stateName) === normalizeTicketLocation(ticket.stateName) &&
+      Number(seat.constituencyNumber) === Number(ticket.constituencyNumber)
+    );
+    return String(ticketSeat?.seatCode || ticket.seatCode || '') !== playerSeatCode;
+  });
+  const campaignPlanByParty = {};
+  fundedAiTickets.forEach(ticket => {
+    const party = String(ticket.partyName || 'Independent');
+    if (!campaignPlanByParty[party]) campaignPlanByParty[party] = { party, fundedCandidates: 0, budgetCommitted: 0, modeledScoreTotal: 0 };
+    const row = campaignPlanByParty[party];
+    row.fundedCandidates++;
+    row.budgetCommitted += Math.max(0, Number(ticket.approvedBudget || 0));
+    row.modeledScoreTotal += Math.max(0, Math.min(100, Number(ticket.campaignScore || ticket.manualCampaignScore || 0)));
+  });
+  engine.aiCampaignImpact = {
+    cycle: Number(engine.cycle),
+    runAt: dateText(),
+    totalConstituencies: seats.length,
+    aiConstituencies: aiConstituencies.length,
+    playerConstituencyReserved: !!playerSeatCode,
+    fundedAiTickets: fundedAiTickets.length,
+    totalApprovedBudget: fundedAiTickets.reduce((sum, ticket) => sum + Math.max(0, Number(ticket.approvedBudget || 0)), 0),
+    partyPlan: Object.values(campaignPlanByParty).map(row => ({
+      party: row.party,
+      fundedCandidates: row.fundedCandidates,
+      budgetCommitted: row.budgetCommitted,
+      averageModeledScore: Math.round(row.modeledScoreTotal / Math.max(1, row.fundedCandidates))
+    })).sort((a, b) => b.fundedCandidates - a.fundedCandidates)
+  };
   engine.campaignsRunAt=dateText();
   saveState(); render();
   toast(`AI campaigns completed in ${Math.max(0,seats.length-(engine.playerSeatCode?1:0))} constituencies. Your constituency is reserved for the player candidate; all 543 seats will be counted.`);
@@ -4424,6 +4461,7 @@ function lokSabhaElectionEnginePanel() {
     <div class="election-metrics"><div><small>CONSTITUENCIES</small><b>543</b></div><div><small>FUNDED PLAYER CANDIDATES</small><b>${approved}</b></div><div><small>AI CAMPAIGN COVERAGE</small><b>${aiCampaignsCompleted?aiCampaignSeats:0}/543</b></div><div><small>${e.completed?'FINAL RESULTS':'COUNT STATUS'}</small><b>${e.completed?'543/543':e.counting?`ROUND ${e.counting.round}/10`:`0/543`}</b></div><div><small>PLAYER CONTEST</small><b>${activePlayerContest?'1 · INCLUDED IN NATIONAL COUNT':'—'}</b></div></div>
     <p class="panel-description">AI campaigns cover ${aiCampaignsCompleted?aiCampaignSeats:0} of 543 constituencies; your player candidate is excluded from AI campaign scoring but remains included in the final 543-seat national count. The national count advances round by round from one shared constituency ledger.</p>
     <div class="national-lok-sabha-actions"><button class="primary-btn" data-ls-engine-campaign ${e.completed?'disabled':''}>RUN AI NATIONAL CAMPAIGNS</button></div>
+    ${e.aiCampaignImpact?`<details class="campaign-report-details"><summary>AI campaign impact · ${Number(e.aiCampaignImpact.aiConstituencies||0)} constituencies covered</summary><p class="creator-note">Campaign-run snapshot · Cycle ${Number(e.aiCampaignImpact.cycle||0)}. This is a modeled campaign estimate, not a polling result. The player constituency is reserved for your candidate and excluded from AI campaign coverage. Funded-ticket budget details below come from recorded party tickets; rival campaign activity is simulated by the election model. Final vote share and seats are shown after national counting.</p><div class="campaign-report-metrics"><span>AI coverage <strong>${Number(e.aiCampaignImpact.aiConstituencies||0)}/${Number(e.aiCampaignImpact.totalConstituencies||543)}</strong></span><span>Funded party tickets <strong>${Number(e.aiCampaignImpact.fundedAiTickets||0)}</strong></span><span>Approved budget <strong>${money(Number(e.aiCampaignImpact.totalApprovedBudget||0))}</strong></span><span>Player seat <strong>${e.aiCampaignImpact.playerConstituencyReserved?'Reserved':'No active player seat'}</strong></span></div>${e.aiCampaignImpact.partyPlan?.length?e.aiCampaignImpact.partyPlan.map(row=>`<article class="campaign-report-row"><b>${escapeHtml(row.party)}</b><div class="campaign-report-metrics"><span>Funded candidates <strong>${Number(row.fundedCandidates||0)}</strong></span><span>Approved budget <strong>${money(Number(row.budgetCommitted||0))}</strong></span><span>Average modeled score <strong>${Number(row.averageModeledScore||0)}/100</strong></span></div></article>`).join(''):'<p class="panel-description">No funded candidate campaign budgets were recorded for this cycle. AI opponents are simulated by the national election model.</p>'}</details>`:''}
     ${e.counting?`<div class="election-count-progress"><b>National count · Round ${Number(e.counting.round||0)}/${Number(e.counting.totalRounds||10)}</b><span>${e.completed?'543/543 final results declared':`${Number(e.counting.votesCounted||0).toLocaleString('en-IN')} votes counted across all 543 constituencies`}</span></div>`:''}
     ${displayedTally.length?`<h3>${e.completed?'Final national seat tally':'Current constituency leads · provisional'}</h3>${displayedTally.map(x=>`<div class="national-ls-state-row"><b>${escapeHtml(x.party)}</b><strong>${x.seats}</strong></div>`).join('')}<p><b>Majority mark:</b> 272 · <b>Leading party:</b> ${escapeHtml(leader?.party||'—')} (${leader?.seats||0})</p>`:'<p class="panel-description">No constituency results yet. Complete campaigns and counting to calculate party seats automatically.</p>'}
     ${e.results.length?electionPerformancePanel({title:'Lok Sabha election result',level:'CENTRAL · 543 SEATS',totalSeats:543,majorityMark:272,won:e.results.filter(row=>String(row.partyName||'').toLowerCase()===String(state.party||'BPP').toLowerCase()).length,lost:e.results.filter(row=>String(row.partyName||'').toLowerCase()!==String(state.party||'BPP').toLowerCase()).length,leading:0,counted:e.results.length,complete:!!e.completed,partyName:state.party||'Bharat Pragati Party',cycleLabel:`Election cycle ${e.cycle}`}) : ''}
