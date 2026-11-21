@@ -1,0 +1,1130 @@
+{
+  "dataset": "Karnataka Assembly constituency reference list",
+  "scope": "224 names carried forward verbatim from the existing RAJNITI source; reservation classifications are not included in this dataset.",
+  "seatCount": 224,
+  "sourceNote": "The ECI statistical report confirms Karnataka has 224 Assembly constituencies. Names and ordering are the existing project list, not independently re-transcribed from the report in this update.",
+  "sourceUrl": "https://www.eci.gov.in/eci-backend/public/api/download?url=LMAhAK6sOPBp%2FNFF0iRfXbEB1EVSLT41NNLRjYNJJP1KivrUxbfqkDatmHy12e%2FzGjJMI0%2FjETs7fjrM8lYn4q0vCivj94MhpU3oJn7R5vrT16TiGkIgrvGfcMND0TasK6qlsuh5iZIkAbkwBAifqg%3D%3D",
+  "verifiedCount": 224,
+  "constituencies": [
+    {
+      "number": 1,
+      "name": "Nippani",
+      "reservation": null
+    },
+    {
+      "number": 2,
+      "name": "Chikkodi-Sadalga",
+      "reservation": null
+    },
+    {
+      "number": 3,
+      "name": "Athani",
+      "reservation": null
+    },
+    {
+      "number": 4,
+      "name": "Kagwad",
+      "reservation": null
+    },
+    {
+      "number": 5,
+      "name": "Kudachi",
+      "reservation": null
+    },
+    {
+      "number": 6,
+      "name": "Raybag",
+      "reservation": null
+    },
+    {
+      "number": 7,
+      "name": "Hukkeri",
+      "reservation": null
+    },
+    {
+      "number": 8,
+      "name": "Arabhavi",
+      "reservation": null
+    },
+    {
+      "number": 9,
+      "name": "Gokak",
+      "reservation": null
+    },
+    {
+      "number": 10,
+      "name": "Yemkanmardi",
+      "reservation": null
+    },
+    {
+      "number": 11,
+      "name": "Belgaum Uttar",
+      "reservation": null
+    },
+    {
+      "number": 12,
+      "name": "Belgaum Dakshin",
+      "reservation": null
+    },
+    {
+      "number": 13,
+      "name": "Belgaum Rural",
+      "reservation": null
+    },
+    {
+      "number": 14,
+      "name": "Khanapur",
+      "reservation": null
+    },
+    {
+      "number": 15,
+      "name": "Kittur",
+      "reservation": null
+    },
+    {
+      "number": 16,
+      "name": "Bailhongal",
+      "reservation": null
+    },
+    {
+      "number": 17,
+      "name": "Saundatti Yellamma",
+      "reservation": null
+    },
+    {
+      "number": 18,
+      "name": "Ramdurg",
+      "reservation": null
+    },
+    {
+      "number": 19,
+      "name": "Mudhol",
+      "reservation": null
+    },
+    {
+      "number": 20,
+      "name": "Terdal",
+      "reservation": null
+    },
+    {
+      "number": 21,
+      "name": "Jamkhandi",
+      "reservation": null
+    },
+    {
+      "number": 22,
+      "name": "Bilgi",
+      "reservation": null
+    },
+    {
+      "number": 23,
+      "name": "Badami",
+      "reservation": null
+    },
+    {
+      "number": 24,
+      "name": "Bagalkot",
+      "reservation": null
+    },
+    {
+      "number": 25,
+      "name": "Hungund",
+      "reservation": null
+    },
+    {
+      "number": 26,
+      "name": "Muddebihal",
+      "reservation": null
+    },
+    {
+      "number": 27,
+      "name": "Devar Hippargi",
+      "reservation": null
+    },
+    {
+      "number": 28,
+      "name": "Basavana Bagevadi",
+      "reservation": null
+    },
+    {
+      "number": 29,
+      "name": "Babaleshwar",
+      "reservation": null
+    },
+    {
+      "number": 30,
+      "name": "Bijapur City",
+      "reservation": null
+    },
+    {
+      "number": 31,
+      "name": "Nagthan",
+      "reservation": null
+    },
+    {
+      "number": 32,
+      "name": "Indi",
+      "reservation": null
+    },
+    {
+      "number": 33,
+      "name": "Sindgi",
+      "reservation": null
+    },
+    {
+      "number": 34,
+      "name": "Afzalpur",
+      "reservation": null
+    },
+    {
+      "number": 35,
+      "name": "Jevargi",
+      "reservation": null
+    },
+    {
+      "number": 36,
+      "name": "Shorapur",
+      "reservation": null
+    },
+    {
+      "number": 37,
+      "name": "Shahapur",
+      "reservation": null
+    },
+    {
+      "number": 38,
+      "name": "Yadgir",
+      "reservation": null
+    },
+    {
+      "number": 39,
+      "name": "Gurmitkal",
+      "reservation": null
+    },
+    {
+      "number": 40,
+      "name": "Chittapur",
+      "reservation": null
+    },
+    {
+      "number": 41,
+      "name": "Sedam",
+      "reservation": null
+    },
+    {
+      "number": 42,
+      "name": "Chincholi",
+      "reservation": null
+    },
+    {
+      "number": 43,
+      "name": "Gulbarga Rural",
+      "reservation": null
+    },
+    {
+      "number": 44,
+      "name": "Gulbarga Dakshin",
+      "reservation": null
+    },
+    {
+      "number": 45,
+      "name": "Gulbarga Uttar",
+      "reservation": null
+    },
+    {
+      "number": 46,
+      "name": "Aland",
+      "reservation": null
+    },
+    {
+      "number": 47,
+      "name": "Basavakalyan",
+      "reservation": null
+    },
+    {
+      "number": 48,
+      "name": "Homnabad",
+      "reservation": null
+    },
+    {
+      "number": 49,
+      "name": "Bidar South",
+      "reservation": null
+    },
+    {
+      "number": 50,
+      "name": "Bidar",
+      "reservation": null
+    },
+    {
+      "number": 51,
+      "name": "Bhalki",
+      "reservation": null
+    },
+    {
+      "number": 52,
+      "name": "Aurad",
+      "reservation": null
+    },
+    {
+      "number": 53,
+      "name": "Raichur Rural",
+      "reservation": null
+    },
+    {
+      "number": 54,
+      "name": "Raichur",
+      "reservation": null
+    },
+    {
+      "number": 55,
+      "name": "Manvi",
+      "reservation": null
+    },
+    {
+      "number": 56,
+      "name": "Devadurga",
+      "reservation": null
+    },
+    {
+      "number": 57,
+      "name": "Lingsugur",
+      "reservation": null
+    },
+    {
+      "number": 58,
+      "name": "Sindhanur",
+      "reservation": null
+    },
+    {
+      "number": 59,
+      "name": "Maski",
+      "reservation": null
+    },
+    {
+      "number": 60,
+      "name": "Kushtagi",
+      "reservation": null
+    },
+    {
+      "number": 61,
+      "name": "Kanakagiri",
+      "reservation": null
+    },
+    {
+      "number": 62,
+      "name": "Gangawati",
+      "reservation": null
+    },
+    {
+      "number": 63,
+      "name": "Yelburga",
+      "reservation": null
+    },
+    {
+      "number": 64,
+      "name": "Koppal",
+      "reservation": null
+    },
+    {
+      "number": 65,
+      "name": "Shirahatti",
+      "reservation": null
+    },
+    {
+      "number": 66,
+      "name": "Gadag",
+      "reservation": null
+    },
+    {
+      "number": 67,
+      "name": "Ron",
+      "reservation": null
+    },
+    {
+      "number": 68,
+      "name": "Nargund",
+      "reservation": null
+    },
+    {
+      "number": 69,
+      "name": "Navalgund",
+      "reservation": null
+    },
+    {
+      "number": 70,
+      "name": "Kundgol",
+      "reservation": null
+    },
+    {
+      "number": 71,
+      "name": "Dharwad",
+      "reservation": null
+    },
+    {
+      "number": 72,
+      "name": "Hubli-Dharwad East",
+      "reservation": null
+    },
+    {
+      "number": 73,
+      "name": "Hubli-Dharwad Central",
+      "reservation": null
+    },
+    {
+      "number": 74,
+      "name": "Hubli-Dharwad West",
+      "reservation": null
+    },
+    {
+      "number": 75,
+      "name": "Kalghatgi",
+      "reservation": null
+    },
+    {
+      "number": 76,
+      "name": "Haliyal",
+      "reservation": null
+    },
+    {
+      "number": 77,
+      "name": "Karwar",
+      "reservation": null
+    },
+    {
+      "number": 78,
+      "name": "Kumta",
+      "reservation": null
+    },
+    {
+      "number": 79,
+      "name": "Bhatkal",
+      "reservation": null
+    },
+    {
+      "number": 80,
+      "name": "Sirsi",
+      "reservation": null
+    },
+    {
+      "number": 81,
+      "name": "Yellapur",
+      "reservation": null
+    },
+    {
+      "number": 82,
+      "name": "Hangal",
+      "reservation": null
+    },
+    {
+      "number": 83,
+      "name": "Shiggaon",
+      "reservation": null
+    },
+    {
+      "number": 84,
+      "name": "Haveri",
+      "reservation": null
+    },
+    {
+      "number": 85,
+      "name": "Byadgi",
+      "reservation": null
+    },
+    {
+      "number": 86,
+      "name": "Hirekerur",
+      "reservation": null
+    },
+    {
+      "number": 87,
+      "name": "Ranibennur",
+      "reservation": null
+    },
+    {
+      "number": 88,
+      "name": "Hadagalli",
+      "reservation": null
+    },
+    {
+      "number": 89,
+      "name": "Hagaribommanahalli",
+      "reservation": null
+    },
+    {
+      "number": 90,
+      "name": "Vijayanagara",
+      "reservation": null
+    },
+    {
+      "number": 91,
+      "name": "Kampli",
+      "reservation": null
+    },
+    {
+      "number": 92,
+      "name": "Siruguppa",
+      "reservation": null
+    },
+    {
+      "number": 93,
+      "name": "Bellary",
+      "reservation": null
+    },
+    {
+      "number": 94,
+      "name": "Bellary City",
+      "reservation": null
+    },
+    {
+      "number": 95,
+      "name": "Sandur",
+      "reservation": null
+    },
+    {
+      "number": 96,
+      "name": "Kudligi",
+      "reservation": null
+    },
+    {
+      "number": 97,
+      "name": "Molakalmuru",
+      "reservation": null
+    },
+    {
+      "number": 98,
+      "name": "Challakere",
+      "reservation": null
+    },
+    {
+      "number": 99,
+      "name": "Chitradurga",
+      "reservation": null
+    },
+    {
+      "number": 100,
+      "name": "Hiriyur",
+      "reservation": null
+    },
+    {
+      "number": 101,
+      "name": "Hosadurga",
+      "reservation": null
+    },
+    {
+      "number": 102,
+      "name": "Holalkere",
+      "reservation": null
+    },
+    {
+      "number": 103,
+      "name": "Jagalur",
+      "reservation": null
+    },
+    {
+      "number": 104,
+      "name": "Harapanahalli",
+      "reservation": null
+    },
+    {
+      "number": 105,
+      "name": "Harihar",
+      "reservation": null
+    },
+    {
+      "number": 106,
+      "name": "Davanagere North",
+      "reservation": null
+    },
+    {
+      "number": 107,
+      "name": "Davanagere South",
+      "reservation": null
+    },
+    {
+      "number": 108,
+      "name": "Mayakonda",
+      "reservation": null
+    },
+    {
+      "number": 109,
+      "name": "Channagiri",
+      "reservation": null
+    },
+    {
+      "number": 110,
+      "name": "Honnali",
+      "reservation": null
+    },
+    {
+      "number": 111,
+      "name": "Shimoga Rural",
+      "reservation": null
+    },
+    {
+      "number": 112,
+      "name": "Bhadravati",
+      "reservation": null
+    },
+    {
+      "number": 113,
+      "name": "Shimoga",
+      "reservation": null
+    },
+    {
+      "number": 114,
+      "name": "Tirthahalli",
+      "reservation": null
+    },
+    {
+      "number": 115,
+      "name": "Shikaripura",
+      "reservation": null
+    },
+    {
+      "number": 116,
+      "name": "Sorab",
+      "reservation": null
+    },
+    {
+      "number": 117,
+      "name": "Sagar",
+      "reservation": null
+    },
+    {
+      "number": 118,
+      "name": "Byndoor",
+      "reservation": null
+    },
+    {
+      "number": 119,
+      "name": "Kundapura",
+      "reservation": null
+    },
+    {
+      "number": 120,
+      "name": "Udupi",
+      "reservation": null
+    },
+    {
+      "number": 121,
+      "name": "Kapu",
+      "reservation": null
+    },
+    {
+      "number": 122,
+      "name": "Karkal",
+      "reservation": null
+    },
+    {
+      "number": 123,
+      "name": "Sringeri",
+      "reservation": null
+    },
+    {
+      "number": 124,
+      "name": "Mudigere",
+      "reservation": null
+    },
+    {
+      "number": 125,
+      "name": "Chikmagalur",
+      "reservation": null
+    },
+    {
+      "number": 126,
+      "name": "Tarikere",
+      "reservation": null
+    },
+    {
+      "number": 127,
+      "name": "Kadur",
+      "reservation": null
+    },
+    {
+      "number": 128,
+      "name": "Chiknayakanhalli",
+      "reservation": null
+    },
+    {
+      "number": 129,
+      "name": "Tiptur",
+      "reservation": null
+    },
+    {
+      "number": 130,
+      "name": "Turuvekere",
+      "reservation": null
+    },
+    {
+      "number": 131,
+      "name": "Kunigal",
+      "reservation": null
+    },
+    {
+      "number": 132,
+      "name": "Tumkur City",
+      "reservation": null
+    },
+    {
+      "number": 133,
+      "name": "Tumkur Rural",
+      "reservation": null
+    },
+    {
+      "number": 134,
+      "name": "Koratagere",
+      "reservation": null
+    },
+    {
+      "number": 135,
+      "name": "Gubbi",
+      "reservation": null
+    },
+    {
+      "number": 136,
+      "name": "Sira",
+      "reservation": null
+    },
+    {
+      "number": 137,
+      "name": "Pavagada",
+      "reservation": null
+    },
+    {
+      "number": 138,
+      "name": "Madhugiri",
+      "reservation": null
+    },
+    {
+      "number": 139,
+      "name": "Gauribidanur",
+      "reservation": null
+    },
+    {
+      "number": 140,
+      "name": "Bagepalli",
+      "reservation": null
+    },
+    {
+      "number": 141,
+      "name": "Chikkaballapur",
+      "reservation": null
+    },
+    {
+      "number": 142,
+      "name": "Sidlaghatta",
+      "reservation": null
+    },
+    {
+      "number": 143,
+      "name": "Chintamani",
+      "reservation": null
+    },
+    {
+      "number": 144,
+      "name": "Srinivaspur",
+      "reservation": null
+    },
+    {
+      "number": 145,
+      "name": "Mulbagal",
+      "reservation": null
+    },
+    {
+      "number": 146,
+      "name": "Kolar Gold Field",
+      "reservation": null
+    },
+    {
+      "number": 147,
+      "name": "Bangarapet",
+      "reservation": null
+    },
+    {
+      "number": 148,
+      "name": "Kolar",
+      "reservation": null
+    },
+    {
+      "number": 149,
+      "name": "Malur",
+      "reservation": null
+    },
+    {
+      "number": 150,
+      "name": "Yelahanka",
+      "reservation": null
+    },
+    {
+      "number": 151,
+      "name": "K.R. Pura",
+      "reservation": null
+    },
+    {
+      "number": 152,
+      "name": "Byatarayanapura",
+      "reservation": null
+    },
+    {
+      "number": 153,
+      "name": "Yeshvanthapura",
+      "reservation": null
+    },
+    {
+      "number": 154,
+      "name": "Rajarajeshwarinagar",
+      "reservation": null
+    },
+    {
+      "number": 155,
+      "name": "Dasarahalli",
+      "reservation": null
+    },
+    {
+      "number": 156,
+      "name": "Mahalakshmi Layout",
+      "reservation": null
+    },
+    {
+      "number": 157,
+      "name": "Malleshwaram",
+      "reservation": null
+    },
+    {
+      "number": 158,
+      "name": "Hebbal",
+      "reservation": null
+    },
+    {
+      "number": 159,
+      "name": "Pulakeshinagar",
+      "reservation": null
+    },
+    {
+      "number": 160,
+      "name": "Sarvagnanagar",
+      "reservation": null
+    },
+    {
+      "number": 161,
+      "name": "C.V. Raman Nagar",
+      "reservation": null
+    },
+    {
+      "number": 162,
+      "name": "Shivajinagar",
+      "reservation": null
+    },
+    {
+      "number": 163,
+      "name": "Shanti Nagar",
+      "reservation": null
+    },
+    {
+      "number": 164,
+      "name": "Gandhi Nagar",
+      "reservation": null
+    },
+    {
+      "number": 165,
+      "name": "Rajaji Nagar",
+      "reservation": null
+    },
+    {
+      "number": 166,
+      "name": "Govindraj Nagar",
+      "reservation": null
+    },
+    {
+      "number": 167,
+      "name": "Vijay Nagar",
+      "reservation": null
+    },
+    {
+      "number": 168,
+      "name": "Chamrajpet",
+      "reservation": null
+    },
+    {
+      "number": 169,
+      "name": "Chickpet",
+      "reservation": null
+    },
+    {
+      "number": 170,
+      "name": "Basavanagudi",
+      "reservation": null
+    },
+    {
+      "number": 171,
+      "name": "Padmanabha Nagar",
+      "reservation": null
+    },
+    {
+      "number": 172,
+      "name": "B.T.M. Layout",
+      "reservation": null
+    },
+    {
+      "number": 173,
+      "name": "Jayanagar",
+      "reservation": null
+    },
+    {
+      "number": 174,
+      "name": "Mahadevapura",
+      "reservation": null
+    },
+    {
+      "number": 175,
+      "name": "Bommanahalli",
+      "reservation": null
+    },
+    {
+      "number": 176,
+      "name": "Bangalore South",
+      "reservation": null
+    },
+    {
+      "number": 177,
+      "name": "Anekal",
+      "reservation": null
+    },
+    {
+      "number": 178,
+      "name": "Hosakote",
+      "reservation": null
+    },
+    {
+      "number": 179,
+      "name": "Devanahalli",
+      "reservation": null
+    },
+    {
+      "number": 180,
+      "name": "Doddaballapur",
+      "reservation": null
+    },
+    {
+      "number": 181,
+      "name": "Nelamangala",
+      "reservation": null
+    },
+    {
+      "number": 182,
+      "name": "Magadi",
+      "reservation": null
+    },
+    {
+      "number": 183,
+      "name": "Ramanagaram",
+      "reservation": null
+    },
+    {
+      "number": 184,
+      "name": "Kanakapura",
+      "reservation": null
+    },
+    {
+      "number": 185,
+      "name": "Channapatna",
+      "reservation": null
+    },
+    {
+      "number": 186,
+      "name": "Malavalli",
+      "reservation": null
+    },
+    {
+      "number": 187,
+      "name": "Maddur",
+      "reservation": null
+    },
+    {
+      "number": 188,
+      "name": "Melukote",
+      "reservation": null
+    },
+    {
+      "number": 189,
+      "name": "Mandya",
+      "reservation": null
+    },
+    {
+      "number": 190,
+      "name": "Shrirangapattana",
+      "reservation": null
+    },
+    {
+      "number": 191,
+      "name": "Nagamangala",
+      "reservation": null
+    },
+    {
+      "number": 192,
+      "name": "Krishnarajpet",
+      "reservation": null
+    },
+    {
+      "number": 193,
+      "name": "Shravanabelagola",
+      "reservation": null
+    },
+    {
+      "number": 194,
+      "name": "Arsikere",
+      "reservation": null
+    },
+    {
+      "number": 195,
+      "name": "Belur",
+      "reservation": null
+    },
+    {
+      "number": 196,
+      "name": "Hassan",
+      "reservation": null
+    },
+    {
+      "number": 197,
+      "name": "Holenarasipur",
+      "reservation": null
+    },
+    {
+      "number": 198,
+      "name": "Arkalgud",
+      "reservation": null
+    },
+    {
+      "number": 199,
+      "name": "Sakleshpur",
+      "reservation": null
+    },
+    {
+      "number": 200,
+      "name": "Belthangady",
+      "reservation": null
+    },
+    {
+      "number": 201,
+      "name": "Moodabidri",
+      "reservation": null
+    },
+    {
+      "number": 202,
+      "name": "Mangalore City North",
+      "reservation": null
+    },
+    {
+      "number": 203,
+      "name": "Mangalore City South",
+      "reservation": null
+    },
+    {
+      "number": 204,
+      "name": "Mangalore",
+      "reservation": null
+    },
+    {
+      "number": 205,
+      "name": "Bantval",
+      "reservation": null
+    },
+    {
+      "number": 206,
+      "name": "Puttur",
+      "reservation": null
+    },
+    {
+      "number": 207,
+      "name": "Sullia",
+      "reservation": null
+    },
+    {
+      "number": 208,
+      "name": "Madikeri",
+      "reservation": null
+    },
+    {
+      "number": 209,
+      "name": "Virajpet",
+      "reservation": null
+    },
+    {
+      "number": 210,
+      "name": "Periyapatna",
+      "reservation": null
+    },
+    {
+      "number": 211,
+      "name": "Krishnarajanagara",
+      "reservation": null
+    },
+    {
+      "number": 212,
+      "name": "Hunsur",
+      "reservation": null
+    },
+    {
+      "number": 213,
+      "name": "Heggadadevankote",
+      "reservation": null
+    },
+    {
+      "number": 214,
+      "name": "Nanjangud",
+      "reservation": null
+    },
+    {
+      "number": 215,
+      "name": "Chamundeshwari",
+      "reservation": null
+    },
+    {
+      "number": 216,
+      "name": "Krishnaraja",
+      "reservation": null
+    },
+    {
+      "number": 217,
+      "name": "Chamaraja",
+      "reservation": null
+    },
+    {
+      "number": 218,
+      "name": "Narasimharaja",
+      "reservation": null
+    },
+    {
+      "number": 219,
+      "name": "Varuna",
+      "reservation": null
+    },
+    {
+      "number": 220,
+      "name": "T. Narasipur",
+      "reservation": null
+    },
+    {
+      "number": 221,
+      "name": "Hanur",
+      "reservation": null
+    },
+    {
+      "number": 222,
+      "name": "Kollegal",
+      "reservation": null
+    },
+    {
+      "number": 223,
+      "name": "Chamarajanagar",
+      "reservation": null
+    },
+    {
+      "number": 224,
+      "name": "Gundlupet",
+      "reservation": null
+    }
+  ]
+}
