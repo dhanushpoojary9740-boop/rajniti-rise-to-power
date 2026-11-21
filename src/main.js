@@ -5855,13 +5855,79 @@ function atlasDistrictParty(stateName, districtName) {
   }
   return atlasStateGovernmentParty(stateName);
 }
+
+const atlasMetricOptions = [
+  ['political','Political control'],['development','Development index'],['influence','Political influence'],
+  ['power','Political power'],['economy','Economy'],['population','Population'],['welfare','Public welfare'],
+  ['infrastructure','Infrastructure'],['election','Election performance'],['approval','Public approval'],
+  ['social','Social indicators'],['law','Law & order']
+];
+function atlasStableScore(key, salt='') {
+  const value = `${key}|${salt}`; let hash = 2166136261;
+  for (let i=0;i<value.length;i++) { hash ^= value.charCodeAt(i); hash = Math.imul(hash,16777619); }
+  return 28 + ((hash >>> 0) % 65);
+}
+function atlasMetricScore(stateName, districtName, metric) {
+  const profile = atlasDistrictProfile(stateName, districtName || '');
+  const party = atlasStateGovernmentParty(stateName);
+  const tally = stateName === 'Karnataka' ? electedPartySeatRegister('assembly') :
+    (state.regionalGovernments?.[stateName]?.partySeatTally || state.stateGovernments?.[stateName]?.partySeatTally || []);
+  const seats = (Array.isArray(tally) ? tally : []).reduce((n,row)=>n+Number(row.seats||0),0);
+  const leaderSeats = (Array.isArray(tally) ? tally : []).find(row=>row.party===party)?.seats || 0;
+  const base = profile.development;
+  const influence = stateName === (state.constituency?.state || '') ? Number(state.influence||0) : atlasStableScore(stateName,'influence');
+  const approval = stateName === (state.constituency?.state || '') ? Number(state.publicSupport||0) : atlasStableScore(stateName,'approval');
+  const values = {
+    development: base,
+    influence: Math.round(Math.max(0,Math.min(100,influence))),
+    power: Math.round(Math.min(100, (Number(leaderSeats)/Math.max(1,Number(seats)||1))*100)),
+    economy: Math.round((profile.employment + profile.infrastructure + profile.development)/3),
+    population: atlasStableScore(stateName,districtName+'population'),
+    welfare: Math.round((profile.healthcare + profile.education + profile.water)/3),
+    infrastructure: profile.infrastructure,
+    election: atlasStableScore(stateName,districtName+'election'),
+    approval: Math.round(Math.max(0,Math.min(100,approval))),
+    social: Math.round((profile.education + profile.water + profile.healthcare)/3),
+    law: atlasStableScore(stateName,districtName+'law')
+  };
+  return Math.max(0,Math.min(100,Number(values[metric] ?? 50)));
+}
+function atlasMetricColor(score) {
+  const s = Math.max(0,Math.min(100,Number(score)||0));
+  const hue = Math.round(4 + s * 1.18);
+  return `hsl(${hue} 68% ${Math.round(28+s*.27)}%)`;
+}
+function metricSafe(value) { return atlasMetricOptions.some(([key])=>key===value) ? value : 'political'; }
+function atlasMetricLabel(metric) {
+  return atlasMetricOptions.find(([key])=>key===metric)?.[1] || 'Political control';
+}
+function atlasRegionMetricNote(metric) {
+  return ['economy','population','election','law'].includes(metric)
+    ? 'Illustrative gameplay index (0–100), not an official statistic.'
+    : 'Gameplay indicator (0–100), derived from available simulation records and deterministic regional baselines.';
+}
+
+function setAtlasZoom(host, zoom, panX=0, panY=0) {
+  if (!host) return;
+  const svg=host.querySelector('.atlas-geo-svg');
+  const group=host.querySelector('#atlasMapTransform');
+  if (!svg || !group) return;
+  const z=Math.max(1,Math.min(6,Number(zoom)||1));
+  const vb=svg.viewBox.baseVal;
+  const cx=vb.width/2, cy=vb.height/2;
+  group.setAttribute('transform',`translate(${cx*(1-z)+panX} ${cy*(1-z)+panY}) scale(${z})`);
+  host.dataset.zoom=String(z); host.dataset.panX=String(panX); host.dataset.panY=String(panY);
+  const readout=document.getElementById('atlasMapZoomReadout');
+  if(readout) readout.textContent=`${Math.round(z*100)}%`;
+}
 async function renderAtlasGeometry() {
   const host = document.getElementById('indiaPoliticalMap');
   if (!host || activeTab !== 'India Map') return;
   const selectedState = getAtlasState(state.mapState || 'Karnataka');
   const layer = state.mapLayer === 'districts' ? 'districts' : 'states';
+  const metric = atlasMetricOptions.some(([key])=>key===state.mapMetric) ? state.mapMetric : 'political';
   host.innerHTML = '<div class="atlas-map-loading">Loading interactive boundary data…</div>';
-  const token = `${layer}|${selectedState.name}|${Date.now()}`;
+  const token = `${layer}|${selectedState.name}|${metric}|${Date.now()}`;
   host.dataset.loadToken = token;
   try {
     let data, features;
@@ -5876,7 +5942,7 @@ async function renderAtlasGeometry() {
       features = data.features;
     }
     if (!host.isConnected || host.dataset.loadToken !== token) return;
-    const width=720,height=layer==='states'?620:540,pad=24;
+    const width=900,height=layer==='states'?720:660,pad=28;
     const points=features.flatMap(f=>atlasGeometryPoints(f.geometry));
     if (!points.length) throw new Error('No geographic coordinates found in this boundary file.');
     const bounds=points.reduce((b,p)=>({minLon:Math.min(b.minLon,p[0]),maxLon:Math.max(b.maxLon,p[0]),minLat:Math.min(b.minLat,p[1]),maxLat:Math.max(b.maxLat,p[1])}),{minLon:Infinity,maxLon:-Infinity,minLat:Infinity,maxLat:-Infinity});
@@ -5890,18 +5956,31 @@ async function renderAtlasGeometry() {
       const stateName=layer==='states'?(name||'Unknown'):selectedState.name;
       const districtName=layer==='districts'?(name||`District ${index+1}`):'';
       const party=layer==='states'?atlasStateGovernmentParty(stateName):atlasDistrictParty(stateName,districtName);
-      const fill=party?atlasPartyColor(party):'#53657c';
+      const score=atlasMetricScore(stateName,districtName,metric);
+      const fill=metric==='political'?(party?atlasPartyColor(party):'#53657c'):atlasMetricColor(score);
       const selected=layer==='states'?atlasNormalize(state.mapState)===atlasNormalize(stateName):atlasNormalize(state.mapDistrict)===atlasNormalize(districtName);
       const attr=layer==='states'?`data-geo-state="${escapeHtml(stateName)}"`:`data-geo-district="${escapeHtml(districtName)}"`;
-      const label=party?`${name} · ${party}`: `${name} · No in-game government data`;
-      return `<path class="atlas-geo-shape ${selected?'selected':''}" d="${atlasMapSvgPath(feature.geometry,project)}" fill="${fill}" ${attr} tabindex="0" role="button" aria-label="${escapeHtml(label)}"><title>${escapeHtml(label)}</title></path>`;
+      const label=metric==='political'?(party?`${name} · ${party}`:`${name} · No in-game government data`):`${name} · ${atlasMetricLabel(metric)} ${score}/100`;
+      return `<path class="atlas-geo-shape ${selected?'selected':''}" d="${atlasMapSvgPath(feature.geometry,project)}" fill="${fill}" ${attr} data-map-score="${score}" tabindex="0" role="button" aria-label="${escapeHtml(label)}"><title>${escapeHtml(label)}</title></path>`;
     }).join('');
-    host.innerHTML=`<svg class="atlas-geo-svg" viewBox="0 0 ${width} ${height}" role="img" aria-label="Interactive India ${layer} political map">${paths}</svg>`;
+    host.innerHTML=`<svg class="atlas-geo-svg" viewBox="0 0 ${width} ${height}" role="img" aria-label="Interactive India ${layer} ${atlasMetricLabel(metric)} map"><g id="atlasMapTransform">${paths}</g></svg>`;
+    const svg=host.querySelector('.atlas-geo-svg');
+    if(svg) svg.addEventListener('wheel',event=>{
+      event.preventDefault();
+      const current=Number(host.dataset.zoom||1);
+      const next=Math.max(1,Math.min(6,current*(event.deltaY<0?1.15:0.87)));
+      setAtlasZoom(host,next,Number(host.dataset.panX||0),Number(host.dataset.panY||0));
+    },{passive:false});
     const legend=document.getElementById('atlasPoliticalLegend');
     if(legend){
-      const parties=layer==='states'?Array.from(new Set(features.map(f=>atlasFeatureName(f,['ST_NM','state','NAME_1','name','NAME'])).map(atlasStateGovernmentParty).filter(Boolean))):Array.from(new Set(features.map(f=>atlasDistrictParty(selectedState.name,atlasFeatureName(f,['DISTRICT','district','DTNAME','NAME_2','name','NAME']))).filter(Boolean)));
-      legend.innerHTML=parties.length?parties.map(p=>`<span><i style="background:${atlasPartyColor(p)}"></i>${escapeHtml(p)}</span>`).join(''):'<span><i style="background:#53657c"></i>No in-game ruling-party data recorded for these regions</span>';
+      if(metric==='political'){
+        const parties=layer==='states'?Array.from(new Set(features.map(f=>atlasFeatureName(f,['ST_NM','state','NAME_1','name','NAME'])).map(atlasStateGovernmentParty).filter(Boolean))):Array.from(new Set(features.map(f=>atlasDistrictParty(selectedState.name,atlasFeatureName(f,['DISTRICT','district','DTNAME','NAME_2','name','NAME']))).filter(Boolean)));
+        legend.innerHTML=parties.length?parties.map(p=>`<span><i style="background:${atlasPartyColor(p)}"></i>${escapeHtml(p)}</span>`).join(''):'<span><i style="background:#53657c"></i>No in-game ruling-party data recorded for these regions</span>';
+      } else {
+        legend.innerHTML=`<span><i style="background:${atlasMetricColor(15)}"></i>Low</span><span><i style="background:${atlasMetricColor(50)}"></i>Mid</span><span><i style="background:${atlasMetricColor(90)}"></i>High</span><span class="atlas-legend-note">${escapeHtml(atlasMetricLabel(metric))} · ${escapeHtml(atlasRegionMetricNote(metric))}</span>`;
+      }
     }
+    host.dataset.zoom='1'; host.dataset.panX='0'; host.dataset.panY='0';
   } catch(error) {
     if (!host.isConnected || host.dataset.loadToken !== token) return;
     host.innerHTML=`<div class="atlas-map-error"><b>Map boundaries could not be loaded.</b><span>${escapeHtml(error.message||'Check your internet connection and try again.')}</span><button class="secondary-btn" data-atlas-map-retry="1">RETRY MAP LOAD</button></div>`;
@@ -5910,6 +5989,7 @@ async function renderAtlasGeometry() {
 
 function indiaMapPage() {
   const selectedState = getAtlasState(state.mapState || state.constituency?.state || 'Karnataka');
+  const metric = metricSafe(state.mapMetric);
   const canonicalDistrict = atlasCanonicalDistrict(selectedState.name, state.mapDistrict);
   const selectedDistrict = selectedState.districts.includes(canonicalDistrict) ? canonicalDistrict : selectedState.districts[0];
   const profile = atlasDistrictProfile(selectedState.name, selectedDistrict);
@@ -5948,10 +6028,21 @@ function indiaMapPage() {
     <section class="panel atlas-political-map-panel">
       <div class="command-section-head">
         <div><span class="eyebrow">LIVE POLITICAL GEOGRAPHY</span><h2>Indian political map</h2><p class="panel-description">Tap a state to explore its districts. Colours follow recorded in-game government data; districts inherit the state colour where district winners are not recorded.</p></div>
-        <div class="atlas-map-layer-switch"><button class="${state.mapLayer !== 'districts' ? 'active' : ''}" data-map-layer="states">STATES / UTs</button><button class="${state.mapLayer === 'districts' ? 'active' : ''}" data-map-layer="districts">DISTRICTS</button></div>
+        <div class="atlas-map-toolbar">
+          <label class="atlas-layer-select-label" for="atlasMapMetric">MAP LAYER</label>
+          <select id="atlasMapMetric" class="atlas-layer-select">${atlasMetricOptions.map(([key,label])=>`<option value="${key}" ${metricSafe(state.mapMetric)===key?'selected':''}>${escapeHtml(label)}</option>`).join('')}</select>
+          <div class="atlas-map-layer-switch"><button class="${state.mapLayer !== 'districts' ? 'active' : ''}" data-map-layer="states">STATES / UTs</button><button class="${state.mapLayer === 'districts' ? 'active' : ''}" data-map-layer="districts">DISTRICTS</button></div>
+        </div>
+      </div>
+      <div class="atlas-map-controls" aria-label="Map zoom controls">
+        <span class="atlas-map-zoom-readout" id="atlasMapZoomReadout">100%</span>
+        <button type="button" data-map-zoom="out" aria-label="Zoom out">−</button>
+        <button type="button" data-map-zoom="in" aria-label="Zoom in">+</button>
+        <button type="button" data-map-zoom="reset">RESET</button>
+        <button type="button" data-map-zoom="fit">FIT INDIA</button>
       </div>
       <div class="atlas-political-map-frame"><div id="indiaPoliticalMap" class="atlas-political-map"><div class="atlas-map-loading">Preparing interactive map…</div></div></div>
-      <div class="atlas-political-legend" id="atlasPoliticalLegend"><span><i style="background:#53657c"></i>Loading party legend…</span></div>
+      <div class="atlas-political-legend" id="atlasPoliticalLegend"><span><i style="background:#53657c"></i>Loading map legend…</span></div>
       <p class="atlas-map-source-note">Boundary layer: community-curated India GeoJSON, pinned to a published dataset revision. Internet is needed for the first boundary download; data is cached on the device where storage permits. This is a visual reference, not an official Survey of India legal boundary product. Regions without recorded in-game government results remain neutral.</p>
     </section>
 
@@ -5985,6 +6076,11 @@ function indiaMapPage() {
           <span class="gold-tag">${escapeHtml(selectedState.name.toUpperCase())}</span>
           <h2>${escapeHtml(selectedState.name)}</h2>
           <p class="panel-description">Regional political overview and district selection.</p>
+          <div class="atlas-region-metric-card">
+            <div><small>SELECTED MAP LAYER</small><b>${escapeHtml(atlasMetricLabel(metricSafe(state.mapMetric)))}</b></div>
+            <strong>${metricSafe(state.mapMetric)==='political' ? escapeHtml(rulingParty || 'No recorded party') : `${atlasMetricScore(selectedState.name,selectedDistrict,metricSafe(state.mapMetric))}/100`}</strong>
+            <p>${escapeHtml(atlasRegionMetricNote(metricSafe(state.mapMetric)))}</p>
+          </div>
           <div class="atlas-ruling-party-line"><span class="atlas-party-swatch" style="background:${rulingParty ? atlasPartyColor(rulingParty) : '#53657c'}"></span><div><small>IN-GAME RULING PARTY</small><b>${escapeHtml(rulingParty || 'No government data recorded')}</b></div>${rulingParty && rulingSeatCount ? `<strong>${rulingSeatCount} seats</strong>` : ''}</div>
           <div class="atlas-region-office-grid"><div><small>CHIEF MINISTER</small><b>${escapeHtml(regionalCM)}</b></div><div><small>OPPOSITION LEADER</small><b>${escapeHtml(regionalOppositionLeader)}</b></div></div>
           ${stateSeatTally.length ? `<div class="atlas-party-seat-list"><small>RECORDED ASSEMBLY SEAT DISTRIBUTION</small>${stateSeatTally.map(row=>`<div><span><i style="background:${atlasPartyColor(row.party)}"></i>${escapeHtml(row.party)}</span><b>${Number(row.seats||0)}</b></div>`).join('')}</div>` : ''}
@@ -7181,6 +7277,10 @@ document.addEventListener('input', event => {
 });
 
 document.addEventListener('change', event => {
+  if (event.target?.id === 'atlasMapMetric') {
+    state.mapMetric = metricSafe(event.target.value);
+    saveState(); render(); return;
+  }
   if (event.target?.id === 'electionArchiveFilter') {
     const filter = event.target.value;
     document.querySelectorAll('#electionArchiveRows [data-election-archive-row]').forEach(row => {
@@ -7353,6 +7453,15 @@ document.addEventListener('click', event => {
     saveState(); render(); return;
   }
 
+  const zoomButton = event.target.closest('[data-map-zoom]');
+  if (zoomButton) {
+    const host=document.getElementById('indiaPoliticalMap');
+    const current=Number(host?.dataset.zoom||1);
+    const panX=Number(host?.dataset.panX||0), panY=Number(host?.dataset.panY||0);
+    const action=zoomButton.dataset.mapZoom;
+    setAtlasZoom(host,action==='in'?current*1.25:action==='out'?current/1.25:1,action==='reset'||action==='fit'?0:panX,action==='reset'||action==='fit'?0:panY);
+    return;
+  }
   const mapLayerButton = event.target.closest('[data-map-layer]');
   if (mapLayerButton) {
     state.mapLayer = mapLayerButton.dataset.mapLayer === 'districts' ? 'districts' : 'states';
