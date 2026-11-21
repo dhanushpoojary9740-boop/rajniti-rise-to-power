@@ -2726,13 +2726,18 @@ function completeElectionCounting(active) {
         seatsPending:Math.max(0,224-partyContested),party:partyNameSafe(),
         date:dateText(),countingComplete:true
       };
-    } else {
-      state.elections.lastLokSabhaSeatTally = {
+    } else if (active.typeId === 'lok-sabha') {
+      // A single player constituency result is not a completed national Lok Sabha tally.
+      // Keep it as a candidate-level record so it cannot unlock Union government formation.
+      state.elections.lastLokSabhaCandidateResult = {
         scheduledAt:Number(active.scheduledAt || currentMonthIndex()),
-        totalSeats:543,majorityMark:272,seatsWon:partyWins,
-        seatsLost:partyLosses,seatsContested:partyContested,
-        seatsPending:Math.max(0,543-partyContested),party:partyNameSafe(),
-        date:dateText(),countingComplete:true
+        constituency:active.constituency || '',
+        candidateName:result.candidateName || '',
+        party:partyNameSafe(),
+        result:won?'Won':'Lost',
+        votes:Number(result.votes||0),
+        date:dateText(),
+        countingComplete:false
       };
     }
   }
@@ -3923,7 +3928,7 @@ function nationalLokSabhaCandidatePanel() {
   const total = lokSabhaSeatAllocation.reduce((sum, item) => sum + item.seats, 0);
   const availableMembers = (state.partyMemberRecords || []).filter(member => member && member.name && member.id !== 'founder').length;
   return `
-    <section class="panel national-lok-sabha-register">
+    <section class="panel national-lok-sabha-register" id="national-candidate-register">
       <span class="gold-tag">NATIONAL ELECTION · 543 CONSTITUENCIES</span>
       <h2>Lok Sabha candidate deployment</h2>
       <p class="panel-description">Build the party's national parliamentary candidate slate. The state/UT seat allocation follows the 2024 ECI reference. Candidate proposals use distinct existing party-member records; the system will not invent extra candidates or reuse one member for multiple seats.</p>
@@ -3992,8 +3997,12 @@ function ensureLokSabhaElectionEngine() {
   const cycle = Number(schedule?.nextAt || currentMonthIndex());
   if (Number(engine.cycle) !== cycle) {
     if (engine.completed && Array.isArray(engine.results) && engine.results.length === 543) {
-      state.elections.lastLokSabhaResults = engine.results.map(row=>({winner:row.winner,partyName:row.partyName,constituency:row.constituency,stateName:row.stateName,seatCode:row.seatCode}));
+      const savedResults = engine.results.map(row=>({winner:row.winner,partyName:row.partyName,constituency:row.constituency,stateName:row.stateName,seatCode:row.seatCode,votes:Number(row.votes||0),runnerUp:row.runnerUp||'',runnerUpParty:row.runnerUpParty||'',runnerUpVotes:Number(row.runnerUpVotes||0),margin:Number(row.margin||0)}));
+      const savedTally = Array.isArray(engine.partyTally) ? engine.partyTally.map(row=>({party:row.party,seats:Number(row.seats||0)})) : [];
+      state.elections.lastLokSabhaResults = savedResults;
       state.elections.lastLokSabhaCompletedCycle = Number(engine.cycle);
+      state.elections.lastLokSabhaNationalSnapshot = {cycle:Number(engine.cycle),tally:savedTally,results:savedResults,source:'Saved completed Lok Sabha election',completedAt:engine.lastRunAt||dateText()};
+      state.elections.lastLokSabhaSeatTally = {scheduledAt:Number(engine.cycle),totalSeats:543,majorityMark:272,seatsWon:savedTally,countingComplete:true};
     }
     engine.cycle = cycle; engine.campaigns = []; engine.results = []; engine.partyTally = []; engine.completed = false; engine.campaignsRunAt = '';
     engine.aiCampaignReport = [];
@@ -4005,14 +4014,26 @@ function lokSabhaCompletedResultSnapshot() {
   const elections = state.elections || {};
   const engine = elections.lokSabhaEngine || {};
   const stored = elections.lastLokSabhaSeatTally || {};
+  const saved = elections.lastLokSabhaNationalSnapshot || {};
   const validTally = rows => Array.isArray(rows) && rows.length > 0 &&
     rows.every(row => Number.isFinite(Number(row.seats)) && Number(row.seats) >= 0) &&
     rows.reduce((sum,row)=>sum+Number(row.seats||0),0) === 543;
-  if (engine.completed && validTally(engine.partyTally)) {
-    return { cycle:Number(engine.cycle), tally:engine.partyTally, results:engine.results||[], source:'Current Lok Sabha count' };
+  if (engine.completed && Array.isArray(engine.results) && engine.results.length === 543 && validTally(engine.partyTally)) {
+    return { cycle:Number(engine.cycle), tally:engine.partyTally, results:engine.results||[], source:'Current Lok Sabha count', completedAt:engine.lastRunAt||'' };
+  }
+  if (saved.completedAt && validTally(saved.tally)) {
+    return { cycle:Number(saved.cycle), tally:saved.tally, results:Array.isArray(saved.results)?saved.results:[], source:saved.source||'Saved completed Lok Sabha election', completedAt:saved.completedAt };
+  }
+  // Recover older saves where the engine was reset but its 543 completed result rows survived.
+  const archived = Array.isArray(elections.lastLokSabhaResults) ? elections.lastLokSabhaResults : [];
+  if (archived.length === 543 && archived.every(row=>row && row.partyName)) {
+    const counts = {};
+    archived.forEach(row=>{ counts[row.partyName]=(counts[row.partyName]||0)+1; });
+    const tally = Object.entries(counts).map(([party,seats])=>({party,seats})).sort((a,b)=>b.seats-a.seats);
+    if (validTally(tally)) return {cycle:Number(elections.lastLokSabhaCompletedCycle||stored.scheduledAt||0),tally,results:archived,source:'Recovered saved 543-seat Lok Sabha result',completedAt:''};
   }
   if (stored.countingComplete && validTally(stored.seatsWon)) {
-    return { cycle:Number(stored.scheduledAt), tally:stored.seatsWon, results:[], source:'Saved completed Lok Sabha tally' };
+    return { cycle:Number(stored.scheduledAt), tally:stored.seatsWon, results:[], source:'Saved completed Lok Sabha tally', completedAt:stored.date||'' };
   }
   return null;
 }
@@ -4149,7 +4170,10 @@ function countLokSabhaElection() {
     averageWinningMargin:Math.round(results.filter(r=>r.partyName===row.party).reduce((sum,r)=>sum+Number(r.margin||0),0)/Math.max(1,row.wins))
   })).sort((a,b)=>b.wins-a.wins);
   engine.completed=true;engine.lastRunAt=dateText();
-  state.elections.lastLokSabhaSeatTally={scheduledAt:engine.cycle,totalSeats:543,majorityMark:272,seatsWon:engine.partyTally,countingComplete:true};
+  state.elections.lastLokSabhaSeatTally={scheduledAt:engine.cycle,totalSeats:543,majorityMark:272,seatsWon:engine.partyTally,countingComplete:true,date:engine.lastRunAt};
+  state.elections.lastLokSabhaResults=results.map(row=>({winner:row.winner,partyName:row.partyName,constituency:row.constituency,stateName:row.stateName,seatCode:row.seatCode,votes:Number(row.votes||0),runnerUp:row.runnerUp||'',runnerUpParty:row.runnerUpParty||'',runnerUpVotes:Number(row.runnerUpVotes||0),margin:Number(row.margin||0)}));
+  state.elections.lastLokSabhaCompletedCycle=Number(engine.cycle);
+  state.elections.lastLokSabhaNationalSnapshot={cycle:Number(engine.cycle),tally:engine.partyTally.map(row=>({party:row.party,seats:Number(row.seats||0)})),results:state.elections.lastLokSabhaResults,source:'Completed 543-seat Lok Sabha count',completedAt:engine.lastRunAt};
   saveState();render();
   toast(`Lok Sabha counting completed: ${results.length} constituency results recorded.`);
 }
@@ -4158,7 +4182,7 @@ function lokSabhaElectionEnginePanel() {
   const e=ensureLokSabhaElectionEngine();
   const approved=ensurePartySlate().filter(x=>x.typeId==='lok-sabha' && Number(x.scheduledAt)===e.cycle && x.status==='Funded').length;
   const wins=e.results.length, leader=e.partyTally[0];
-  return `<section class="panel"><span class="gold-tag">543-CONSTITUENCY ELECTION ENGINE</span><h2>National campaign, polling & counting</h2><p class="creator-note">Election steps: 1) Nominate candidates → 2) Approve tickets → 3) Fund campaigns → 4) Run AI campaigns → 5) Poll and count → 6) Form the Central Government. Complete each step before moving to the next.</p>
+  return `<section class="panel" id="national-campaign-count"><span class="gold-tag">543-CONSTITUENCY ELECTION ENGINE</span><h2>National campaign, polling & counting</h2><p class="creator-note">Election steps: 1) Nominate candidates → 2) Approve tickets → 3) Fund campaigns → 4) Run AI campaigns → 5) Poll and count → 6) Form the Central Government. Complete each step before moving to the next.</p>
     <div class="election-metrics"><div><small>CONSTITUENCIES</small><b>543</b></div><div><small>FUNDED PLAYER CANDIDATES</small><b>${approved}</b></div><div><small>PLAYER CAMPAIGNS</small><b>${e.campaigns.length}</b></div><div><small>RESULTS RECORDED</small><b>${wins}/543</b></div></div>
     <p class="panel-description">This simulation generates constituency-level campaign and vote outcomes from funded player candidates and simulated AI competitors. Numbered constituency labels are used where verified official names are not available in the current dataset.</p>
     <div class="national-lok-sabha-actions"><button class="primary-btn" data-ls-engine-campaign ${e.completed?'disabled':''}>RUN AI NATIONAL CAMPAIGNS</button><button class="primary-btn" data-ls-engine-count ${!e.campaignsRunAt||e.completed?'disabled':''}>POLL & COUNT ALL CONSTITUENCIES</button></div>
@@ -4197,7 +4221,7 @@ function nationalElectionResultsCentre() {
     Number(!!b.isManualMember)-Number(!!a.isManualMember) ||
     String(a.candidateName).localeCompare(String(b.candidateName)));
   return `
-    <section class="panel national-results-centre">
+    <section class="panel national-results-centre" id="election-results-archive">
       <span class="gold-tag">ELECTION ARCHIVE · SAVED RESULTS</span>
       <h2>National election results centre</h2>
       <p class="panel-description">This archive lists saved candidate-level election records. These records may include more than one contest or repeat candidates; they are not the authoritative 543-seat Lok Sabha tally. The national tally is complete only when the connected Lok Sabha engine declares all 543 constituency results.</p>
@@ -4216,6 +4240,18 @@ function nationalElectionResultsCentre() {
       ${stateSummary.length ? stateSummary.map(item=>`
         <div class="finance-history"><span><b>${escapeHtml(item.name)}</b><br><small>${item.contested} saved contests · ${item.votes.toLocaleString('en-IN')} party candidate votes</small></span><b>${item.won} won · ${item.lost} lost</b></div>
       `).join('') : '<p class="panel-description">No completed party-wide candidate result records are available yet.</p>'}
+      <section class="my-recent-election-results" id="my-election-results">
+        <h3>My recent election results</h3>
+        <p class="panel-description">A quick, readable view of your latest saved results. Use the archive search below for older contests.</p>
+        ${records.filter(item=>item.isPlayer || item.isManualMember || String(item.candidateName||'').toLowerCase()===String(state.playerName||'').toLowerCase()).slice(0,8).length
+          ? records.filter(item=>item.isPlayer || item.isManualMember || String(item.candidateName||'').toLowerCase()===String(state.playerName||'').toLowerCase()).slice(0,8).map(item=>`
+            <div class="my-result-row">
+              <div><b>${escapeHtml(item.candidateName||'Candidate')}</b><small>${escapeHtml(item.constituency||'Constituency')} · ${escapeHtml(item.stateName||'State')} · ${escapeHtml(item.electionDate||'Date not recorded')}</small></div>
+              <span class="result-status ${item.result==='Won'?'won':item.result==='Lost'?'lost':'pending'}">${item.result==='Won'?'WON':item.result==='Lost'?'LOST':'PENDING'}</span>
+            </div>
+          `).join('')
+          : '<p class="panel-description">No personal election results saved yet. Completed contests will appear here.</p>'}
+      </section>
       <h3>Candidate result archive</h3>
       <div class="party-result-tools">
         <input id="electionArchiveSearch" type="search" placeholder="Search candidate, constituency, state or election">
@@ -4313,6 +4349,14 @@ function electionPage() {
       <button type="button" class="election-category-tab ${selectedElectionSection === 'local' ? 'active' : ''}" data-election-section="local"><span>🏘</span><b>Local</b><small>Panchayat & civic</small></button>
       <button type="button" class="election-category-tab ${selectedElectionSection === 'other' ? 'active' : ''}" data-election-section="other"><span>🗳</span><b>Other</b><small>Special elections</small></button>
     </nav>
+    ${selectedElectionSection === 'lok-sabha' ? `
+      <nav class="election-quick-nav" aria-label="Lok Sabha shortcuts">
+        <a href="#my-election-results">My results <small>Won · Lost · Recent</small></a>
+        <a href="#national-campaign-count">Campaign & count <small>Run · Review · Count</small></a>
+        <a href="#national-candidate-register">Candidates <small>Nominate · Approve · Fund</small></a>
+        <a href="#election-calendar">Election dates <small>Upcoming schedule</small></a>
+      </nav>
+    ` : ''}
     <section class="election-section-intro">
       <span class="gold-tag">SELECTED ELECTION CATEGORY</span>
       <h2>${electionSectionMeta[selectedElectionSection].label}</h2>
@@ -4334,7 +4378,7 @@ function electionPage() {
       ${nationalElectionArchitecturePanel()}
     ` : ''}
 
-    <section class="panel">
+    <section class="panel" id="election-calendar">
       <span class="gold-tag">RECURRING ELECTION CALENDAR</span>
       <h2>Upcoming election cycles</h2>
       ${electionScheduleHtml}
