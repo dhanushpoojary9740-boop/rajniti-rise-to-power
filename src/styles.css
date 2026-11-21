@@ -2800,3 +2800,9 @@ html {
   .election-performance-panel .assembly-counting-detail { flex-direction:column; }
   .election-performance-panel .assembly-counting-detail span { text-align:left; }
 }
+
+
+/* Shared national Lok Sabha count progress */
+.election-count-progress{display:flex;flex-direction:column;gap:6px;margin:14px 0;padding:12px 14px;border:1px solid var(--line,#2b3a4c);border-radius:12px;background:rgba(8,17,29,.45)}
+.election-count-progress b{font-size:14px;color:var(--gold,#d8b76f)}
+.election-count-progress span{font-size:13px;color:var(--muted,#aab4c3)}

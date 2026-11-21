@@ -4090,7 +4090,7 @@ function ensureLokSabhaElectionEngine() {
       }
     }
     engine.cycle = cycle; engine.campaigns = []; engine.results = []; engine.partyTally = []; engine.completed = false; engine.campaignsRunAt = '';
-    engine.aiCampaignReport = [];
+    engine.aiCampaignReport = []; engine.counting = null; delete engine.pendingResults; delete engine.pendingCampaignReport; delete engine.playerSeatCode;
     saveState();
   }
   return engine;
@@ -4199,6 +4199,7 @@ function runLokSabhaCampaigns() {
   // funded a candidate in every constituency. Missing party tickets are represented by
   // simulated party candidates during counting; they are not treated as uncounted seats.
   const seats=assignPartyElectionSeats('lok-sabha',[],engine.cycle);
+  delete engine.playerSeatCode;
   // Store only the player's campaign records. AI rivals are generated deterministically during counting,
   // avoiding thousands of redundant saved objects that can exhaust Android WebView localStorage.
   engine.campaigns=[];
@@ -4211,13 +4212,101 @@ function runLokSabhaCampaigns() {
     engine.campaigns.push({seatCode:seat.seatCode,stateName:seat.stateName,constituency:seat.constituency,candidateName:own.candidateName,partyName:own.partyName,player:true,manual,performance});
     own.campaignScore=performance; own.campaignCycle=engine.cycle;
   });
+  const activePlayerContest = state.elections?.active;
+  if (activePlayerContest && activePlayerContest.typeId === 'lok-sabha') {
+    const normalizeSeatName = value => String(value || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+    const playerState = normalizeSeatName(activePlayerContest.stateName || state.stateName || 'Karnataka');
+    const playerSeat = seats.find(seat =>
+      normalizeSeatName(seat.stateName) === playerState &&
+      Number(seat.constituencyNumber) === Number(activePlayerContest.constituencyNumber)
+    ) || seats.find(seat =>
+      normalizeSeatName(seat.constituency) === normalizeSeatName(activePlayerContest.constituency) &&
+      normalizeSeatName(seat.stateName) === playerState
+    ) || seats.find(seat => normalizeSeatName(seat.stateName) === playerState);
+    if (playerSeat) {
+      if (Number(playerSeat.constituencyNumber) !== Number(activePlayerContest.constituencyNumber) &&
+          normalizeSeatName(playerSeat.constituency) !== normalizeSeatName(activePlayerContest.constituency)) {
+        playerSeat.constituency = activePlayerContest.constituency || playerSeat.constituency;
+      }
+      engine.playerSeatCode = String(playerSeat.seatCode);
+      engine.campaigns = engine.campaigns.filter(item => String(item.seatCode) !== String(playerSeat.seatCode));
+      engine.campaigns.push({
+        seatCode:playerSeat.seatCode,stateName:playerSeat.stateName,constituency:playerSeat.constituency,
+        candidateName:activePlayerContest.candidateName,partyName:state.party||'Bharat Pragati Party',
+        player:true,manual:true,performance:Math.max(0,Math.min(100,Number(activePlayerContest.campaignScore||50)))
+      });
+    }
+  }
   engine.campaignsRunAt=dateText();
   saveState(); render();
-  toast(`AI campaigns completed across ${seats.length} constituencies. Rival campaigns are simulated during counting.`);
+  toast(`AI campaigns completed in ${Math.max(0,seats.length-(engine.playerSeatCode?1:0))} constituencies. Your constituency is reserved for the player candidate; all 543 seats will be counted.`);
 }
+function advanceLokSabhaNationalCount(engine) {
+  const pending = Array.isArray(engine.pendingResults) ? engine.pendingResults : [];
+  if (pending.length !== 543) return toast('National count cannot continue: the prepared ledger does not contain 543 constituencies.');
+  if (!engine.counting || !Number.isFinite(Number(engine.counting.round))) engine.counting = {round:0,totalRounds:10};
+  const count = engine.counting;
+  if (count.round >= count.totalRounds) return;
+  const nextRound = count.round + 1;
+  const fraction = nextRound / count.totalRounds;
+  const liveResults = pending.map(row => {
+    const {candidateResults:finalCandidateRows,...baseRow}=row;
+    let candidates = Array.isArray(finalCandidateRows) && finalCandidateRows.length
+      ? finalCandidateRows.map(candidate=>({...candidate,votes:Math.floor(Number(candidate.votes||0)*fraction)}))
+      : [
+          {name:row.winner,party:row.partyName,votes:Math.floor(Number(row.votes||0)*fraction)},
+          {name:row.runnerUp||'Runner-up',party:row.runnerUpParty||'Independent',votes:Math.floor(Number(row.runnerUpVotes||0)*fraction)}
+        ];
+    if (nextRound === count.totalRounds && Array.isArray(row.candidateResults) && row.candidateResults.length) {
+      candidates = row.candidateResults.map(candidate=>({...candidate,votes:Number(candidate.votes||0)}));
+    }
+    candidates.sort((a,b)=>Number(b.votes||0)-Number(a.votes||0));
+    const leader=candidates[0]||{};
+    const runner=candidates[1]||{};
+    const votesCounted=nextRound===count.totalRounds?Number(row.totalVotes||row.turnout||0):Math.floor(Number(row.totalVotes||row.turnout||0)*fraction);
+    const playerCandidate=candidates.find(candidate=>candidate.player || (row.playerCandidateName && candidate.name===row.playerCandidateName));
+    return {...baseRow,winner:leader.name||row.winner,partyName:leader.party||row.partyName,votes:Number(leader.votes||0),
+      runnerUp:runner.name||row.runnerUp,runnerUpParty:runner.party||row.runnerUpParty,runnerUpVotes:Number(runner.votes||0),
+      margin:Math.max(0,Number(leader.votes||0)-Number(runner.votes||0)),countedVotes:votesCounted,
+      playerCandidateVotes:Number(playerCandidate?.votes||row.playerCandidateVotes||0),nationalRound:nextRound,
+      liveLeader:leader.name||row.winner,liveParty:leader.party||row.partyName};
+  });
+  count.round=nextRound;
+  count.totalRounds=10;
+  count.countedConstituencies=nextRound===10?543:0;
+  count.constituenciesInProgress=543;
+  count.votesCounted=liveResults.reduce((sum,row)=>sum+Number(row.countedVotes||0),0);
+  count.updatedAt=dateText();
+  engine.liveResults=liveResults;
+  engine.partyTally=Object.entries(liveResults.reduce((tally,row)=>{
+    const party=String(row.liveParty||row.partyName||'Independent');
+    tally[party]=(tally[party]||0)+1;
+    return tally;
+  },{})).map(([party,seats])=>({party,seats})).sort((a,b)=>b.seats-a.seats);
+  if(nextRound>=10){
+    engine.results=pending.map(({candidateResults,...row})=>({...row}));
+    engine.partyTally=deriveLokSabhaTallyFromResults(engine.results);
+    engine.aiCampaignReport=Array.isArray(engine.pendingCampaignReport)?engine.pendingCampaignReport:[];
+    engine.completed=true;
+    engine.lastRunAt=dateText();
+    state.elections.lastLokSabhaSeatTally={scheduledAt:engine.cycle,totalSeats:543,majorityMark:272,seatsWon:engine.partyTally,countingComplete:true,date:engine.lastRunAt};
+    state.elections.lastLokSabhaResults=engine.results.map(row=>({...row}));
+    state.elections.lastLokSabhaCompletedCycle=Number(engine.cycle);
+    state.elections.lastLokSabhaNationalSnapshot={cycle:Number(engine.cycle),tally:engine.partyTally.map(row=>({...row})),results:engine.results.map(row=>({...row})),source:'Completed 543-seat shared constituency ledger · 10 national counting rounds',completedAt:engine.lastRunAt,completed:true};
+    delete engine.pendingResults;
+    delete engine.pendingCampaignReport;
+    engine.liveResults=[];
+    const active=state.elections.active;
+    if(active&&active.typeId==='lok-sabha'){active.phase='counting';active.nationalCountingComplete=true;}
+  }
+  saveState();render();
+  toast(engine.completed?'National Lok Sabha count complete: all 543 constituencies reconciled.':`National counting round ${count.round}/10 complete · ${Number(count.votesCounted||0).toLocaleString('en-IN')} votes counted across 543 constituencies.`);
+}
+
 function countLokSabhaElection() {
   const engine=ensureLokSabhaElectionEngine();
   if (engine.completed) return toast('This election has already been counted.');
+  if (Array.isArray(engine.pendingResults) && engine.pendingResults.length === 543) return advanceLokSabhaNationalCount(engine);
   if (!engine.campaignsRunAt) return toast('Run national campaigns before polling and counting.');
   const slate=ensurePartySlate().filter(x=>x.typeId==='lok-sabha' && Number(x.scheduledAt)===engine.cycle && x.status==='Funded');
   const results=[];
@@ -4229,6 +4318,7 @@ function countLokSabhaElection() {
     if (sharedResult) {
       const preserved = {...sharedResult};
       results.push(preserved);
+      if (String(seat.seatCode) === String(engine.playerSeatCode || '')) return;
       const key = String(preserved.partyName || 'Independent');
       if (!campaignStats[key]) campaignStats[key]={party:key,contests:0,wins:0,votes:0,performance:0};
       campaignStats[key].contests++;
@@ -4259,13 +4349,15 @@ function countLokSabhaElection() {
     }).sort((a,b)=>b.votes-a.votes);
     const total=scored.reduce((sum,x)=>sum+x.votes,0);
     const winner=scored[0];
-    scored.forEach(candidate=>{
-      const key=candidate.partyName;
-      if(!campaignStats[key]) campaignStats[key]={party:key,contests:0,wins:0,votes:0,performance:0};
-      const stats=campaignStats[key];stats.contests++;stats.votes+=Number(candidate.votes||0);stats.performance+=Number(candidate.performance||0);
-      if(candidate===winner) stats.wins++;
-    });
-    results.push({seatCode:seat.seatCode,stateName:seat.stateName,constituency:seat.constituency,winner:winner.candidateName,partyName:winner.partyName,votes:winner.votes,runnerUp:scored[1]?.candidateName||'',runnerUpParty:scored[1]?.partyName||'',runnerUpVotes:Number(scored[1]?.votes||0),totalVotes:total,turnout:total,margin:winner.votes-(scored[1]?.votes||0)});
+    if (String(seat.seatCode) !== String(engine.playerSeatCode || '')) {
+      scored.forEach(candidate=>{
+        const key=candidate.partyName;
+        if(!campaignStats[key]) campaignStats[key]={party:key,contests:0,wins:0,votes:0,performance:0};
+        const stats=campaignStats[key];stats.contests++;stats.votes+=Number(candidate.votes||0);stats.performance+=Number(candidate.performance||0);
+        if(candidate===winner) stats.wins++;
+      });
+    }
+    results.push({seatCode:seat.seatCode,stateName:seat.stateName,constituency:seat.constituency,winner:winner.candidateName,partyName:winner.partyName,votes:winner.votes,runnerUp:scored[1]?.candidateName||'',runnerUpParty:scored[1]?.partyName||'',runnerUpVotes:Number(scored[1]?.votes||0),totalVotes:total,turnout:total,margin:winner.votes-(scored[1]?.votes||0),playerCandidateName:own?.candidateName||'',playerCandidateParty:own?.partyName||'',playerCandidateVotes:Number(scored.find(candidate=>candidate.player)?.votes||0),candidateResults:scored.map(candidate=>({name:candidate.candidateName,party:candidate.partyName,votes:Number(candidate.votes||0),player:!!candidate.player}))});
     const ownSlate=slate.find(x=>x.stateName===seat.stateName && Number(x.constituencyNumber)===Number(seat.constituencyNumber));
     if(ownSlate){ownSlate.status=winner.player?'Elected':'Not Elected';ownSlate.electionResult=winner.player?'Won':'Lost';ownSlate.votes=scored.find(x=>x.player)?.votes||0;ownSlate.resultDate=dateText();}
   });
@@ -4281,24 +4373,22 @@ function countLokSabhaElection() {
   if (authoritativeTally.reduce((sum,row)=>sum+Number(row.seats||0),0) !== results.length) {
     return toast('Counting stopped: party seat totals do not reconcile with the constituency ledger.');
   }
-  engine.results=results;
-  engine.partyTally=authoritativeTally;
   const campaignStyles=['Ground outreach & local meetings','Issue-led manifesto messaging','Regional alliance & community outreach','Digital communication & volunteer mobilisation'];
-  engine.aiCampaignReport=Object.values(campaignStats).map((row,index)=>({
+  engine.pendingCampaignReport=Object.values(campaignStats).map(row=>({
     party:row.party,style:campaignStyles[lokSabhaSeed(`${engine.cycle}|${row.party}|style`)%campaignStyles.length],
     contests:row.contests,wins:row.wins,averagePerformance:Math.round(row.performance/Math.max(1,row.contests)),
     votes:row.votes,voteShare:Math.round(row.votes/Math.max(1,results.reduce((sum,r)=>sum+Number(r.totalVotes||0),0))*1000)/10,
     averageWinningMargin:Math.round(results.filter(r=>r.partyName===row.party).reduce((sum,r)=>sum+Number(r.margin||0),0)/Math.max(1,row.wins))
   })).sort((a,b)=>b.wins-a.wins);
-  engine.completed=true;engine.lastRunAt=dateText();
-  state.elections.lastLokSabhaSeatTally={scheduledAt:engine.cycle,totalSeats:543,majorityMark:272,seatsWon:engine.partyTally,countingComplete:true,date:engine.lastRunAt};
-  // Persist the exact constituency ledger with the derived tally. Every downstream government
-  // calculation and the recent-results archive can now read the same 543 rows after cycle rollover.
-  state.elections.lastLokSabhaResults=results.map(row=>({...row}));
-  state.elections.lastLokSabhaCompletedCycle=Number(engine.cycle);
-  state.elections.lastLokSabhaNationalSnapshot={cycle:Number(engine.cycle),tally:engine.partyTally.map(row=>({party:row.party,seats:Number(row.seats||0)})),results:results.map(row=>({...row})),source:'Completed 543-seat Lok Sabha count · authoritative constituency ledger',completedAt:engine.lastRunAt,completed:true};
-  saveState();render();
-  toast(`Lok Sabha counting completed: ${results.length} constituency results recorded.`);
+  engine.pendingResults=results.map(row=>({...row}));
+  engine.results=[];
+  engine.liveResults=[];
+  engine.partyTally=[];
+  engine.counting={round:0,totalRounds:10,countedConstituencies:0,totalConstituencies:543,startedAt:dateText()};
+  engine.completed=false;
+  const active=state.elections.active;
+  if(active && active.typeId==='lok-sabha') active.phase='counting';
+  advanceLokSabhaNationalCount(engine);
 }
 
 function electionPerformancePanel({title,level,totalSeats,majorityMark,won,lost,leading=0,counted,complete=false,partyName='Your party',cycleLabel=''}) {
@@ -4325,15 +4415,19 @@ function electionPerformancePanel({title,level,totalSeats,majorityMark,won,lost,
 function lokSabhaElectionEnginePanel() {
   const e=ensureLokSabhaElectionEngine();
   const approved=ensurePartySlate().filter(x=>x.typeId==='lok-sabha' && Number(x.scheduledAt)===e.cycle && x.status==='Funded').length;
+  const activePlayerContest=state.elections?.active?.typeId==='lok-sabha'?state.elections.active:null;
+  const aiCampaignSeats=activePlayerContest?542:543;
+  const aiCampaignsCompleted=!!e.campaignsRunAt;
   const displayedTally=e.results.length===543 ? deriveLokSabhaTallyFromResults(e.results) : e.partyTally;
   const wins=e.results.length, leader=displayedTally[0];
   return `<section class="panel" id="national-campaign-count"><span class="gold-tag">543-CONSTITUENCY ELECTION ENGINE</span><h2>National campaign, polling & counting</h2><p class="creator-note">Election steps: 1) Nominate candidates → 2) Approve tickets → 3) Fund campaigns → 4) Run AI campaigns → 5) Poll and count → 6) Form the Central Government. Complete each step before moving to the next.</p>
-    <div class="election-metrics"><div><small>CONSTITUENCIES</small><b>543</b></div><div><small>FUNDED PLAYER CANDIDATES</small><b>${approved}</b></div><div><small>PLAYER CAMPAIGNS</small><b>${e.campaigns.length}</b></div><div><small>RESULTS RECORDED</small><b>${wins}/543</b></div><div><small>PLAYER COUNTED SEATS</small><b>${e.results.filter(row=>row.playerCounted).length}</b></div></div>
-    <p class="panel-description">One shared constituency ledger powers this national result and the player’s constituency count. A completed player count is retained when the national count runs; the remaining seats are simulated once and saved to the same ledger. Numbered constituency labels are used where verified official names are not available in the current dataset.</p>
-    <div class="national-lok-sabha-actions"><button class="primary-btn" data-ls-engine-campaign ${e.completed?'disabled':''}>RUN AI NATIONAL CAMPAIGNS</button><button class="primary-btn" data-ls-engine-count ${!e.campaignsRunAt||e.completed?'disabled':''}>POLL & COUNT ALL CONSTITUENCIES</button></div>
-    ${displayedTally.length?`<h3>National seat tally</h3>${displayedTally.map(x=>`<div class="national-ls-state-row"><b>${escapeHtml(x.party)}</b><strong>${x.seats}</strong></div>`).join('')}<p><b>Majority mark:</b> 272 · <b>Leading party:</b> ${escapeHtml(leader?.party||'—')} (${leader?.seats||0})</p>`:'<p class="panel-description">No constituency results yet. Complete campaigns and counting to calculate party seats automatically.</p>'}
+    <div class="election-metrics"><div><small>CONSTITUENCIES</small><b>543</b></div><div><small>FUNDED PLAYER CANDIDATES</small><b>${approved}</b></div><div><small>AI CAMPAIGN COVERAGE</small><b>${aiCampaignsCompleted?aiCampaignSeats:0}/543</b></div><div><small>${e.completed?'FINAL RESULTS':'COUNT STATUS'}</small><b>${e.completed?'543/543':e.counting?`ROUND ${e.counting.round}/10`:`0/543`}</b></div><div><small>PLAYER CONTEST</small><b>${activePlayerContest?'1 · INCLUDED IN NATIONAL COUNT':'—'}</b></div></div>
+    <p class="panel-description">AI campaigns cover ${aiCampaignsCompleted?aiCampaignSeats:0} of 543 constituencies; your player candidate is excluded from AI campaign scoring but remains included in the final 543-seat national count. The national count advances round by round from one shared constituency ledger.</p>
+    <div class="national-lok-sabha-actions"><button class="primary-btn" data-ls-engine-campaign ${e.completed?'disabled':''}>RUN AI NATIONAL CAMPAIGNS</button></div>
+    ${e.counting?`<div class="election-count-progress"><b>National count · Round ${Number(e.counting.round||0)}/${Number(e.counting.totalRounds||10)}</b><span>${e.completed?'543/543 final results declared':`${Number(e.counting.votesCounted||0).toLocaleString('en-IN')} votes counted across all 543 constituencies`}</span></div>`:''}
+    ${displayedTally.length?`<h3>${e.completed?'Final national seat tally':'Current constituency leads · provisional'}</h3>${displayedTally.map(x=>`<div class="national-ls-state-row"><b>${escapeHtml(x.party)}</b><strong>${x.seats}</strong></div>`).join('')}<p><b>Majority mark:</b> 272 · <b>Leading party:</b> ${escapeHtml(leader?.party||'—')} (${leader?.seats||0})</p>`:'<p class="panel-description">No constituency results yet. Complete campaigns and counting to calculate party seats automatically.</p>'}
     ${e.results.length?electionPerformancePanel({title:'Lok Sabha election result',level:'CENTRAL · 543 SEATS',totalSeats:543,majorityMark:272,won:e.results.filter(row=>String(row.partyName||'').toLowerCase()===String(state.party||'BPP').toLowerCase()).length,lost:e.results.filter(row=>String(row.partyName||'').toLowerCase()!==String(state.party||'BPP').toLowerCase()).length,leading:0,counted:e.results.length,complete:!!e.completed,partyName:state.party||'Bharat Pragati Party',cycleLabel:`Election cycle ${e.cycle}`}) : ''}
-    ${e.aiCampaignReport?.length?`<details class="campaign-report-details" open><summary>AI campaign performance report · ${e.aiCampaignReport.length} parties</summary><p class="creator-note">The report summarizes simulated campaign style, modeled performance, vote share and seat outcomes. These are game estimates, not real polling.</p>${e.aiCampaignReport.map(row=>`<article class="campaign-report-row"><b>${escapeHtml(row.party)}</b><small>${escapeHtml(row.style)}</small><div class="campaign-report-metrics"><span>Modeled score <strong>${row.averagePerformance}/100</strong></span><span>Vote share <strong>${Number(row.voteShare).toFixed(1)}%</strong></span><span>Seats <strong>${row.wins}/543</strong></span><span>Votes <strong>${Number(row.votes).toLocaleString('en-IN')}</strong></span></div><small>${row.wins?`Average winning margin: ${Number(row.averageWinningMargin).toLocaleString('en-IN')} votes`:'No seats won in this simulation'}</small></article>`).join('')}</details>`:''}
+    ${e.aiCampaignReport?.length?`<details class="campaign-report-details" open><summary>AI campaign performance report · ${e.aiCampaignReport.length} parties</summary><p class="creator-note">The report summarizes AI campaign performance in AI-contested constituencies. Your player candidate is excluded from AI campaign scoring, but their seat remains in the final national tally. These are game estimates, not real polling.</p>${e.aiCampaignReport.map(row=>`<article class="campaign-report-row"><b>${escapeHtml(row.party)}</b><small>${escapeHtml(row.style)}</small><div class="campaign-report-metrics"><span>Modeled score <strong>${row.averagePerformance}/100</strong></span><span>Vote share <strong>${Number(row.voteShare).toFixed(1)}%</strong></span><span>AI wins <strong>${row.wins}/${row.contests}</strong></span><span>Votes <strong>${Number(row.votes).toLocaleString('en-IN')}</strong></span></div><small>${row.wins?`Average winning margin: ${Number(row.averageWinningMargin).toLocaleString('en-IN')} votes`:'No seats won in this simulation'}</small></article>`).join('')}</details>`:''}
     ${e.results.length?`<details><summary>Constituency results · ${e.results.length}</summary><div class="candidate-register-list">${e.results.slice(0,543).map(r=>`<div class="finance-history" style="padding:10px;margin:6px 0"><b>${escapeHtml(r.constituency)}</b><div>${escapeHtml(r.winner)} · ${escapeHtml(r.partyName)}</div><small>${Number(r.votes).toLocaleString('en-IN')} votes · Margin ${Number(r.margin).toLocaleString('en-IN')}</small></div>`).join('')}</div></details>`:''}
   </section>`;
 }
@@ -4744,8 +4838,9 @@ function electionPage() {
             </article>
           `).join('')}
         </div>` : `<section class="panel manifesto-panel"><h3>${electionPhase(active)==='counting'?'Counting day':'Election preparation'}</h3><p class="panel-description">${electionPhase(active)==='counting'?'Polling has closed. Proceed through the live counting rounds below.':electionPhase(active)==='voting'?'Voting is taking place. Close the polls when ready to begin counting.':'Prepare your candidate, verify the nomination and finalise the manifesto. Official campaign activities unlock two months before polling.'}</p></section>`}
-        ${electionPhase(active)==='voting' ? `<section class="panel live-counting-panel"><span class="gold-tag">POLLING DAY</span><h2>Voting is underway</h2><p class="panel-description">The scheduled polling month has arrived. Close the polls to begin the ten-round simulated count. No winner is declared until every round is complete.</p><div class="election-metrics"><div><small>REGISTERED CONTEST</small><b>${escapeHtml(active.typeName)}</b></div><div><small>CONSTITUENCY</small><b>${escapeHtml(active.constituency)}</b></div></div><button class="primary-btn full" data-action="begin-counting" ${active.activities.length < 2 ? 'disabled' : ''}>CLOSE POLLS & START COUNTING →</button>${active.activities.length < 2 ? '<small class="creator-note">Complete at least two official campaign activities before polls can close.</small>' : ''}</section>` : ''}
-        ${electionPhase(active)==='counting' && active.counting ? `<section class="panel live-counting-panel"><span class="gold-tag">LIVE COUNTING</span><h2>${escapeHtml(active.constituency)} · ${escapeHtml(active.typeName)}</h2><div class="election-metrics"><div><small>COUNTING ROUND</small><b>${active.counting.round}/${active.counting.totalRounds}</b></div><div><small>VOTES COUNTED</small><b>${Number(active.counting.counted).toLocaleString('en-IN')}</b></div><div><small>TOTAL TURNOUT</small><b>${Number(active.counting.turnout).toLocaleString('en-IN')}</b></div></div>${active.counting.candidates.slice().sort((a,b)=>b.votes-a.votes).map((candidate,index)=>`<div class="finance-history"><span><b>${index+1}. ${escapeHtml(candidate.name)}</b><br><small>${escapeHtml(candidate.party)}</small><div class="mini-progress"><i style="width:${active.counting.counted?Math.min(100,candidate.votes/active.counting.counted*100):0}%"></i></div></span><b>${Number(candidate.votes).toLocaleString('en-IN')}</b></div>`).join('')}<button class="primary-btn full" data-action="count-next-round" ${active.counting.round>=active.counting.totalRounds?'disabled':''}>${active.counting.round>=active.counting.totalRounds?'COUNTING COMPLETE':'COUNT NEXT ROUND →'}</button><small class="creator-note">Fictional simulated count. Final result is declared only after all rounds are counted.</small></section>` : ''}
+        ${electionPhase(active)==='voting' && active.typeId!=='lok-sabha' ? `<section class="panel live-counting-panel"><span class="gold-tag">POLLING DAY</span><h2>Voting is underway</h2><p class="panel-description">The scheduled polling month has arrived. Close the polls to begin the ten-round simulated count. No winner is declared until every round is complete.</p><div class="election-metrics"><div><small>REGISTERED CONTEST</small><b>${escapeHtml(active.typeName)}</b></div><div><small>CONSTITUENCY</small><b>${escapeHtml(active.constituency)}</b></div></div><button class="primary-btn full" data-action="begin-counting" ${active.activities.length < 2 ? 'disabled' : ''}>CLOSE POLLS & START COUNTING →</button>${active.activities.length < 2 ? '<small class="creator-note">Complete at least two official campaign activities before polls can close.</small>' : ''}</section>` : ''}
+        ${active.typeId==='lok-sabha' && ['voting','counting'].includes(electionPhase(active)) ? (()=>{const engine=state.elections?.lokSabhaEngine||{};const rounds=engine.counting||{};const playerSeat=String(engine.playerSeatCode||'');const playerResult=(engine.liveResults||[]).find(row=>playerSeat&&String(row.seatCode)===playerSeat)||(engine.results||[]).find(row=>playerSeat&&String(row.seatCode)===playerSeat);const candidate=active.candidateName||state.playerName||'Player candidate';const party=state.party||'Bharat Pragati Party';return `<section class="panel live-counting-panel"><span class="gold-tag">PLAYER CANDIDATE · NATIONAL COUNT</span><h2>${escapeHtml(candidate)}</h2><p class="panel-description">${escapeHtml(party)} · ${escapeHtml(active.constituency)} · ${escapeHtml(active.stateName||state.stateName||'Karnataka')}</p><div class="election-metrics"><div><small>YOUR CANDIDATE</small><b>${escapeHtml(candidate)}</b></div><div><small>AI CAMPAIGNS</small><b>542 / 543</b></div><div><small>PLAYER SEAT</small><b>${playerResult?(engine.completed?'FINAL RESULT':'LIVE ROUND'):'AWAITING COUNT'}</b></div><div><small>PLAYER VOTES</small><b>${playerResult?Number(playerResult.playerCandidateVotes||0).toLocaleString('en-IN'):'—'}</b></div></div><p class="creator-note">Your campaign is not counted as an AI campaign. Your candidate is included in the same 543-seat national count as every other constituency.</p><div class="election-count-progress"><b>National counting · Round ${Number(rounds.round||0)}/${Number(rounds.totalRounds||10)}</b><span>${Number(engine.results?.length||0)}/543 constituencies counted</span></div><button class="primary-btn full" data-ls-engine-count ${!engine.campaignsRunAt||engine.completed?'disabled':''}>${engine.completed?'NATIONAL COUNT COMPLETE':rounds.round?`COUNT NEXT NATIONAL ROUND · ${Math.min(10,Number(rounds.round)+1)}/10`:'POLL & COUNT ALL 543 CONSTITUENCIES'}</button>${!engine.campaignsRunAt?'<small class="creator-note">Run AI national campaigns first. The all-constituency count becomes available on the final counting day.</small>':''}</section>`})() : ''}
+        ${electionPhase(active)==='counting' && active.counting && active.typeId!=='lok-sabha' ? `<section class="panel live-counting-panel"><span class="gold-tag">LIVE COUNTING</span><h2>${escapeHtml(active.constituency)} · ${escapeHtml(active.typeName)}</h2><div class="election-metrics"><div><small>COUNTING ROUND</small><b>${active.counting.round}/${active.counting.totalRounds}</b></div><div><small>VOTES COUNTED</small><b>${Number(active.counting.counted).toLocaleString('en-IN')}</b></div><div><small>TOTAL TURNOUT</small><b>${Number(active.counting.turnout).toLocaleString('en-IN')}</b></div></div>${active.counting.candidates.slice().sort((a,b)=>b.votes-a.votes).map((candidate,index)=>`<div class="finance-history"><span><b>${index+1}. ${escapeHtml(candidate.name)}</b><br><small>${escapeHtml(candidate.party)}</small><div class="mini-progress"><i style="width:${active.counting.counted?Math.min(100,candidate.votes/active.counting.counted*100):0}%"></i></div></span><b>${Number(candidate.votes).toLocaleString('en-IN')}</b></div>`).join('')}<button class="primary-btn full" data-action="count-next-round" ${active.counting.round>=active.counting.totalRounds?'disabled':''}>${active.counting.round>=active.counting.totalRounds?'COUNTING COMPLETE':'COUNT NEXT ROUND →'}</button><small class="creator-note">Fictional simulated count. Final result is declared only after all rounds are counted.</small></section>` : ''}
         <section class="panel manifesto-panel">
           <span class="eyebrow">YOUR ELECTION MANIFESTO</span>
           <p>${escapeHtml(active.manifesto)}</p>
