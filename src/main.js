@@ -6765,7 +6765,24 @@ function atlasStateGovernmentParty(stateName) {
     const tally = electedPartySeatRegister('assembly');
     if (tally[0]?.seats >= 113) return tally[0].party;
   }
-  return '';
+  // If no election/government record exists for a region, model an AI-led
+  // government so the political-control map is still informative. This is
+  // explicitly simulated game data, not a claim about current real-world rule.
+  const aiParties = [
+    'Bharatiya Janata Party', 'Indian National Congress', 'Aam Aadmi Party',
+    'Dravida Munnetra Kazhagam', 'All India Anna Dravida Munnetra Kazhagam',
+    'Trinamool Congress', 'Communist Party of India (Marxist)',
+    'Janata Dal (United)', 'Biju Janata Dal', 'Telugu Desam Party',
+    'Bharat Pragati Party', 'Janata Dal (Secular)'
+  ];
+  const playerParty = String(state.party || state.playerParty || '').trim().toLowerCase();
+  const candidates = aiParties.filter(p => p.toLowerCase() !== playerParty);
+  let hash = 2166136261;
+  for (let i = 0; i < stateName.length; i++) {
+    hash ^= stateName.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+  return candidates[(hash >>> 0) % candidates.length] || aiParties[0];
 }
 function atlasCanonicalDistrict(stateName, districtName) {
   const directory = getAtlasState(stateName).districts || [];
@@ -6953,7 +6970,7 @@ function indiaMapPage() {
 
     <section class="panel atlas-political-map-panel">
       <div class="command-section-head">
-        <div><span class="eyebrow">LIVE POLITICAL GEOGRAPHY</span><h2>Indian political map</h2><p class="panel-description">Tap a state to explore its districts. Colours follow recorded in-game government data; districts inherit the state colour where district winners are not recorded.</p></div>
+        <div><span class="eyebrow">LIVE POLITICAL GEOGRAPHY</span><h2>Indian political map</h2><p class="panel-description">Tap a state to explore its districts. Recorded in-game governments take priority; regions without election records show simulated AI ruling parties. Districts inherit the state colour where district winners are not recorded.</p></div>
         <div class="atlas-map-toolbar">
           <label class="atlas-layer-select-label" for="atlasMapMetric">MAP LAYER</label>
           <select id="atlasMapMetric" class="atlas-layer-select">${atlasMetricOptions.map(([key,label])=>`<option value="${key}" ${metricSafe(state.mapMetric)===key?'selected':''}>${escapeHtml(label)}</option>`).join('')}</select>
@@ -6969,7 +6986,7 @@ function indiaMapPage() {
       </div>
       <div class="atlas-political-map-frame"><div id="indiaPoliticalMap" class="atlas-political-map"><div class="atlas-map-loading">Preparing interactive map…</div></div></div>
       <div class="atlas-political-legend" id="atlasPoliticalLegend"><span><i style="background:#53657c"></i>Loading map legend…</span></div>
-      <p class="atlas-map-source-note">Boundary layer: community-curated India GeoJSON, pinned to a published dataset revision. Internet is needed for the first boundary download; data is cached on the device where storage permits. This is a visual reference, not an official Survey of India legal boundary product. Regions without recorded in-game government results remain neutral.</p>
+      <p class="atlas-map-source-note">Boundary layer: community-curated India GeoJSON, pinned to a published dataset revision. Internet is needed for the first boundary download; data is cached on the device where storage permits. This is a visual reference, not an official Survey of India legal boundary product. Regions without recorded election results use simulated AI government control; this is game data, not a live real-world government map.</p>
     </section>
 
     <div class="india-atlas-layout">
