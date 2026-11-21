@@ -4966,6 +4966,32 @@ function ensureCentralGovernmentState() {
   if (!Array.isArray(c.history)) c.history = [];
   return c;
 }
+function validateCentralLokSabhaLedger(snapshot) {
+  if (!snapshot || !Array.isArray(snapshot.results) || snapshot.results.length !== 543) {
+    return { valid:false, reason:'The completed Lok Sabha constituency ledger is missing or incomplete.' };
+  }
+  const rows = snapshot.results;
+  const codes = new Set();
+  const tally = {};
+  for (const row of rows) {
+    const code = String(row?.seatCode || '').trim();
+    const party = String(row?.partyName || row?.party || '').trim();
+    if (!code || codes.has(code) || !party) {
+      return { valid:false, reason:'The Lok Sabha ledger contains a missing seat code, duplicate constituency, or missing winner party.' };
+    }
+    codes.add(code);
+    tally[party] = (tally[party] || 0) + 1;
+  }
+  if (codes.size !== 543) return { valid:false, reason:'The Lok Sabha ledger must contain 543 unique constituencies.' };
+  const derived = Object.entries(tally).map(([party,seats])=>({party,seats})).sort((a,b)=>b.seats-a.seats || a.party.localeCompare(b.party));
+  const declared = Array.isArray(snapshot.tally) ? snapshot.tally : [];
+  const declaredMap = new Map(declared.map(row=>[String(row.party||'').trim(),Number(row.seats||0)]));
+  if (declaredMap.size !== derived.length || derived.some(row=>declaredMap.get(row.party)!==row.seats)) {
+    return { valid:false, reason:'The saved party tally does not match the 543 constituency winners.' };
+  }
+  return { valid:true, tally:derived, cycle:Number(snapshot.cycle), results:rows };
+}
+
 function centralGovernmentAction(action) {
   const engine = ensureLokSabhaElectionEngine();
   const c = ensureCentralGovernmentState();
@@ -4977,8 +5003,10 @@ function centralGovernmentAction(action) {
     countLokSabhaElection();
     return;
   }
-  const resultSnapshot = lokSabhaCompletedResultSnapshot();
-  if (!resultSnapshot) return toast('Complete and declare all 543 Lok Sabha constituency results before Central Government formation.');
+  const rawSnapshot = lokSabhaCompletedResultSnapshot();
+  const ledgerCheck = validateCentralLokSabhaLedger(rawSnapshot);
+  if (!ledgerCheck.valid) return toast(`${ledgerCheck.reason} Complete a fresh national count before Central Government formation.`);
+  const resultSnapshot = { ...rawSnapshot, tally:ledgerCheck.tally, results:ledgerCheck.results };
   const tally = resultSnapshot.tally;
   const majority = 272;
   const currentCycle = Number(resultSnapshot.cycle);
@@ -5022,8 +5050,11 @@ function centralGovernmentAction(action) {
     saveState(); render(); toast(`Coalition support recorded: ${supportSeats}/543. Conduct the Lok Sabha floor test to complete formation.`);
   } else if (action === 'floor-test') {
     if (!eligibleForCycle) return toast('Record a majority leader or coalition support before conducting the Lok Sabha floor test.');
-    const support = Number(c.supportSeats||0);
-    if (support < majority || support > 543) {
+    const leadSeats = Number(tally.find(row=>row.party.toLowerCase()===String(c.party||'').toLowerCase())?.seats||0);
+    const partnerNames = [...new Set((c.coalition||[]).map(row=>String(row.name||'').toLowerCase()))];
+    const partnerSeats = partnerNames.reduce((sum,name)=>sum+Number(tally.find(row=>row.party.toLowerCase()===name)?.seats||0),0);
+    const support = leadSeats + partnerSeats;
+    if (support !== Number(c.supportSeats||0) || support < majority || support > 543) {
       c.status='failed'; c.floorTest='Failed';
       c.history.unshift({date:dateText(),event:`Lok Sabha floor test failed with ${support} supporting seats; 272 required.`});
       saveState(); render(); toast('Floor test failed. Reopen coalition talks and secure at least 272 seats.');
@@ -5037,7 +5068,9 @@ function centralGovernmentAction(action) {
 function centralGovernmentPanel() {
   const c = ensureCentralGovernmentState();
   const engine = ensureLokSabhaElectionEngine();
-  const resultSnapshot = lokSabhaCompletedResultSnapshot();
+  const rawSnapshot = lokSabhaCompletedResultSnapshot();
+  const ledgerCheck = validateCentralLokSabhaLedger(rawSnapshot);
+  const resultSnapshot = ledgerCheck.valid ? { ...rawSnapshot, tally:ledgerCheck.tally, results:ledgerCheck.results } : null;
   const tally = resultSnapshot?.tally || [];
   const majorityParty = tally.find(row => Number(row.seats) >= 272);
   const counted = !!resultSnapshot;
@@ -5054,6 +5087,7 @@ function centralGovernmentPanel() {
   const canNegotiate = counted && !appointedThisCycle && !formedThisCycle;
   const stage = !counted ? 'Awaiting Lok Sabha counting' : formedThisCycle ? 'Government formed · floor test passed' : appointedThisCycle ? 'Prime Minister-designate · floor test pending' : 'Government formation available';
   return `<section class="panel central-government-panel"><span class="gold-tag">CENTRAL GOVERNMENT · LOK SABHA</span><h2>Central Government</h2><p class="panel-description">This is the Union Government only. It uses the completed Lok Sabha result (543 seats), a 272-seat majority, and a separate Prime Minister, coalition and Union cabinet record. It never changes the Karnataka State Government.</p>
+    ${!counted && rawSnapshot ? `<p class="creator-note">${escapeHtml(ledgerCheck.reason)} The government will not use an unverified tally.</p>` : ''}
     <div class="election-metrics"><div><small>LOK SABHA SEATS</small><b>543</b></div><div><small>MAJORITY MARK</small><b>272</b></div><div><small>COUNTING</small><b>${counted?'Complete':`${nationalCountedSeats}/543 counted · ${nationalPendingSeats} pending`}</b></div><div><small>FORMATION</small><b>${escapeHtml(stage)}</b></div></div>
     ${!counted?'<p class="creator-note">Your party-candidate report is not the full Lok Sabha count. Run the national simulation here to count all 543 constituencies and unlock coalition talks. Missing party tickets are simulated; they are not left pending.</p><button class="primary-btn" data-central-gov-action="run-national-count">RUN NATIONAL CAMPAIGN & COUNT ALL 543 SEATS</button>':appointedThisCycle?`<p><b>Prime Minister-designate:</b> ${escapeHtml(c.primeMinister)} · <b>Lead party:</b> ${escapeHtml(c.party)} · <b>Declared support:</b> ${c.supportSeats}/543</p><p class="creator-note">The government is not considered formed until the Lok Sabha floor test is passed.</p><button class="primary-btn" data-central-gov-action="floor-test">CONDUCT LOK SABHA FLOOR TEST</button>`:formedThisCycle?`<p><b>Prime Minister:</b> ${escapeHtml(c.primeMinister)} · <b>Lead party:</b> ${escapeHtml(c.party)} · <b>Support:</b> ${c.supportSeats}/543 · <b>Floor test:</b> ${escapeHtml(c.floorTest)}</p>`:`<p class="creator-note">${majorityParty?`${escapeHtml(majorityParty.party)} won ${majorityParty.seats} seats and can nominate a Prime Minister-designate.`:`Hung Lok Sabha: no party reached 272 seats. The leading party is ${escapeHtml(tally[0]?.party||'—')} with ${Number(tally[0]?.seats||0)} seats; it needs ${Math.max(0,272-Number(tally[0]?.seats||0))} more seats. Select a lead party and supporting parties to begin coalition talks.`} After nomination, conduct a floor test to complete government formation.</p>
     <div class="creator-field"><label for="central-pm-select">Prime Minister-designate · choose an elected MP</label><select id="central-pm-select" data-central-pm-select><option value="">Select elected MP</option>${pmOptions}</select></div>
