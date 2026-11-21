@@ -2274,6 +2274,10 @@ input, select, textarea {
   scrollbar-width: thin;
 }
 .section-nav-item {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
   flex: 0 0 auto;
   border: 1px solid #2b3a4e;
   background: #101c2b;
@@ -2282,7 +2286,17 @@ input, select, textarea {
   padding: 9px 12px;
   font-size: 10px;
   letter-spacing: .2px;
+  text-align: left;
 }
+.section-nav-item small {
+  display: block;
+  font-size: 8px;
+  letter-spacing: 0;
+  color: #8493a7;
+  text-transform: none;
+  white-space: nowrap;
+}
+.section-nav-item.active small { color: #d9c18d; }
 .section-nav-item.active {
   color: #f0d69a;
   border-color: #a98b4e;
